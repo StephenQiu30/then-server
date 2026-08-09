@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Xcode user state and build products
+DerivedData/
+build/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Go build and test artifacts
+bin/
+*.test
+coverage.out
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editor files
+.idea/
+.vscode/
+*.swp

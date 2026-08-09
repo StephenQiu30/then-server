@@ -1,0 +1,11 @@
+openapi: 3.0.3
+info:
+  title: 于是 API
+  version: 0.1.0
+  description: |
+    “于是”项目的唯一后端接口契约。
+    Swagger UI 与 iOS Swift Client 都使用此文档。
+servers:
+  - url: /v1
+    description: Same-origin API v1
+paths: {}
