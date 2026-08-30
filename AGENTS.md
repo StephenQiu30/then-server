@@ -16,11 +16,12 @@
 - 用户主动发起静态 AI 试穿；动态预览必须通过独立质量、成本、隐私和性能门禁。
 - 保存计划与实际穿搭，并用穿后反馈持续改善推荐。
 
-当前产品需求事实源是 `docs/prd/10-OOTD产品需求.md`。旧记账、日历和出行 PRD、03–09 号设计、旧计划、旧验收及相应 iOS 实现只用于解释历史代码和数据；不得继续扩展，也不得在没有数据保留决策时零散删除。
+`docs/prd/10-OOTD产品需求.md` 是产品总纲，11–19 号 PRD 分别定义单个功能的用户行为和业务边界。旧记账、日历和出行设计已从工作树删除，详细决策保留在 Git 历史；旧 PRD、计划、验收及相应 iOS 实现只用于解释历史代码和数据，不得继续扩展，也不得在没有数据保留决策时零散删除代码、migration 或用户数据。
 
 固定技术方向：
 
 - iOS：Xcode 26.6、Swift 6.3.3、最低 iOS 18，所有产品页面使用 SwiftUI + Observation。
+- 条件动态渲染：必要的 2.5D/3D 场景、着色器或粒子效果可以使用锁定版本的 Three.js，并通过系统 WebKit 作为 SwiftUI 页面内的局部渲染表面；不得形成第二套页面、导航、状态或网络架构。
 - 客户端数据：GRDB 7.11.1 + 系统 SQLite，本地优先、离线可用；媒体字节使用受保护文件，不存 SQLite BLOB。
 - API：REST + JSON，以 `backend/openapi.yaml` 的 OpenAPI 3.1.2 为唯一契约。
 - 后端：Go 1.26.5、Gin、GORM v2 Generics、PostgreSQL 18、Atlas versioned SQL。
@@ -87,12 +88,13 @@
 
 1. 用户当前明确要求。
 2. 根目录及当前目录链上的 `AGENTS.md`。
-3. `docs/prd/10-OOTD产品需求.md`。
+3. 对应的 11–19 号单功能 PRD；`docs/prd/10-OOTD产品需求.md` 负责共同产品边界和尚未拆分的总纲事项。
 4. `docs/design/01-技术选型.md`。
-5. `docs/design/02-后端架构.md` 与 10–19 号 OOTD 设计。
-6. `backend/openapi.yaml`。
-7. 当前 OOTD 实施计划与验收文档。
-8. 现有代码和测试体现的行为。
+5. 对应功能 design，以及 `docs/design/02-后端架构.md` 与 `docs/design/03-OOTD产品总体设计.md` 的共同约束。
+6. 已批准的对应 `FF-SS` 单切片执行计划。
+7. `backend/openapi.yaml` 与已发布数据库 migration 等机器事实源。
+8. 当前 OOTD 产品级实施计划与 acceptance。
+9. 现有代码和测试体现的行为。
 
 旧生活管理文档和代码不具有当前产品行为的优先级。发现当前事实源之间冲突时不得静默选择；会改变产品行为、数据模型、隐私承诺或兼容性的冲突必须先记录并请求确认。
 
@@ -100,7 +102,7 @@
 
 1. 阅读本文件和任务涉及目录的说明文件。
 2. 运行 `scripts/verify-toolchain.sh`；版本不一致时停止，不使用未批准的替代工具链。
-3. 阅读对应 PRD、设计、实施计划和验收标准。
+3. 阅读对应单功能 PRD、design、产品级实施计划和验收标准；若任务已进入实现，还要阅读已批准的同编号单切片执行计划。
 4. 检查工作区已有修改，不覆盖或回滚无关改动。
 5. 确认改动是否影响 iOS、后端、OpenAPI、本地 migration、服务端 migration、媒体生命周期和文档。
 6. 对照片采集、Vision 质量门、AI Provider、对象存储、队列恢复、删除链和最低设备性能先做隔离 POC。
@@ -118,12 +120,23 @@
 ### SwiftUI 架构
 
 - 所有产品页面、导航、Tab、sheet、表单和状态展示固定使用 SwiftUI；App 生命周期使用 SwiftUI `App`。
-- UIKit 只允许通过 `UIViewRepresentable`、`UIViewControllerRepresentable` 或服务适配器封装缺少合适 SwiftUI 接口的系统控制器。UIKit 不承担产品页面、全局导航、领域状态或业务规则。
+- UIKit 只允许通过 `UIViewRepresentable`、`UIViewControllerRepresentable` 或服务适配器封装缺少合适 SwiftUI 接口的系统控制器，以及已批准的局部 WebKit 图形渲染表面。UIKit/WebKit 不承担产品页面、全局导航、领域状态或业务规则。
 - 界面状态使用 Observation 与 `@Observable`；不新增 `ObservableObject`、`@Published`、`@StateObject` 或 Combine 全局状态流。
 - 首版只使用一个生产 `ThenApp` Swift module，加 `ThenAppTests` 与 `ThenAppUITests`；Feature 先按目录和协议隔离。
 - 采用 feature-first + MVVM + Repository。View 只负责展示和用户事件，不直接访问 GRDB、文件系统、Photos、Vision、网络或供应商 SDK。
 - ViewModel 通过初始化器接收完成当前用例所需的精确依赖，不新增包含全 App 服务的巨型环境对象或隐藏全局单例。
 - 系统能力通过协议封装，例如 `PhotoPickerService`、`CameraService`、`ImageAnalysisService`、`MediaStore`、`RecommendationService`、`TryOnService` 和 `NotificationService`。
+
+### Three.js 与 WebKit 渲染边界
+
+- 简单转场、反馈、骨架屏和状态动效优先使用 SwiftUI。只有场景图、透视/深度合成、着色器、粒子或其他 GPU 效果确有产品价值，且原生方案无法以更低复杂度满足时，才允许在对应 design 和执行计划中选择 Three.js。
+- Three.js 只是 `DynamicPreviewRenderer` 等协议后的可替换渲染实现。SwiftUI 继续拥有页面、手势语义、用户文案、无障碍控件和生命周期；Observation/ViewModel 继续拥有状态，Swift/GRDB/服务端继续拥有任务、同意、缓存索引与删除事实。
+- 最低 iOS 18 使用 `UIViewRepresentable` 封装 `WKWebView`，适配器只能位于明确的 Rendering Service 边界。不得以远程网页、纯 H5 页面或 Web 路由替代 SwiftUI Feature。
+- HTML、JavaScript、着色器、解码器和 Three.js 必须锁定版本、随 App 离线打包并保留许可证、lockfile、SBOM 与产物哈希；生产运行时禁止 CDN、远程脚本、动态代码下载和热更新。
+- 原生层负责鉴权、媒体下载、hash/尺寸校验、Data Protection 与删除；JavaScript 只接收版本化、大小受限的结构化命令和不含敏感语义的临时资产句柄，不得持有令牌、签名 URL、对象 key、用户 ID 或任意文件路径。
+- WebKit 使用非持久数据存储、严格 CSP 与导航/弹窗/下载/外联阻断；禁止 `eval`、`new Function`、任意字符串拼接执行和生产 Web Inspector。渲染状态必须可丢弃，退出、后台、内存告警、WebContent 终止或 WebGL context lost 时释放纹理、几何体、handler 和临时数据。
+- Three.js 首个基线只允许 `WebGLRenderer`/WebGL 2；WebGPU、远程 addon、自由相机、真实人体 mesh、物理布料和实时 AR 需要重新评审。Reduce Motion、VoiceOver、低电量、热压力、GPU 不可用或任一渲染错误时，必须回退 SwiftUI 静态图及原生上一/下一操作。
+- Three.js 进入产品代码前必须有对应 `FF-SS` 执行计划和隔离 POC，至少验证包体、冷启动、App 与 WebContent 合计内存、触摸到显示延迟、hitch、能耗、热状态、离线、进程终止、零非预期网络、无障碍、删除与供应链；不得为远期能力预建空实现。
 
 现有 Ledger、Calendar、Travel、Life、Today 与 Profile 目录属于历史实现。数据保留策略批准前冻结，不在其中增加 OOTD 功能；迁移时按 Feature、数据库 migration、资源与测试一起成组处理。
 
@@ -217,15 +230,26 @@
 
 ### 目录职责
 
-- `docs/prd/`：背景、目标用户、问题、目标、非目标、范围、用户故事、业务规则、指标、依赖与风险。
+- `docs/prd/`：背景、目标用户、问题、目标、非目标、范围、用户故事、业务规则、指标、依赖与风险。10 号为产品总纲，主要功能各自维护一份 PRD。
 - `docs/design/`：信息架构、用户流程、状态、数据模型、API、架构决策、隐私与失败降级。一个主要功能一个 design。
-- `docs/plan/`：阶段、任务、依赖、风险、验证和状态。状态只使用 `pending`、`in_progress`、`completed`、`blocked`。
+- `docs/plan/`：统一保存产品级实施计划与单切片执行计划。产品级计划管理跨功能阶段和依赖；单切片执行计划同时固定范围契约、任务、状态、证据、迁移与回滚，不再拆分为独立规格和任务清单。
 - `docs/acceptance/`：前置条件、操作步骤、期望结果、边界场景和证据；不得用“功能正常”替代可验证条件。
+
+### 交付流程
+
+1. PRD 定义“为什么做、为谁做、做什么”，一个主要功能一份；公共愿景和组合边界保留在 10 号产品总纲。
+2. design 定义该功能的产品与系统解法、状态、数据和重要取舍，一个主要功能一份。
+3. 只有某个可独立交付切片已进入近期产品计划、上游 PRD/design 已批准时，才创建一份 `FF-SS` 单切片执行计划；不为远期能力预建占位计划。
+4. 单切片执行计划必须在同一文件中同时定义用户/系统契约、影响面、可执行任务、依赖、证据、迁移、回滚与完成判定；契约获批后才能开始编码，不得再拆成两份事实源。
+5. 需求或契约在实现中变化时，先把契约状态退回 `draft`、阻断受影响任务，回写 PRD/design 并重新批准。产品级计划管理跨切片阶段；单切片执行计划管理当前切片；acceptance 独立验证发布结果。
+
+单切片执行计划保留两个状态：契约状态只使用 `draft`、`approved`、`superseded`；执行状态与任务状态只使用 `pending`、`in_progress`、`completed`、`blocked`。同一执行计划同一时间最多有一个任务处于 `in_progress`。
 
 ### 通用规则
 
-- 除目录入口 `README.md` 外，`docs/` 人类文档使用 Markdown，文件名为“二位编号-中文名称.md”；编号不足两位补零，名称不使用空格。
-- 同一主题在 PRD、设计、计划和验收尽量沿用相同编号与主题词。
+- 除目录入口 `README.md` 外，`docs/` 人类文档使用 Markdown。PRD、design、产品级 plan 与 acceptance 使用“二位编号-中文名称.md”；编号不足两位补零，名称不使用空格。
+- 单切片执行计划使用 `FF-SS-中文名称执行计划.md`：`FF` 对应稳定的单功能 PRD 编号，`SS` 是该功能内从 `01` 递增的切片编号；已被引用的编号与任务 ID 不因排序或 design 重排而改变。
+- PRD 保留 10–19 号产品编号；design 按当前目录职责独立使用连续编号。PRD 与 design 的对应关系必须在 `docs/README.md` 显式维护，执行计划的 `FF` 不随 design 重排。
 - 工具或平台要求的固定文件名不翻译、不编号，包括 `README.md`、`AGENTS.md`、`CONTRIBUTING.md`、`go.mod`、`openapi.yaml`、`atlas.hcl`、`atlas.sum` 和源码文件。
 - 需求、架构、接口、隐私或验收行为变化时，同一改动更新相关文档。依赖或供应商边界变化必须更新 `docs/design/01-技术选型.md`。
 - 不删除历史决策掩盖变更；在当前索引和替代文档中记录历史状态，详细内容由 Git 保存。
@@ -236,7 +260,7 @@
 - iOS：为领域规则、推荐、状态机、GRDB migration、媒体生命周期与 ViewModel 编写 Swift Testing；核心旅程增加 XCUITest。
 - Go：为 Service 编写单元测试；Repository、事务、迁移、幂等和 Outbox 使用真实 PostgreSQL；worker 使用真实 RabbitMQ/Redis 的容器集成测试。
 - API：OpenAPI 通过语法、风格与破坏性变更检查；iOS 生成 Client 可编译；Go Handler 通过契约测试。
-- 高风险能力必须真机或隔离环境验证，包括照片权限撤回、低内存、后台恢复、Reduce Motion、VoiceOver、离线恢复、供应商超时、重复消息、迟到结果、删除竞态和失败清理。
+- 高风险能力必须真机或隔离环境验证，包括照片权限撤回、低内存、后台恢复、Reduce Motion、VoiceOver、离线恢复、供应商超时、重复消息、迟到结果、删除竞态和失败清理；采用 Three.js 时还必须覆盖 WebGL 能力/context lost、WebContent 终止、bridge/CSP 拒绝、零运行时外联及 App 与 WebContent 合计资源预算。
 - 修复缺陷时优先添加复现测试；无法自动化时写入验收文档并说明原因。
 - 当前 iOS 架构改动至少运行 `scripts/validate-ios-architecture.sh` 与相关 `xcodebuild`；旧 `validate-p0-scope.sh`、旧生活管理 motion/privacy/localization 结果不构成 OOTD 发布证据。
 
@@ -247,7 +271,7 @@
 1. 实现符合已批准 OOTD PRD、技术基线、功能设计与 OpenAPI 契约。
 2. 相关测试通过，并完成与风险相称的真机或集成验证。
 3. 没有提交密钥、缓存、生成产物、真实用户数据或无关文件。
-4. 相关 PRD、设计、计划和验收文档已同步更新。
+4. 相关 PRD、design、plan 和 acceptance 已同步更新；已经进入实现的切片还必须在对应单切片执行计划中同步契约、任务状态与完成证据。
 5. 数据迁移、媒体删除、回滚和兼容方案已记录并可验证。
 6. 历史生活管理代码只按批准的迁移分组处理，没有零散破坏未提交代码或现有用户数据。
 7. 已说明仍存在的限制、风险和后续工作。

@@ -6,16 +6,16 @@
 
 | 范围 | 状态 |
 | --- | --- |
-| OOTD 产品需求 | 已批准，事实源为 [`docs/prd/10-OOTD产品需求.md`](docs/prd/10-OOTD产品需求.md) |
-| 产品与技术设计 | 01、02 与 10–19 号设计为当前基线 |
+| OOTD 产品需求 | 10 号产品总纲与 11–19 号单功能 PRD 已批准或按功能门禁批准 |
+| 产品与技术设计 | 01–12 号设计为连续的当前基线；旧生活管理设计已从工作树移除 |
 | iOS 工程 | 现有工程可构建且已使用 SwiftUI + Observation；页面仍是旧生活管理实现，已冻结待成组迁移 |
-| OOTD Feature | 尚未开始产品代码实现 |
+| OOTD Feature | M0 已建立 `11-01 照片输入与质量门` 隔离 POC 和 `19-01 历史发布事实与数据盘点` 只读计划；两者均未开始产品功能实现 |
 | Go 后端 | 技术与架构已固定，尚无运行时代码或业务 migration |
 | 旧生活管理代码 | 仅作历史与数据迁移参考，不再扩展；真实用户数据策略确认前不零散删除 |
 
 ## 固定技术栈
 
-- iOS：Xcode 26.6、Swift 6.3.3、最低 iOS 18、SwiftUI + Observation、Swift Concurrency。
+- iOS：Xcode 26.6、Swift 6.3.3、最低 iOS 18、SwiftUI + Observation、Swift Concurrency；必要的高级动态效果可在获批 POC 后使用本地锁版 Three.js/WebKit renderer，产品页面仍全部由 SwiftUI 承担。
 - 本地数据：GRDB 7.11.1 + SQLite；结构化数据本地优先，媒体保存在受保护的私有文件目录。
 - API：REST + JSON、OpenAPI 3.1.2；Apple Swift OpenAPI Generator 生成 iOS Client。
 - 后端：Go 1.26.5、Gin、GORM v2 Generics、PostgreSQL 18、Atlas versioned SQL。
@@ -40,7 +40,7 @@
 - `backend/`：Go 后端、OpenAPI 唯一契约与 Atlas migration 目录。
 - `docs/prd/`：产品需求与范围。
 - `docs/design/`：一个功能一个 design，以及架构与隐私决策。
-- `docs/plan/`：实施阶段、依赖、风险与验证。
+- `docs/plan/`：产品级实施计划，以及统一范围契约、任务与证据的单切片执行计划。
 - `docs/acceptance/`：可执行验收标准与证据要求。
 - `scripts/`：工具链、提交和架构守卫。
 
@@ -50,7 +50,12 @@
 | --- | --- |
 | [`AGENTS.md`](AGENTS.md) | 全仓库当前产品、架构、隐私、数据与测试规范 |
 | [`docs/README.md`](docs/README.md) | 当前文档索引与历史文档边界 |
-| [`docs/design/19-OOTD技术债清理与迁移设计.md`](docs/design/19-OOTD技术债清理与迁移设计.md) | 旧实现冻结、清理分组、数据决策与回滚 |
+| [`docs/prd/README.md`](docs/prd/README.md) | 产品总纲与 11–19 号单功能需求索引 |
+| [`docs/plan/README.md`](docs/plan/README.md) | 产品级实施计划与单切片执行计划的准入、编号、状态和模板 |
+| [`docs/plan/11-01-照片输入与质量门执行计划.md`](docs/plan/11-01-照片输入与质量门执行计划.md) | 首个统一契约、任务与证据的隔离 POC 执行计划 |
+| [`docs/plan/19-01-历史发布事实与数据盘点执行计划.md`](docs/plan/19-01-历史发布事实与数据盘点执行计划.md) | 旧发布事实和历史数据类别的只读 Go/No-Go 计划 |
+| [`docs/acceptance/README.md`](docs/acceptance/README.md) | 10 号系统验收与 11–19 号单功能验收索引 |
+| [`docs/design/12-OOTD技术债清理与迁移设计.md`](docs/design/12-OOTD技术债清理与迁移设计.md) | 旧实现冻结、清理分组、数据决策与回滚 |
 | [`backend/openapi.yaml`](backend/openapi.yaml) | iOS 与 Go 共用的唯一接口契约 |
 | [`backend/migrations/README.md`](backend/migrations/README.md) | PostgreSQL schema 管理规则 |
 | [`scripts/validate-ios-architecture.sh`](scripts/validate-ios-architecture.sh) | SwiftUI、Observation、GRDB 与工程设置守卫 |
@@ -88,4 +93,4 @@ go vet ./...
 
 ## 协作
 
-开始贡献前阅读 [`AGENTS.md`](AGENTS.md) 与 [`CONTRIBUTING.md`](CONTRIBUTING.md)，检查工作区已有修改，并按 PRD → design → OpenAPI/data → implementation → acceptance 的顺序推进。不要恢复 `backend/schema.sql`，不要在生产使用 GORM `AutoMigrate`，也不要为清理旧界面而零散破坏现有 GRDB migration 或测试夹具。
+开始贡献前阅读 [`AGENTS.md`](AGENTS.md) 与 [`CONTRIBUTING.md`](CONTRIBUTING.md)，检查工作区已有修改，并按 PRD → design → execution plan → implementation → acceptance 推进。切片排入近期产品计划后、编码前创建一份统一范围契约、任务和证据的 `FF-SS` 执行计划；不要恢复 `backend/schema.sql`，不要在生产使用 GORM `AutoMigrate`，也不要为清理旧界面而零散破坏现有 GRDB migration 或测试夹具。

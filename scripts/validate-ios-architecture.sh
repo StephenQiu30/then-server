@@ -70,10 +70,30 @@ if [ -n "$uikit_imports" ]; then
     IFS=$old_ifs
 fi
 
+webkit_sources=$(find "$source_root" -type f -name '*.swift' \
+    -exec grep -El '^import WebKit$|(^|[^[:alnum:]_])WKWebView([^[:alnum:]_]|$)' {} + || true)
+if [ -n "$webkit_sources" ]; then
+    old_ifs=$IFS
+    IFS='
+'
+    for file in $webkit_sources; do
+        case "$file" in
+            */Services/Rendering/*)
+                ;;
+            *)
+                printf '%s\n' "$file" >&2
+                fail "WebKit must stay inside an approved Services/Rendering adapter"
+                ;;
+        esac
+    done
+    IFS=$old_ifs
+fi
+
 printf '%s\n' \
     'iOS architecture verified:' \
     '- SwiftUI App lifecycle is the only product UI entry' \
     '- Observation/Swift Concurrency baseline has no prohibited alternative framework' \
     '- iOS 18, Swift 6, strict concurrency and MainActor settings are present' \
     '- GRDB and Swift OpenAPI packages are locked' \
-    '- UIKit imports remain limited to explicit system bridges'
+    '- UIKit imports remain limited to explicit system or rendering bridges' \
+    '- WebKit, when present, remains isolated to an approved rendering adapter'

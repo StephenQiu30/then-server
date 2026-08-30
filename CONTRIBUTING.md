@@ -4,7 +4,7 @@
 
 ## 工作流程
 
-1. 先阅读任务对应的 PRD、设计、计划和验收文档。
+1. 先阅读任务对应的单功能 PRD、design、产品级计划和验收文档；进入实现的切片还必须阅读已批准的同编号执行计划。
 2. 运行 `scripts/verify-toolchain.sh`，确认本机工具链与固定基线一致。
 3. 从 `main` 创建短周期分支，推荐使用 `<type>/<short-name>`，例如 `feat/wardrobe-import`、`fix/tryon-retry` 或 `docs/commit-convention`。
 4. 使用小而聚焦的提交，提交标题和 Pull Request 标题必须遵循下方 Git 提交规范。
@@ -112,6 +112,7 @@ scripts/validate-commit-message.sh --message "feat(wardrobe): 新增手工录入
 - 接口变更必须先修改 `backend/openapi.yaml`，再重新生成并编译 iOS Client。
 - PostgreSQL 结构只由 `backend/migrations/*.sql` 与 `atlas.sum` 定义；生产禁止 GORM `AutoMigrate`。
 - 产品或架构行为变化时，同步更新 `docs/` 中的对应文档。
+- 交付按 PRD → design → execution plan → implementation → acceptance 推进。执行计划仅为已排期的可独立交付切片创建，并在同一文件中统一范围契约、任务、依赖与完成证据；不得用任务表反向替代产品或设计决策。
 
 ## 质量和安全
 

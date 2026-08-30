@@ -15,7 +15,7 @@ OOTD 后端采用 Go 1.26.5 模块化单体：一个 `go.mod`、一个 `main.go`
 - Testcontainers for Go `v0.44.0`
 - FFmpeg `8.1.2`
 
-精确边界和版本事实源见 [`../docs/design/01-技术选型.md`](../docs/design/01-技术选型.md)，模块与进程设计见 [`../docs/design/02-后端架构.md`](../docs/design/02-后端架构.md)，异步细节见 [`../docs/design/17-OOTD服务端与异步任务设计.md`](../docs/design/17-OOTD服务端与异步任务设计.md)。
+精确边界和版本事实源见 [`../docs/design/01-技术选型.md`](../docs/design/01-技术选型.md)，模块与进程设计见 [`../docs/design/02-后端架构.md`](../docs/design/02-后端架构.md)，异步细节见 [`../docs/design/10-OOTD服务端与异步任务设计.md`](../docs/design/10-OOTD服务端与异步任务设计.md)。
 
 ## 当前文件
 

@@ -5,16 +5,28 @@
 实现原则：
 
 - 所有产品页面使用 SwiftUI，Observation + `@Observable` 管理界面状态。
-- UIKit 只封装缺少 SwiftUI 接口的系统控制器，不承担页面导航、全局状态或业务架构。
+- UIKit 只封装缺少 SwiftUI 接口的系统控制器，以及已批准的局部 WebKit 图形渲染表面；不承担页面导航、全局状态或业务架构。
 - Swift 6 language mode、Complete Strict Concurrency、Approachable Concurrency，UI 默认 Main Actor 隔离。
 - 首版只保留一个生产 `ThenApp` Swift module，加 `ThenAppTests` 与 `ThenAppUITests`，不把 Feature 拆成内部 framework 或 Swift Package。
 - 采用 feature-first + MVVM + Repository。
 - PhotosUI、AVFoundation、Vision、UserNotifications 和网络能力通过服务协议封装。
 - 本地数据固定使用 GRDB 7.11.1 + 系统 SQLite 的 DatabasePool/WAL；衣橱、基础推荐和穿搭记录离线可用。
 - API 客户端从 `../backend/openapi.yaml` 生成；AI 试穿与动态预览是可失败、可取消的异步增强。
-- 禁止 SwiftData、Core Data、Realm、RxSwift、Combine 全局状态、第三方 UI 框架和第三方 DI 容器。
+- 禁止 SwiftData、Core Data、Realm、RxSwift、Combine 全局状态、第三方页面/UI 架构和第三方 DI 容器。Three.js 只能作为下述受控 renderer，不属于页面架构例外。
 
 当前工程已经满足 SwiftUI App 入口、Observation、Swift 6 严格并发、GRDB 与 OpenAPI 精确锁版。现有 Ledger、Calendar、Travel、Life、Today 和 Profile 实现属于上一产品方向；在用户数据保留和删除策略确认前停止扩展，后续按功能目录成组移除，不能零散删除导致数据库、工程引用或测试夹具失配。
+
+## 条件 Three.js 动态渲染
+
+- 普通按钮反馈、页面转场、加载状态和离散帧切换优先 SwiftUI。只有透视/深度合成、着色器、粒子或 scene graph 确有价值，并由对应 design 与 `FF-SS` 执行计划批准时，才可使用 Three.js。
+- 最低 iOS 18 使用 `UIViewRepresentable` 在 Rendering Service adapter 中封装 `WKWebView`。SwiftUI 继续拥有页面、原生手势/无障碍控件和文案；Observation/ViewModel 继续拥有状态；WebView 只是一块可替换画布。
+- 首个候选固定 `three@0.185.1` 和 `WebGLRenderer`/WebGL 2。HTML、JavaScript、shader、解码器与允许的 addon 必须锁版、随 App 离线打包；不得从 CDN、远程页面或后端下载并执行代码。
+- Swift Service 负责认证、媒体下载、hash/尺寸校验、缓存和删除；JavaScript 只通过版本化 bridge 与受控 local scheme 使用临时 opaque asset ID，不接收 token、签名 URL、对象 key、用户 ID、真实路径或 base64 媒体。
+- WebKit 使用非持久数据存储、严格 CSP 和外联/导航/弹窗/下载阻断。Web Storage 不保存业务数据；Release 不含 sourcemap且关闭 inspector。
+- Reduce Motion、VoiceOver 偏好、WebGL 不可用、context lost、WebContent 终止、低电量、热压力或内存告警时停止并释放 renderer，显示 SwiftUI 静态图及原生上一/下一操作。
+- 实施前必须通过原生 renderer 与 Three.js 的隔离 POC。验证包含安装包增量、冷启动、触摸到显示、hitch、App + WebContent + GPU 总内存、能耗、热状态、离线、零运行时外联、无障碍、删除和供应链；没有可测增量价值时不引入 Three.js。
+
+完整边界见 [`../docs/design/01-技术选型.md`](../docs/design/01-技术选型.md)、[`../docs/design/08-动态预览设计.md`](../docs/design/08-动态预览设计.md) 与 [`../docs/design/11-OOTD权限隐私与安全设计.md`](../docs/design/11-OOTD权限隐私与安全设计.md)。当前仓库尚未进入 Three.js 实施切片，因此不创建 `package.json`、lockfile、bundle 或占位 renderer。
 
 ## Swagger/OpenAPI Client 生成
 
@@ -77,7 +89,7 @@ xcodebuild -project ios/ThenApp.xcodeproj \
 
 ## 历史生活管理实现参考（待迁移）
 
-以下记录描述当前工作区中的旧生活管理实现，用于保护未提交代码和数据库升级夹具，不再是 OOTD 产品设计事实源。新功能必须遵循 [`../docs/design/01-技术选型.md`](../docs/design/01-技术选型.md) 与 10–18 号 OOTD 设计；完成数据保留决策后，旧 Feature、Data、Services、migration 和测试应在同一迁移中成组移除。
+以下记录描述当前工作区中的旧生活管理实现，用于保护未提交代码和数据库升级夹具，不再是 OOTD 产品设计事实源。新功能必须遵循 [`../docs/design/01-技术选型.md`](../docs/design/01-技术选型.md) 与 03–12 号 OOTD 设计；完成数据保留决策后，旧 Feature、Data、Services、migration 和测试应在同一迁移中成组移除。
 
 - 生产数据库位于 App 的 Application Support/ThenApp 目录，使用 `DatabasePool`、WAL、外键和 5 秒 busy timeout。
 - 数据库目录、主文件、WAL 与 SHM 使用 `completeUntilFirstUserAuthentication` 文件保护，以兼顾锁屏后的主动行程恢复写入；生产和 Debug UI 测试路径每次打开都复用同一保护修复实现。
