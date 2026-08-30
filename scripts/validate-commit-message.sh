@@ -36,7 +36,7 @@ if ! printf '%s\n' "$subject" | grep -Eq "$subject_pattern"; then
 scope：必填，只能使用小写字母、数字和单个连字符分段
 冒号后：必须保留一个空格，并填写明确描述
 
-示例：feat(accounting): 新增手动记账入口
+示例：feat(wardrobe): 新增手工录入衣物入口
 EOF
     exit 1
 fi

@@ -6,7 +6,7 @@
 
 1. 先阅读任务对应的 PRD、设计、计划和验收文档。
 2. 运行 `scripts/verify-toolchain.sh`，确认本机工具链与固定基线一致。
-3. 从 `main` 创建短周期分支，推荐使用 `<type>/<short-name>`，例如 `feat/manual-accounting`、`fix/calendar-timezone` 或 `docs/commit-convention`。
+3. 从 `main` 创建短周期分支，推荐使用 `<type>/<short-name>`，例如 `feat/wardrobe-import`、`fix/tryon-retry` 或 `docs/commit-convention`。
 4. 使用小而聚焦的提交，提交标题和 Pull Request 标题必须遵循下方 Git 提交规范。
 5. 提交 Pull Request 前运行与风险匹配的测试和生成检查。
 6. Pull Request 说明应包含变更内容、选择原因、验证方式、用户影响与已知限制。
@@ -52,10 +52,10 @@ type(scope): subject
 | 类别 | Scope |
 | --- | --- |
 | 技术边界 | `ios`、`backend`、`openapi`、`db`、`docs`、`repo`、`ci`、`deps`、`security` |
-| 业务领域 | `accounting`、`calendar`、`trip`、`outfit`、`sync`、`auth` |
+| 业务领域 | `avatar`、`wardrobe`、`recommendation`、`tryon`、`outfit`、`media`、`auth` |
 
 - 只影响单个平台时使用技术 scope，例如 `fix(ios)`。
-- 同时影响 iOS、后端和契约的完整业务变化，使用业务 scope，例如 `feat(accounting)`。
+- 同时影响 iOS、后端和契约的完整业务变化，使用业务 scope，例如 `feat(tryon)`。
 - 纯 OpenAPI 契约变化使用 `openapi`；数据库结构变化使用 `db`。
 - 确需新增 scope 时，使用可长期复用的英文小写 kebab-case，并在本文件中补充定义。
 - 如果无法选出唯一 scope，优先拆分提交；确实不可拆分的仓库级调整使用 `repo`，不得使用 `all` 或逗号分隔多个 scope。
@@ -63,18 +63,18 @@ type(scope): subject
 ### 正确示例
 
 ```text
-feat(accounting): 新增手动记账入口
-fix(calendar): 修复跨时区全天事件重复
+feat(wardrobe): 新增手工录入衣物入口
+fix(tryon): 避免迟到结果覆盖取消状态
 docs(repo): 补充 Git 提交规范
-refactor(backend): 明确账务服务事务边界
+refactor(backend): 明确生成任务事务边界
 build(deps): 固定 GRDB 依赖版本
-revert(backend): 回退账务幂等处理改动
+revert(backend): 回退生成任务幂等改动
 ```
 
 以下标题不合规：
 
 ```text
-feat: 新增记账入口                 # 缺少 scope
+feat: 新增衣物入口                 # 缺少 scope
 Feat(ios): 新增页面                # type 不是小写
 feat(ios):新增页面                 # 冒号后缺少空格
 update code                        # 缺少完整结构且描述模糊
@@ -100,7 +100,7 @@ git config --local core.hooksPath .githooks
 之后 `git commit` 会通过 `.githooks/commit-msg` 自动校验标题。也可以直接验证一条标题：
 
 ```sh
-scripts/validate-commit-message.sh --message "feat(accounting): 新增手动记账入口"
+scripts/validate-commit-message.sh --message "feat(wardrobe): 新增手工录入衣物入口"
 ```
 
 未来 CI 必须使用同一校验脚本检查 Pull Request 范围内的提交，避免本地 hook 被跳过后产生不同规则。
@@ -110,11 +110,12 @@ scripts/validate-commit-message.sh --message "feat(accounting): 新增手动记�
 - 用户可见项目名使用“于是”；仓库名使用 `then`；iOS 技术标识使用 `ThenApp`。
 - 工具链、依赖、供应商或最低系统版本变更必须先更新 `docs/design/01-技术选型.md` 并说明迁移与回滚。
 - 接口变更必须先修改 `backend/openapi.yaml`，再重新生成并编译 iOS Client。
-- 数据库结构只在 `backend/schema.sql` 中定义。
+- PostgreSQL 结构只由 `backend/migrations/*.sql` 与 `atlas.sum` 定义；生产禁止 GORM `AutoMigrate`。
 - 产品或架构行为变化时，同步更新 `docs/` 中的对应文档。
 
 ## 质量和安全
 
 - 不提交密钥、令牌、生产连接串或真实用户数据。
 - iOS 修改应通过构建和相关测试；Go 修改应通过 `gofmt`、`go test ./...` 和已配置的静态检查。
-- 记账、日历和精确位置数据按敏感信息处理，遵循最小收集、最短保留和可删除原则。
+- iOS 修改至少运行 `scripts/validate-ios-architecture.sh`；旧 `validate-p0-scope.sh` 只用于历史生活管理实现，不是 OOTD 发布门禁。
+- 人物与衣物图片、生成结果、穿着规律和认证信息按敏感数据处理，遵循最小收集、最短保留、目的分离和可验证删除原则。

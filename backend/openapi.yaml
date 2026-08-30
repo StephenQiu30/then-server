@@ -1,9 +1,9 @@
 openapi: 3.1.2
 info:
-  title: 于是 API
-  version: 0.1.0
+  title: 于是 OOTD API
+  version: 0.2.0
   description: |
-    “于是”项目的唯一后端接口契约。
+    “于是”OOTD 产品的唯一后端接口契约。
     Swagger UI 与 iOS Swift Client 都使用此文档。
 servers:
   - url: /v1

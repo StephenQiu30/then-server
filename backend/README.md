@@ -1,60 +1,61 @@
-# Backend
+# OOTD Backend
 
-“于是”的 P1 账号与同步后端使用 Go 1.26.5 单 module、单进程架构：一个 `go.mod`、一个 `main.go` 和一个部署单元。HTTP 服务、定时任务和 Outbox 处理共用同一进程生命周期，不存在独立 API、Worker 或迁移程序。P0 是单设备本地 App，不依赖本服务。当前 `go.mod` 已创建，`main.go` 尚未创建。
-
-## 核心文件
-
-| 文件 | 用途 |
-| --- | --- |
-| `go.mod` | 唯一 Go module，language 1.26.0、toolchain go1.26.5。 |
-| `main.go` | 唯一进程入口，尚未创建。 |
-| `openapi.yaml` | OpenAPI 3.1.2 契约，供 Swagger UI、Go 服务端和 iOS Client 共用。 |
-| `schema.sql` | PostgreSQL 全部结构的唯一定义文件。 |
-
-## 内部分层
-
-- `internal/model`：纯 Go struct 和必要的领域不变量。
-- `internal/service`：用例编排与业务规则。
-- `internal/repository`：PostgreSQL 访问和事务。
-- `internal/transport`：HTTP 协议、鉴权上下文和响应映射。
-- `internal/platform`：日志、配置、时钟和外部服务适配。
-
-这些只是同一 Go module 中的必要分层，不是独立业务模块或可单独部署的服务。
-
-## POJO-like 纯 Go struct
-
-Go 没有 Java POJO 的继承模型，本项目用纯 Go struct 实现同样的简单对象原则：
-
-- struct 不持有 HTTP request、router、数据库连接或全局容器。
-- 数据对象不负责查库、认证、网络请求或框架生命周期。
-- HTTP request/response 使用手写纯 Go struct，transport 将其转换为领域 struct，不泄漏到 Service。
-- 只在语义不同时创建额外映射类型，避免无意义的 DTO 重复。
-
-## Swagger/OpenAPI
-
-Swagger UI 只展示 `openapi.yaml`，不另外维护 Swagger 注解或第二份契约。后端创建 HTTP 入口后提供：
-
-- `GET /swagger/`：开发和测试环境中的 Swagger UI。
-- `GET /swagger/openapi.yaml`：通过 Go `embed` 直接提供当前部署的 `openapi.yaml`。
-
-Go 后端不从 OpenAPI 生成 server、DTO 或额外 API 文件。Handler 与 request/response struct 手写，并通过 contract test 保证与 `openapi.yaml` 一致。只有 iOS 客户端从这份契约生成代码。
-
-## 数据库
-
-`schema.sql` 集中定义 PostgreSQL 结构，不创建 `db/migrations` 或 `db/queries` 目录。P1 首版服务端使用 Atlas Community 可管理的 enum、table、column、constraint、index 和 comment，不使用 extension、function、trigger、RLS 或 seed DML。
-
-schema 变更需要先审查数据兼容性，并在 `docs/plan/` 记录对已有数据的转换、验证和回滚方案。应用启动时不得未经审核自动修改生产库。
-
-空库、本地与测试使用 `psql --single-transaction` 初始化。已有环境使用专用数据库，先以 Atlas Community 1.3.0 和 `--schema public --dry-run` 计算差异并人工评审；任何 `DROP` 默认阻断，生产禁止 `--auto-approve`。详细命令和限制见 [`../docs/design/01-技术选型.md`](../docs/design/01-技术选型.md)。
+OOTD 后端采用 Go 1.26.5 模块化单体：一个 `go.mod`、一个 `main.go`、一个 OCI 镜像。相同二进制通过 `APP_ROLE=api|worker|all` 运行 Gin API 或异步 worker；生产可以分别扩缩，但不拆业务微服务。
 
 ## 固定技术栈
 
-- Go 1.26.5，`net/http` + chi v5.3.1
-- OpenAPI 3.1.2 + Swagger UI v5.32.12
-- PostgreSQL major 18（本地/CI `postgres:18.4`）+ pgx/pgxpool v5.10.0
-- kin-openapi v0.146.0 contract test；不生成 Go server/DTO
-- PostgreSQL Outbox/Jobs（同进程后台循环）
-- `log/slog` JSON + OpenTelemetry Go v1.45.0/otelhttp v0.70.0
-- Testcontainers for Go v0.44.0 + `postgres:18.4`
+- Gin `v1.12.0`
+- GORM `v1.31.2` Generics + PostgreSQL driver `v1.6.2`
+- PostgreSQL 18；Atlas `v1.3.0` versioned SQL migrations
+- RabbitMQ `4.3.5` quorum queues + `amqp091-go v1.14.0`
+- Redis 8.10 + `go-redis/v9 v9.22.0`
+- 私有 S3-compatible 对象存储
+- OpenAPI 3.1.2、kin-openapi `v0.149.0`
+- OpenTelemetry Go `v1.46.0`、otelgin `v0.71.0`
+- Testcontainers for Go `v0.44.0`
+- FFmpeg `8.1.2`
 
-创建 Go 程序入口后，在此补充本地启动、环境变量、测试和部署命令。完整选型见 [`../docs/design/01-技术选型.md`](../docs/design/01-技术选型.md)。
+精确边界和版本事实源见 [`../docs/design/01-技术选型.md`](../docs/design/01-技术选型.md)，模块与进程设计见 [`../docs/design/02-后端架构.md`](../docs/design/02-后端架构.md)，异步细节见 [`../docs/design/17-OOTD服务端与异步任务设计.md`](../docs/design/17-OOTD服务端与异步任务设计.md)。
+
+## 当前文件
+
+| 文件 | 用途 |
+| --- | --- |
+| `go.mod` | 唯一 Go module 与 Go toolchain；运行时代码建立后再由实际 import 固定依赖。 |
+| `openapi.yaml` | iOS Client、Go contract test 和 Swagger UI 共用的唯一契约。 |
+| `migrations/` | Atlas versioned SQL 事实源；当前等待首个已批准数据模型。 |
+
+旧的空 `schema.sql` 已删除，不能与 migration 目录并行恢复。GORM model 是运行时映射，不是生产 schema 管理器。
+
+## 目标结构
+
+```text
+backend/
+├── main.go
+├── go.mod
+├── go.sum
+├── openapi.yaml
+├── atlas.hcl
+├── migrations/
+└── internal/
+    ├── model/
+    ├── service/
+    ├── repository/
+    ├── transport/
+    ├── worker/
+    └── platform/
+```
+
+不要为了填满结构创建空目录。第一项后端实现应先完成鉴权、配置、健康检查、数据库连接和 migration 验证，再增加媒体与生成任务。
+
+## 核心约束
+
+- Handler 只处理 HTTP；Service 承担业务规则；Repository 独占 GORM/raw SQL。
+- GORM 使用 Generics API，生产禁止 `AutoMigrate`。
+- 跨表业务写入、幂等、配额和 Outbox 在同一个 PostgreSQL 事务中提交。
+- RabbitMQ 消息不携带图片、签名 URL、令牌或敏感正文。
+- Redis 不是业务事实源，也不是任务队列。
+- API 与 worker 的所有 I/O 都传递 `context.Context`，支持超时、取消和优雅退出。
+- 日志不得记录人物/衣物图片 URL、访问令牌、用户提示词或供应商正文。
+
+当前尚无 Go 运行时代码，因此没有把未使用依赖伪造进 `go.mod`。实现某组件时必须按技术基线精确加入依赖并提交 `go.sum`，随后运行 `go test ./...`、`go vet ./...` 和集成测试。
