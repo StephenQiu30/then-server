@@ -2,7 +2,7 @@
 
 ## 状态
 
-已批准，2026-08-30。关联 [`../prd/10-OOTD产品需求.md`](../prd/10-OOTD产品需求.md)、[`01-技术选型.md`](01-技术选型.md)、[`02-后端架构.md`](02-后端架构.md) 与 [`../plan/10-OOTD产品实施计划.md`](../plan/10-OOTD产品实施计划.md)。
+已批准，2026-08-30。直接需求为 [`../prd/19-历史数据迁移需求.md`](../prd/19-历史数据迁移需求.md)，产品总纲为 [`../prd/10-OOTD产品需求.md`](../prd/10-OOTD产品需求.md)；同时关联 [`01-技术选型.md`](01-技术选型.md)、[`02-后端架构.md`](02-后端架构.md) 与 [`../plan/10-OOTD产品实施计划.md`](../plan/10-OOTD产品实施计划.md)。
 
 本文只负责旧生活管理实现到 OOTD 产品基线的清理、冻结和迁移，不重复定义具体 OOTD 功能。详细历史仍由 Git 保存，不通过删除历史决策掩盖产品转向。
 
@@ -27,9 +27,9 @@
 
 | 类别 | 现状 | 决策 |
 | --- | --- | --- |
-| 产品事实源 | 旧生活管理 PRD 与 OOTD 设计同时被描述为当前 | PRD 10 成为当前需求；旧 PRD 03 与 03–09 号设计仅作历史参考 |
+| 产品事实源 | 旧生活管理 PRD 与 OOTD 设计同时被描述为当前 | PRD 10 为产品总纲，11–19 为单功能需求；旧 PRD 03 仅作历史参考，旧生活管理设计已移出工作树并保留在 Git 历史 |
 | 技术事实源 | chi/pgx/schema.sql/no MQ 与 Gin/GORM/Atlas/RabbitMQ 并存 | 01 与 02 号设计统一为唯一当前基线 |
-| iOS UI | 工程已使用 SwiftUI，但规范只说“主要使用” | 固定所有产品页面使用 SwiftUI + Observation；UIKit 仅系统桥接 |
+| iOS UI | 工程已使用 SwiftUI，但规范只说“主要使用” | 固定所有产品页面使用 SwiftUI + Observation；UIKit/WebKit 仅限系统能力或经批准的局部图形 renderer adapter，不形成第二套页面架构 |
 | Xcode 工程 | 存在 SDK 绝对路径 framework 与悬空 plist 引用 | 直接删除无业务语义的引用，并用构建验证 |
 | 服务端 schema | 空 `backend/schema.sql` 仍被称为事实源 | 删除空壳，改为 Atlas versioned migration 目录 |
 | 旧业务 Feature | Ledger、Calendar、Travel、Life、Today、Profile 仍组成五 Tab | 冻结；数据策略批准后按完整垂直切片成组移除 |
@@ -118,8 +118,8 @@ ThenApp
 
 ### 阶段 A：事实源收口
 
-- PRD 10、01/02 与 10–19 号设计进入当前索引。
-- 旧 PRD、03–09 号设计、旧计划与验收增加历史状态提示并退出当前索引。
+- PRD 10、11–19 号单功能 PRD 与 01–12 号设计进入当前索引，并显式维护 PRD/design 映射。
+- 旧 PRD、旧计划与验收增加历史状态提示并退出当前索引；旧生活管理设计从工作树删除，详细内容保留在 Git 历史。
 - 根规范、README、iOS/backend README 与 OpenAPI 元信息一致。
 
 ### 阶段 B：建立 OOTD shell

@@ -3,20 +3,20 @@
 ## 文档状态与适用边界
 
 - 状态：`approved`，OOTD 权限、隐私与安全基线已批准，2026-08-30。
-- 关联需求：[`../prd/10-OOTD产品需求.md`](../prd/10-OOTD产品需求.md) 是当前产品需求事实源。本文是工程与产品安全基线，不替代隐私政策、供应商合同或具体司法辖区的法律意见。
-- 基线声明：本地无照片路径和端侧照片处理可按计划实施；照片上传、第三方 AI、遥测、跨境处理与云端分享是条件能力，只有数据清单、供应商准入、区域、训练禁用、保留/删除、上线合规与 feature flag 门禁通过后才能处理真实用户数据。技术事实源为 [`01-技术选型.md`](01-技术选型.md) 和 [`17-OOTD服务端与异步任务设计.md`](17-OOTD服务端与异步任务设计.md)。
+- 关联需求：[`../prd/18-隐私与数据控制需求.md`](../prd/18-隐私与数据控制需求.md) 是本功能直接需求；[`../prd/10-OOTD产品需求.md`](../prd/10-OOTD产品需求.md) 是产品总纲。本文是工程与产品安全基线，不替代隐私政策、供应商合同或具体司法辖区的法律意见。
+- 基线声明：本地无照片路径和端侧照片处理可按计划实施；照片上传、第三方 AI、遥测、跨境处理与云端分享是条件能力，只有数据清单、供应商准入、区域、训练禁用、保留/删除、上线合规与 feature flag 门禁通过后才能处理真实用户数据。技术事实源为 [`01-技术选型.md`](01-技术选型.md) 和 [`10-OOTD服务端与异步任务设计.md`](10-OOTD服务端与异步任务设计.md)。
 - 适用范围：OOTD 能力中的人物/面部/身体照片、衣物图片、数字形象、虚拟试穿、动态预览、衣橱元数据、第三方 AI 处理、存储、日志、缓存、分享和删除。
 
 本文与以下已批准设计共同实施：
 
-- [`10-OOTD产品总体设计.md`](10-OOTD产品总体设计.md)
-- [`11-数字形象与照片采集设计.md`](11-数字形象与照片采集设计.md)
-- [`12-数字衣橱与衣物录入设计.md`](12-数字衣橱与衣物录入设计.md)
-- [`13-穿搭推荐设计.md`](13-穿搭推荐设计.md)
-- [`14-AI虚拟试穿设计.md`](14-AI虚拟试穿设计.md)
-- [`15-动态预览设计.md`](15-动态预览设计.md)
-- [`16-穿搭记录与反馈设计.md`](16-穿搭记录与反馈设计.md)
-- [`17-OOTD服务端与异步任务设计.md`](17-OOTD服务端与异步任务设计.md)
+- [`03-OOTD产品总体设计.md`](03-OOTD产品总体设计.md)
+- [`04-数字形象与照片采集设计.md`](04-数字形象与照片采集设计.md)
+- [`05-数字衣橱与衣物录入设计.md`](05-数字衣橱与衣物录入设计.md)
+- [`06-穿搭推荐设计.md`](06-穿搭推荐设计.md)
+- [`07-AI虚拟试穿设计.md`](07-AI虚拟试穿设计.md)
+- [`08-动态预览设计.md`](08-动态预览设计.md)
+- [`09-穿搭记录与反馈设计.md`](09-穿搭记录与反馈设计.md)
+- [`10-OOTD服务端与异步任务设计.md`](10-OOTD服务端与异步任务设计.md)
 
 ## 目标与约束
 
@@ -165,6 +165,20 @@
 7. 本地预览和服务端资产使用不同 ID，避免把系统相册标识上传。
 
 人物质量检查可以在本地运行。不得因为端侧算法失败而静默上传更大原图；用户应看到重试或明确同意的云端路径。
+
+### Three.js 与本地 Web renderer 安全边界
+
+已批准 design/执行计划可以在 SwiftUI 页面内使用 Three.js 作为局部动态图形 renderer，但 WebKit/JavaScript 不因此成为新的数据处理方、网络客户端或事实源：
+
+1. Three.js、HTML、JavaScript、shader、WASM 解码器和允许的 addon 必须锁定版本、构建期审查并随 App 离线打包；禁止 CDN、远程 import、远程页面、运行时下载代码和热更新。
+2. Release 使用严格 CSP，禁止 `eval`、`new Function`、inline 任意代码、HTTP(S) 子资源、外部导航、弹窗与下载；`WKNavigationDelegate`、content rule 和 scheme handler 共同关闭失败，不能只依赖页面约定。
+3. `WKWebsiteDataStore` 使用非持久配置。cookies、LocalStorage、IndexedDB、Web cache 和 JavaScript 内存均不得作为媒体、同意、任务、缓存索引、删除状态或恢复事实源。
+4. 原生 Service 完成认证、下载、媒体类型/尺寸/hash 校验、Data Protection 与删除，只通过受控本地 scheme 向当前 renderer session 暴露 opaque asset ID；scheme handler 拒绝路径穿越、未知 MIME、超限资源、外部 URI 和已撤销资产。
+5. JavaScript 不接收令牌、签名 URL、对象 key、用户 ID、真实文件路径、Provider prompt、人物/衣物描述或 base64 媒体正文，也不直接调用 API、对象存储、分析或日志服务。
+6. Swift—JavaScript bridge 使用单一、版本化、大小/深度/枚举受限的结构化协议；只接收主 frame 的已批准消息类型，不使用用户或供应商文本拼接 `evaluateJavaScript`，生产错误只回传稳定错误码。
+7. bundle、lockfile、许可证/NOTICE、SBOM、构建工具版本与产物 hash 进入供应链审查；Release 不包含 sourcemap，生产 Web Inspector 关闭。
+8. 来源删除、退出账号、页面退出、后台、内存告警、WebGL context lost 或 WebContent 终止时，撤销 scheme 映射，停止 loop，移除 message handler，并释放纹理、blob、Web 数据和原生临时资产；不能从 Web 状态恢复已删除内容。
+9. canvas 不承载关键无障碍或同意语义。Reduce Motion、VoiceOver 偏好、GPU 不可用或安全配置失败时不创建或销毁 renderer，保留 SwiftUI 静态内容与原生操作。
 
 ## 对象存储与传输
 
@@ -375,6 +389,9 @@ requested
 | 签名 URL 泄露 | URL 进入日志、剪贴板、崩溃报告或第三方请求历史 | 极短 TTL、方法和对象绑定、禁止日志、单独供应商 URL、到期与撤销测试 |
 | 公共对象误配置 | bucket/CDN ACL 使照片可匿名读取 | 阻断公共访问、IaC policy、持续配置扫描、匿名读取验收 |
 | 恶意媒体 | polyglot、解码炸弹、畸形 ICC/EXIF、超大视频耗尽资源 | MIME sniff、像素/帧/时长/字节硬限、隔离解码、超时和资源配额 |
+| Web renderer 外联或供应链替换 | Three.js 页面从 CDN、远程脚本、外部纹理或热更新加载未审查代码/内容 | 离线锁版 bundle、CSP、content rule、导航阻断、零网络测试、lockfile/SBOM/hash 与许可证审查 |
+| JavaScript bridge 注入或越权 | 拼接用户文本执行脚本，伪造消息读取资产或触发业务动作 | 版本化结构消息、主 frame、类型/大小/状态校验、opaque asset ID、稳定错误码、无任意脚本执行 |
+| Web/GPU 资源耗尽 | 恶意或异常场景持续 RAF、堆积纹理或反复重启 WebContent | 帧/纹理/像素上限、滑动窗口、后台/热压力停止、显式 dispose、最多重建一次、静态降级与总进程预算 |
 | 回调伪造和重放 | 攻击者伪造供应商完成事件替换结果 | HMAC/公钥签名、时间窗、nonce、provider job ID 和状态机校验 |
 | 重复消息与重复计费 | 队列 at-least-once 或用户连点多次 | Idempotency-Key、输入快照哈希、provider job ID 持久化和唯一约束 |
 | 删除竞态 | 删除进行中 worker 仍生成新派生资产 | 根资产 tombstone、创建前检查、Job 取消、删除后再次遍历验证 |
@@ -495,6 +512,15 @@ requested
 4. bucket、CDN 和对象 ACL 配置测试证明不存在公开读写。
 5. 未 complete、未扫描或已删除的 MediaAsset 不能被生成任务引用。
 6. 签名 URL、对象 key 和原始文件名不会进入数据库业务字段、队列消息、日志或崩溃报告。
+
+### 本地 Web renderer
+
+1. 若功能选择 Three.js，Release 包只包含精确锁版的本地 bundle、允许 addon 与许可证；无 sourcemap、生产 inspector、CDN、远程 import、远程 shader/WASM 或外部导航。
+2. 飞行模式和抓包环境证明 renderer 启动及运行没有 HTTP(S)、DNS、分析或 Provider 请求；未缓存媒体只回退原生静态内容。
+3. CSP、content rule、navigation delegate 与 scheme handler 负向夹具拒绝外部 URL、路径穿越、未知 MIME、超限资源、已撤销资产、非法消息版本/类型/大小和非主 frame 消息。
+4. Web Storage/cookies/缓存保持为空；JavaScript bridge、WebKit 错误、崩溃报告和低频指标不含 token、签名 URL、对象 key、用户 ID、路径、人物/衣物正文、base64 或 stack。
+5. 删除、退出、后台、context lost 和 WebContent 终止后，纹理、blob、scheme 映射、message handler 与临时文件均不可恢复；最多自动重建一次，连续失败保持 SwiftUI 静态图。
+6. 真机资源报告合并 App、WebContent 与 GPU 相关进程；验证 Reduce Motion 不启动连续 loop，VoiceOver 可完全使用原生说明和上一/下一/删除操作。
 
 ### 授权与威胁
 
