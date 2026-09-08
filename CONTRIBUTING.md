@@ -116,7 +116,7 @@ scripts/validate-commit-message.sh --message "feat(wardrobe): 新增手工录入
 - 接口变更必须先修改 `backend/openapi.yaml`，再重新生成并编译 iOS Client。
 - PostgreSQL 结构只由 `backend/migrations/*.sql` 与 `atlas.sum` 定义；生产禁止 GORM `AutoMigrate`。
 - 产品或架构行为变化时，同步更新 `docs/` 中的对应文档。
-- 交付按 PRD → design → execution plan → implementation → acceptance 推进。执行计划仅为已排期的可独立交付切片创建，并在同一文件中统一范围契约、任务、依赖与完成证据；不得用任务表反向替代产品或设计决策。
+- 交付按 design → PRD → execution plan → implementation → acceptance 推进。执行计划仅为已排期的可独立交付切片创建，并在同一文件中统一范围契约、任务、依赖与完成证据；不得用任务表反向替代产品或设计决策。
 
 ## 质量和安全
 
@@ -124,3 +124,5 @@ scripts/validate-commit-message.sh --message "feat(wardrobe): 新增手工录入
 - iOS 修改应通过构建和相关测试；Go 修改应通过 `gofmt`、`go test ./...` 和已配置的静态检查。
 - iOS 修改至少运行 `scripts/validate-ios-architecture.sh`；旧 `validate-p0-scope.sh` 只用于历史生活管理实现，不是 OOTD 发布门禁。
 - 人物与衣物图片、生成结果、穿着规律和认证信息按敏感数据处理，遵循最小收集、最短保留、目的分离和可验证删除原则。
+
+2026-09-08 当前实施顺序按用户明确要求为 design → PRD → plan → implementation → acceptance，替代此前 PRD 先行的执行顺序；目录职责、需求边界与已批准契约要求不变。

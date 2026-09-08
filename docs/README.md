@@ -9,18 +9,18 @@
 - [`plan/README.md`](plan/README.md)：产品级实施计划，以及统一契约、任务、依赖与证据的单切片执行计划。
 - [`acceptance/README.md`](acceptance/README.md)：可执行验收标准和证据。
 
-一个功能从提出到交付，遵循 PRD → design → execution plan → implementation → acceptance。主要功能各自维护一份 PRD 和 design；切片排入近期产品计划后、编码前创建一份 `FF-SS` 执行计划，在同一文件中固定范围契约、任务与完成证据。当前产品是 OOTD；旧记账、日历与出行文档只用于解释历史实现和数据迁移，不再指导新功能。
+一个功能从提出到交付，遵循 design → PRD → execution plan → implementation → acceptance。主要功能各自维护一份 PRD 和 design；切片排入近期产品计划后、编码前创建一份 `FF-SS` 执行计划，在同一文件中固定范围契约、任务与完成证据。当前产品是 OOTD；旧记账、日历与出行文档只用于解释历史实现和数据迁移，不再指导新功能。
 
 ## 后端需求到交付的阅读路径
 
 | SOP 环节 | 对应文件 | 本文档负责回答 |
 | --- | --- | --- |
-| PRD：需求 | [PRD 17](prd/17-云端生成与任务管理需求.md#后端服务需求与阶段边界)、[PRD 18](prd/18-隐私与数据控制需求.md) | 为什么需要服务、何时启用、云数据的权限与删除承诺 |
 | design：方案 | [Design 01](design/01-技术选型.md)、[Design 02](design/02-后端架构.md#后端方案总览)、[Design 10](design/10-OOTD服务端与异步任务设计.md) | 技术选型、结构/逐文件职责/SOP、任务与数据流 |
+| PRD：需求 | [PRD 17](prd/17-云端生成与任务管理需求.md#后端服务需求与阶段边界)、[PRD 18](prd/18-隐私与数据控制需求.md) | 为什么需要服务、何时启用、云数据的权限与删除承诺 |
 | plan：近期工作 | [产品实施计划](plan/10-OOTD产品实施计划.md)、[17-01](plan/17-01-后端服务启动与健康契约执行计划.md)、[17-07](plan/17-07-后端容器构建与运行验证执行计划.md) | 已授权范围、任务、依赖、阻断和完成证据 |
 | acceptance：验收 | [验收 17](acceptance/17-云端生成与任务管理验收.md) | 实际运行结果、环境、代码版本及没有验证的事项 |
 
-OpenAPI 与 migration 仍分别留在 backend 的机器事实源位置，不复制到 docs。需求文档不写 ORM/目录实现；设计不充当任务状态表；切片完成不等于生产功能上线。当前主线是本地 3D 穿搭，后端已实现运行与容器基线；最新 Swift 编译和 Docker 清理复验仍有阻断，云业务仍分期。
+OpenAPI 与 migration 仍分别留在 backend 的机器事实源位置，不复制到 docs。需求文档不写 ORM/目录实现；设计不充当任务状态表；切片完成不等于生产功能上线。当前主线是本地 3D 穿搭，后端已实现运行与容器基线；Docker 清理修复及最终复验已通过，Swift 编译仍有独立阻断，云业务仍分期。
 
 ## 2026-09-08 方向确认与研究入口
 
@@ -84,3 +84,5 @@ OpenAPI 与 migration 仍分别留在 backend 的机器事实源位置，不复�
 - 单切片执行计划使用 `plan/FF-SS-中文名称执行计划.md`；`FF` 对应单功能 PRD 编号，`SS` 在该功能内递增，因此 PRD 11 对应 design 04 的首个切片仍为 `11-01`。
 - 工具要求的 `README.md`、`AGENTS.md`、`openapi.yaml`、`atlas.hcl` 与 `atlas.sum` 等固定文件名不翻译、不复制。
 - 已发布文档不为排序随意改号；替代关系写在当前入口和新文档状态中。
+
+2026-09-08 当前实施顺序按用户明确要求为 design → PRD → plan → implementation → acceptance，替代此前 PRD 先行的执行顺序；目录职责、需求边界与已批准契约要求不变。

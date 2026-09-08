@@ -5,6 +5,7 @@ package tests
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"net"
 	"net/http"
 	"net/url"
@@ -12,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/errdefs"
 	dockercontainer "github.com/moby/moby/api/types/container"
+	dockerclient "github.com/moby/moby/client"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -35,8 +38,29 @@ func TestContainerRuntime(t *testing.T) {
 	}
 	// Resolve the mutable local tag once; every test container uses this immutable ID.
 	image = info.ID
+	var failed testcontainers.Container
+	t.Run("failed startup cleanup", func(t *testing.T) {
+		var err error
+		failed, err = createTestContainer(t, ctx, testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				Image:      image,
+				Env:        map[string]string{"APP_ROLE": "worker"},
+				WaitingFor: wait.ForLog("this-startup-marker-must-never-exist").WithStartupTimeout(500 * time.Millisecond),
+			}, Started: true,
+		})
+		if err == nil || failed == nil {
+			t.Fatal("fixture must fail after creating a container")
+		}
+	})
+	if failed == nil {
+		t.Fatal("no failed container to verify")
+	}
+	_, inspectErr := docker.ContainerInspect(ctx, failed.GetContainerID(), dockerclient.ContainerInspectOptions{})
+	if !errors.Is(inspectErr, errdefs.ErrNotFound) {
+		t.Fatalf("failed startup container cleanup was not confirmed (%T): %v", inspectErr, inspectErr)
+	}
 	password := rand.Text()
-	db, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+	db, err := createTestContainer(t, ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636",
 			Env:          map[string]string{"POSTGRES_DB": "then_test", "POSTGRES_USER": "then_test", "POSTGRES_PASSWORD": password},
@@ -47,15 +71,6 @@ func TestContainerRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cleanup := func(c testcontainers.Container) {
-		t.Helper()
-		cleanupCtx, stop := context.WithTimeout(context.Background(), 20*time.Second)
-		defer stop()
-		if err := c.Terminate(cleanupCtx); err != nil {
-			t.Error(err)
-		}
-	}
-	defer cleanup(db)
 	host, err := db.Host(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +80,7 @@ func TestContainerRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	dsn := url.URL{Scheme: "postgres", User: url.UserPassword("then_test", password), Host: "127.0.0.1:5432", Path: "/then_test", RawQuery: "sslmode=disable"}
-	api, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+	api, err := createTestContainer(t, ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: image,
 			Env:   map[string]string{"DATABASE_URL": dsn.String(), "HTTP_ADDR": "0.0.0.0:8080", "APP_ROLE": "api"},
@@ -82,7 +97,6 @@ func TestContainerRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cleanup(api)
 	client := &http.Client{Timeout: time.Second}
 	base := "http://" + net.JoinHostPort(host, port.Port())
 	deadline := time.Now().Add(15 * time.Second)
@@ -127,11 +141,10 @@ func TestContainerRuntime(t *testing.T) {
 	}
 	for _, role := range []string{"worker", "all"} {
 		t.Run(role+" rejected", func(t *testing.T) {
-			unsupported, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{ContainerRequest: testcontainers.ContainerRequest{Image: image, Env: map[string]string{"APP_ROLE": role}}, Started: false})
+			unsupported, err := createTestContainer(t, ctx, testcontainers.GenericContainerRequest{ContainerRequest: testcontainers.ContainerRequest{Image: image, Env: map[string]string{"APP_ROLE": role}}, Started: false})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer cleanup(unsupported)
 			if err := unsupported.Start(ctx); err != nil {
 				t.Fatal(err)
 			}

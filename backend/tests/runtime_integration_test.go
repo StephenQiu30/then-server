@@ -33,7 +33,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	password := rand.Text()
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+	container, err := createTestContainer(t, ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636",
 			Env:          map[string]string{"POSTGRES_USER": "then_test", "POSTGRES_DB": "then_test", "POSTGRES_PASSWORD": password},
@@ -44,13 +44,6 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
-		defer stop()
-		if err := container.Terminate(cleanup); err != nil {
-			t.Error(err)
-		}
-	}()
 	host, err := container.Host(ctx)
 	if err != nil {
 		t.Fatal(err)
