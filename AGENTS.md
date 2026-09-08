@@ -10,7 +10,9 @@
 
 当前产品围绕以下闭环建设：
 
-- 通过一张本人 OOTD 照或手工方式建立数字形象与首批衣物。
+- 首版以无照片可调 3D 模板角色、兼容服装直接换装、手工/单件图衣橱、基础推荐、穿搭记录与隐私删除组成离线闭环。
+- 用户已于 2026-09-08 确认云端 AI 与多设备同步分期；首版不创建匿名云账号、不上传个人数据、不依赖生产后端或远程资产目录。
+- 本人 OOTD 照拆分和照片个性化按后续功能门禁建设，不是本地 3D 首版前置。
 - 以低录入成本逐步形成个人数字衣橱。
 - 基于真实拥有且当前可穿的衣物生成结构化、可解释、可局部调整的推荐。
 - 用户主动发起静态 AI 试穿；动态预览必须通过独立质量、成本、隐私和性能门禁。
@@ -20,7 +22,8 @@
 
 固定技术方向：
 
-- iOS：Xcode 26.6、Swift 6.3.3、最低 iOS 18，所有产品页面使用 SwiftUI + Observation。
+- iOS：Xcode 26.6、Swift 6.3.3、最低 iOS 26，所有产品页面使用 SwiftUI + Observation。
+- 原生 UI：采用 Apple Liquid Glass，优先系统导航、工具栏与玻璃按钮；衣物内容保持清晰背景，并支持减少透明度、减少动态效果及增强对比度。前后端分离通过 REST/OpenAPI 完成，不改变本地优先边界。2026-09-08 用户确认此方向及最低系统，替代原 iOS 18 基线。
 - 条件动态渲染：必要的 2.5D/3D 场景、着色器或粒子效果可以使用锁定版本的 Three.js，并通过系统 WebKit 作为 SwiftUI 页面内的局部渲染表面；不得形成第二套页面、导航、状态或网络架构。
 - 客户端数据：GRDB 7.11.1 + 系统 SQLite，本地优先、离线可用；媒体字节使用受保护文件，不存 SQLite BLOB。
 - API：REST + JSON，以 `backend/openapi.yaml` 的 OpenAPI 3.1.2 为唯一契约。
@@ -131,11 +134,11 @@
 
 - 简单转场、反馈、骨架屏和状态动效优先使用 SwiftUI。只有场景图、透视/深度合成、着色器、粒子或其他 GPU 效果确有产品价值，且原生方案无法以更低复杂度满足时，才允许在对应 design 和执行计划中选择 Three.js。
 - Three.js 只是 `DynamicPreviewRenderer` 等协议后的可替换渲染实现。SwiftUI 继续拥有页面、手势语义、用户文案、无障碍控件和生命周期；Observation/ViewModel 继续拥有状态，Swift/GRDB/服务端继续拥有任务、同意、缓存索引与删除事实。
-- 最低 iOS 18 使用 `UIViewRepresentable` 封装 `WKWebView`，适配器只能位于明确的 Rendering Service 边界。不得以远程网页、纯 H5 页面或 Web 路由替代 SwiftUI Feature。
+- 最低 iOS 26 使用 `UIViewRepresentable` 封装 `WKWebView`，适配器只能位于明确的 Rendering Service 边界。不得以远程网页、纯 H5 页面或 Web 路由替代 SwiftUI Feature。
 - HTML、JavaScript、着色器、解码器和 Three.js 必须锁定版本、随 App 离线打包并保留许可证、lockfile、SBOM 与产物哈希；生产运行时禁止 CDN、远程脚本、动态代码下载和热更新。
 - 原生层负责鉴权、媒体下载、hash/尺寸校验、Data Protection 与删除；JavaScript 只接收版本化、大小受限的结构化命令和不含敏感语义的临时资产句柄，不得持有令牌、签名 URL、对象 key、用户 ID 或任意文件路径。
 - WebKit 使用非持久数据存储、严格 CSP 与导航/弹窗/下载/外联阻断；禁止 `eval`、`new Function`、任意字符串拼接执行和生产 Web Inspector。渲染状态必须可丢弃，退出、后台、内存告警、WebContent 终止或 WebGL context lost 时释放纹理、几何体、handler 和临时数据。
-- Three.js 首个基线只允许 `WebGLRenderer`/WebGL 2；WebGPU、远程 addon、自由相机、真实人体 mesh、物理布料和实时 AR 需要重新评审。Reduce Motion、VoiceOver、低电量、热压力、GPU 不可用或任一渲染错误时，必须回退 SwiftUI 静态图及原生上一/下一操作。
+- Three.js 首个基线只允许 `WebGLRenderer`/WebGL 2；首版允许获批 POC 后使用原创可调模板 mesh、有限服装和受限转台，正式功能约束归 PRD 11/12 与 Design 04/05。WebGPU、远程 addon、自由相机、本人扫描/量体 mesh、物理布料和实时 AR 需要重新评审。Reduce Motion、VoiceOver、低电量、热压力、GPU 不可用或任一渲染错误时，必须回退 SwiftUI 静态图及原生上一/下一操作；全程静态不构成 3D 首版验收通过。
 - Three.js 进入产品代码前必须有对应 `FF-SS` 执行计划和隔离 POC，至少验证包体、冷启动、App 与 WebContent 合计内存、触摸到显示延迟、hitch、能耗、热状态、离线、进程终止、零非预期网络、无障碍、删除与供应链；不得为远期能力预建空实现。
 
 现有 Ledger、Calendar、Travel、Life、Today 与 Profile 目录属于历史实现。数据保留策略批准前冻结，不在其中增加 OOTD 功能；迁移时按 Feature、数据库 migration、资源与测试一起成组处理。
@@ -165,6 +168,7 @@
 
 ### 架构与运行形态
 
+- 编码规范与模块职责固定于 `docs/design/02-后端架构.md`，首版功能固定于 PRD 10，编码准入登记固定于产品实施计划。各切片先明确状态/数据/API/删除/失败/测试与迁移，再批准执行计划；技术选型固定不代表所有服务首版都启动。
 - 后端只使用一个 `go.mod`、一个 `main.go`、一个二进制与一个 OCI 镜像，不创建独立 module 或微服务仓库。
 - 同一二进制支持 `APP_ROLE=api|worker|all`。本地和集成测试可用 `all`；生产默认用同一镜像分别运行 API 与 worker。
 - 首版不引入微服务、Kubernetes、Kafka、服务网格、分布式事务或提前分库分表。

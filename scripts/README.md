@@ -6,7 +6,7 @@
 | --- | --- |
 | `verify-toolchain.sh` | 校验 Xcode、Swift、Go 与仓库固定工具链 |
 | `validate-commit-message.sh` | 校验 `type(scope): subject` 提交标题 |
-| `validate-ios-architecture.sh` | 校验 SwiftUI/Observation 唯一 UI 基线、iOS 18、Swift 6、GRDB/OpenAPI 锁版和 UIKit 桥接边界 |
+| `validate-ios-architecture.sh` | 校验 SwiftUI/Observation 唯一 UI 基线、iOS 26、Swift 6、GRDB/OpenAPI 锁版和 UIKit 桥接边界 |
 
 ## 历史生活管理门禁
 

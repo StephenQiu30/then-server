@@ -43,8 +43,11 @@ grep -q '"identity" : "swift-openapi-runtime"' "$package_file" \
 grep -q '"identity" : "swift-openapi-urlsession"' "$package_file" \
     || fail "Swift OpenAPI URLSession must remain locked"
 
-grep -q 'IPHONEOS_DEPLOYMENT_TARGET = 18.0;' "$project_file" \
-    || fail "minimum deployment target must remain iOS 18"
+grep -q 'IPHONEOS_DEPLOYMENT_TARGET = 26.0;' "$project_file" \
+    || fail "minimum deployment target must remain iOS 26"
+if grep 'IPHONEOS_DEPLOYMENT_TARGET =' "$project_file" | grep -vq 'IPHONEOS_DEPLOYMENT_TARGET = 26.0;'; then
+    fail "all explicit deployment targets must use iOS 26.0"
+fi
 grep -q 'SWIFT_VERSION = 6.0;' "$project_file" \
     || fail "Swift 6 language mode is required"
 grep -q 'SWIFT_STRICT_CONCURRENCY = complete;' "$project_file" \
@@ -93,7 +96,7 @@ printf '%s\n' \
     'iOS architecture verified:' \
     '- SwiftUI App lifecycle is the only product UI entry' \
     '- Observation/Swift Concurrency baseline has no prohibited alternative framework' \
-    '- iOS 18, Swift 6, strict concurrency and MainActor settings are present' \
+    '- iOS 26, Swift 6, strict concurrency and MainActor settings are present' \
     '- GRDB and Swift OpenAPI packages are locked' \
     '- UIKit imports remain limited to explicit system or rendering bridges' \
     '- WebKit, when present, remains isolated to an approved rendering adapter'

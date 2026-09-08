@@ -1,13 +1,13 @@
 # 于是
 
-“于是”正在从历史个人生活管理实现切换为一款仅面向 iOS 的 C 端 OOTD 穿搭产品。核心体验是：低成本建立数字衣橱，用真实拥有的衣物获得可解释、可局部调整的搭配，并通过可选 AI 试穿与实际穿着反馈形成长期闭环。
+“于是”正在从历史个人生活管理实现切换为一款仅面向 iOS 的 C 端 OOTD 穿搭产品。首版围绕可调 3D 模板角色、直接换装、真实衣橱、可解释推荐及实际穿着反馈形成离线闭环；SwiftUI 原生 Liquid Glass，最低 iOS 26。云端 AI 试穿和多设备同步分期启用，后端技术与编码规范预先固定。
 
 ## 当前状态
 
 | 范围 | 状态 |
 | --- | --- |
 | OOTD 产品需求 | 10 号产品总纲与 11–19 号单功能 PRD 已批准或按功能门禁批准 |
-| 产品与技术设计 | 01–12 号设计为连续的当前基线；旧生活管理设计已从工作树移除 |
+| 产品与技术设计 | 01–12 号设计为当前基线；13 号保留三维研究及待 POC 参数，首版范围已回写 PRD 11/12 与 Design 04/05 |
 | iOS 工程 | 现有工程可构建且已使用 SwiftUI + Observation；页面仍是旧生活管理实现，已冻结待成组迁移 |
 | OOTD Feature | M0 已建立 `11-01 照片输入与质量门` 隔离 POC 和 `19-01 历史发布事实与数据盘点` 只读计划；两者均未开始产品功能实现 |
 | Go 后端 | 技术与架构已固定，尚无运行时代码或业务 migration |
@@ -15,7 +15,7 @@
 
 ## 固定技术栈
 
-- iOS：Xcode 26.6、Swift 6.3.3、最低 iOS 18、SwiftUI + Observation、Swift Concurrency；必要的高级动态效果可在获批 POC 后使用本地锁版 Three.js/WebKit renderer，产品页面仍全部由 SwiftUI 承担。
+- iOS：Xcode 26.6、Swift 6.3.3、最低 iOS 26、SwiftUI + Observation、Swift Concurrency；必要的高级动态效果可在获批 POC 后使用本地锁版 Three.js/WebKit renderer，产品页面仍全部由 SwiftUI 承担。
 - 本地数据：GRDB 7.11.1 + SQLite；结构化数据本地优先，媒体保存在受保护的私有文件目录。
 - API：REST + JSON、OpenAPI 3.1.2；Apple Swift OpenAPI Generator 生成 iOS Client。
 - 后端：Go 1.26.5、Gin、GORM v2 Generics、PostgreSQL 18、Atlas versioned SQL。

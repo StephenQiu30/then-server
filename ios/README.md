@@ -1,6 +1,6 @@
 # iOS
 
-“于是”OOTD 客户端固定使用 Xcode 26.6、Swift 6.3.3 和 SwiftUI，最低支持 iOS 18。App 显示名暂时保留“于是”，内部 Xcode target 和 Swift module 保留 `ThenApp`。
+“于是”OOTD 客户端固定使用 Xcode 26.6、Swift 6.3.3 和 SwiftUI，最低支持 iOS 26。App 显示名暂时保留“于是”，内部 Xcode target 和 Swift module 保留 `ThenApp`。
 
 实现原则：
 
@@ -19,7 +19,7 @@
 ## 条件 Three.js 动态渲染
 
 - 普通按钮反馈、页面转场、加载状态和离散帧切换优先 SwiftUI。只有透视/深度合成、着色器、粒子或 scene graph 确有价值，并由对应 design 与 `FF-SS` 执行计划批准时，才可使用 Three.js。
-- 最低 iOS 18 使用 `UIViewRepresentable` 在 Rendering Service adapter 中封装 `WKWebView`。SwiftUI 继续拥有页面、原生手势/无障碍控件和文案；Observation/ViewModel 继续拥有状态；WebView 只是一块可替换画布。
+- 最低 iOS 26 使用 `UIViewRepresentable` 在 Rendering Service adapter 中封装 `WKWebView`。SwiftUI 继续拥有页面、原生手势/无障碍控件和文案；Observation/ViewModel 继续拥有状态；WebView 只是一块可替换画布。
 - 首个候选固定 `three@0.185.1` 和 `WebGLRenderer`/WebGL 2。HTML、JavaScript、shader、解码器与允许的 addon 必须锁版、随 App 离线打包；不得从 CDN、远程页面或后端下载并执行代码。
 - Swift Service 负责认证、媒体下载、hash/尺寸校验、缓存和删除；JavaScript 只通过版本化 bridge 与受控 local scheme 使用临时 opaque asset ID，不接收 token、签名 URL、对象 key、用户 ID、真实路径或 base64 媒体。
 - WebKit 使用非持久数据存储、严格 CSP 和外联/导航/弹窗/下载阻断。Web Storage 不保存业务数据；Release 不含 sourcemap且关闭 inspector。
