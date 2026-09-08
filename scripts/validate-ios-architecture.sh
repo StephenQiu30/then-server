@@ -4,9 +4,9 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=${1:-$(dirname -- "$script_dir")}
-source_root="$repo_root/ios/ThenApp"
-project_file="$repo_root/ios/ThenApp.xcodeproj/project.pbxproj"
-package_file="$repo_root/ios/ThenApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+source_root="$repo_root/app/ThenApp"
+project_file="$repo_root/app/ThenApp.xcodeproj/project.pbxproj"
+package_file="$repo_root/app/ThenApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
 app_entry="$source_root/App/ThenApp.swift"
 
 fail() {
@@ -14,7 +14,7 @@ fail() {
     exit 1
 }
 
-[ -d "$source_root" ] || fail "missing ios/ThenApp"
+[ -d "$source_root" ] || fail "missing app/ThenApp"
 [ -f "$project_file" ] || fail "missing project.pbxproj"
 [ -f "$package_file" ] || fail "missing Package.resolved"
 [ -f "$app_entry" ] || fail "missing SwiftUI app entry"

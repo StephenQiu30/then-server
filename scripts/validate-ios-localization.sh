@@ -23,10 +23,10 @@ if [[ ! -d "$REPOSITORY_ROOT" ]]; then
   fail "repository root does not exist: $REPOSITORY_ROOT"
 fi
 
-LOCALIZABLE_CATALOG="$REPOSITORY_ROOT/ios/ThenApp/Localizable.xcstrings"
-INFO_PLIST_CATALOG="$REPOSITORY_ROOT/ios/ThenApp/InfoPlist.xcstrings"
-INFO_PLIST="$REPOSITORY_ROOT/ios/ThenApp/Info.plist"
-PROJECT_FILE="$REPOSITORY_ROOT/ios/ThenApp.xcodeproj/project.pbxproj"
+LOCALIZABLE_CATALOG="$REPOSITORY_ROOT/app/ThenApp/Localizable.xcstrings"
+INFO_PLIST_CATALOG="$REPOSITORY_ROOT/app/ThenApp/InfoPlist.xcstrings"
+INFO_PLIST="$REPOSITORY_ROOT/app/ThenApp/Info.plist"
+PROJECT_FILE="$REPOSITORY_ROOT/app/ThenApp.xcodeproj/project.pbxproj"
 OPENAPI_FILE="$REPOSITORY_ROOT/backend/openapi.yaml"
 
 require_file "$LOCALIZABLE_CATALOG"
@@ -35,11 +35,11 @@ require_file "$INFO_PLIST"
 require_file "$PROJECT_FILE"
 require_file "$OPENAPI_FILE"
 
-if [[ $(find "$REPOSITORY_ROOT/ios/ThenApp" -type f -name '*.xcstrings' | wc -l | tr -d ' ') != 2 ]]; then
+if [[ $(find "$REPOSITORY_ROOT/app/ThenApp" -type f -name '*.xcstrings' | wc -l | tr -d ' ') != 2 ]]; then
   fail "ThenApp production source must contain exactly two string catalogs"
 fi
 
-if find "$REPOSITORY_ROOT/ios/ThenApp" -type f -name '*.strings' -print -quit | grep -q .; then
+if find "$REPOSITORY_ROOT/app/ThenApp" -type f -name '*.strings' -print -quit | grep -q .; then
   fail "handwritten .strings files are not allowed beside the approved catalogs"
 fi
 
@@ -174,7 +174,7 @@ EXPORT_ROOT="$TEMPORARY_ROOT/export"
 DERIVED_DATA_ROOT="$TEMPORARY_ROOT/DerivedData"
 mkdir -p "$EXPORT_ROOT"
 if ! xcodebuild -exportLocalizations \
-  -project "$WORKING_ROOT/ios/ThenApp.xcodeproj" \
+  -project "$WORKING_ROOT/app/ThenApp.xcodeproj" \
   -scheme ThenApp \
   -localizationPath "$EXPORT_ROOT" \
   -exportLanguage zh-Hans \
@@ -187,8 +187,8 @@ if ! xcodebuild -exportLocalizations \
   fail "Xcode could not export production localizations"
 fi
 
-SYNCED_LOCALIZABLE="$WORKING_ROOT/ios/ThenApp/Localizable.xcstrings"
-SYNCED_INFO="$WORKING_ROOT/ios/ThenApp/InfoPlist.xcstrings"
+SYNCED_LOCALIZABLE="$WORKING_ROOT/app/ThenApp/Localizable.xcstrings"
+SYNCED_INFO="$WORKING_ROOT/app/ThenApp/InfoPlist.xcstrings"
 require_file "$SYNCED_LOCALIZABLE"
 require_file "$SYNCED_INFO"
 

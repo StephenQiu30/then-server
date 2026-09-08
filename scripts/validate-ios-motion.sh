@@ -4,7 +4,7 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(dirname -- "$script_dir")
-source_root="$repo_root/ios/ThenApp"
+source_root="$repo_root/app/ThenApp"
 
 fail() {
     printf 'iOS motion verification failed: %s\n' "$1" >&2

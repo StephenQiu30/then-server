@@ -36,7 +36,7 @@
 
 ## 目录
 
-- `ios/`：SwiftUI 客户端、GRDB 数据层、系统能力适配与测试。
+- `app/`：SwiftUI 客户端、GRDB 数据层、系统能力适配与测试。
 - `backend/`：Go 后端、OpenAPI 唯一契约与 Atlas migration 目录。
 - `docs/prd/`：产品需求与范围。
 - `docs/design/`：一个功能一个 design，以及架构与隐私决策。
@@ -73,7 +73,7 @@ iOS 通用模拟器构建：
 
 ```bash
 xcodebuild \
-  -project ios/ThenApp.xcodeproj \
+  -project app/ThenApp.xcodeproj \
   -scheme ThenApp \
   -configuration Debug \
   -destination 'generic/platform=iOS Simulator' \

@@ -1,0 +1,9 @@
+**
+!go.mod
+!go.sum
+!main.go
+!openapi.yaml
+!internal/
+!internal/**/
+!internal/**/*.go
+**/*_test.go

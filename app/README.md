@@ -65,17 +65,17 @@ ThenApp target 已完成以下配置：
 
 ```bash
 xcodebuild -resolvePackageDependencies \
-  -project ios/ThenApp.xcodeproj \
+  -project app/ThenApp.xcodeproj \
   -scheme ThenApp
 
-xcodebuild -project ios/ThenApp.xcodeproj \
+xcodebuild -project app/ThenApp.xcodeproj \
   -scheme ThenApp \
   -configuration Debug \
   -destination 'generic/platform=iOS Simulator' \
   -skipPackagePluginValidation \
   clean build
 
-xcodebuild -project ios/ThenApp.xcodeproj \
+xcodebuild -project app/ThenApp.xcodeproj \
   -scheme ThenApp \
   -configuration Debug \
   -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' \

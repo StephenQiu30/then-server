@@ -22,12 +22,12 @@ if [[ ! -d "$REPOSITORY_ROOT" ]]; then
   fail "repository root does not exist: $REPOSITORY_ROOT"
 fi
 
-MIGRATIONS_FILE="$REPOSITORY_ROOT/ios/ThenApp/Data/Database/DatabaseMigrations.swift"
+MIGRATIONS_FILE="$REPOSITORY_ROOT/app/ThenApp/Data/Database/DatabaseMigrations.swift"
 OPENAPI_FILE="$REPOSITORY_ROOT/backend/openapi.yaml"
 BACKEND_SCHEMA_FILE="$REPOSITORY_ROOT/backend/schema.sql"
-PROJECT_FILE="$REPOSITORY_ROOT/ios/ThenApp.xcodeproj/project.pbxproj"
-PACKAGE_RESOLVED_FILE="$REPOSITORY_ROOT/ios/ThenApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
-PRODUCTION_SOURCE="$REPOSITORY_ROOT/ios/ThenApp"
+PROJECT_FILE="$REPOSITORY_ROOT/app/ThenApp.xcodeproj/project.pbxproj"
+PACKAGE_RESOLVED_FILE="$REPOSITORY_ROOT/app/ThenApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+PRODUCTION_SOURCE="$REPOSITORY_ROOT/app/ThenApp"
 
 require_file "$MIGRATIONS_FILE"
 require_file "$OPENAPI_FILE"
@@ -36,7 +36,7 @@ require_file "$PROJECT_FILE"
 require_file "$PACKAGE_RESOLVED_FILE"
 
 if [[ ! -d "$PRODUCTION_SOURCE" ]]; then
-  fail "missing production source directory: ios/ThenApp"
+  fail "missing production source directory: app/ThenApp"
 fi
 
 PROHIBITED_ENTRY_PATTERN='预算|结转|共享预算|"(保存票据|票据附件|导出轨迹|轨迹导出|保存原始轨迹|原始轨迹保留|轨迹云备份|高德地图|百度地图|腾讯地图|订阅方案|购买订阅|立即订阅|付费方案|立即付费|免费容量|权益分层)|Time Sensitive|Critical Alerts|ReceiptAttachment|ReceiptImageStore|TrackExport|TrackUpload|TrackCloud|SubscriptionPlan|Paywall|PurchaseService|EntitlementTier'

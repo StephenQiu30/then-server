@@ -1,11 +1,149 @@
 openapi: 3.1.2
 info:
   title: 于是 OOTD API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     “于是”OOTD 产品的唯一后端接口契约。
     Swagger UI 与 iOS Swift Client 都使用此文档。
 servers:
   - url: /v1
     description: Same-origin API v1
-paths: {}
+paths:
+  /health/live:
+    get:
+      operationId: getLiveness
+      summary: 检查 API 进程存活
+      description: 仅供受限运维访问，不查询数据库，不代表云业务已启用。
+      security: []
+      responses:
+        '200':
+          description: API 进程存活
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Liveness'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /health/ready:
+    get:
+      operationId: getReadiness
+      summary: 检查 API 接纳就绪状态
+      description: 有界探测 PostgreSQL；退出或依赖故障时返回 503，不输出连接详情。
+      security: []
+      responses:
+        '200':
+          description: 当前 API 依赖可用
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          description: 暂未就绪；不能据此判断进程死亡
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Retry-After:
+              schema:
+                type: string
+                const: '1'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  headers:
+    RequestID:
+      description: 服务端生成的请求关联标识，不采纳客户端原始值
+      schema:
+        type: string
+        minLength: 26
+        maxLength: 64
+        pattern: '^[A-Za-z0-9]+$'
+  schemas:
+    Liveness:
+      type: object
+      additionalProperties: false
+      required: [status, request_id]
+      properties:
+        status:
+          type: string
+          enum: [live]
+        request_id:
+          type: string
+          minLength: 26
+          maxLength: 64
+          pattern: '^[A-Za-z0-9]+$'
+      example:
+        status: live
+        request_id: TESTREQUESTIDENTIFIER00000001
+    Readiness:
+      type: object
+      additionalProperties: false
+      required: [status, request_id]
+      properties:
+        status:
+          type: string
+          enum: [ready]
+        request_id:
+          type: string
+          minLength: 26
+          maxLength: 64
+          pattern: '^[A-Za-z0-9]+$'
+      example:
+        status: ready
+        request_id: TESTREQUESTIDENTIFIER00000002
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message, request_id, retryable]
+      properties:
+        code:
+          type: string
+          enum: [BAD_REQUEST, NOT_READY, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL_ERROR]
+        message:
+          type: string
+          minLength: 1
+          maxLength: 160
+        request_id:
+          type: string
+          minLength: 26
+          maxLength: 64
+          pattern: '^[A-Za-z0-9]+$'
+        retryable:
+          type: boolean
+      example:
+        code: NOT_READY
+        message: Service is not ready.
+        request_id: TESTREQUESTIDENTIFIER00000003
+        retryable: true
+  responses:
+    BadRequest:
+      description: 健康接口不接受查询参数或请求体
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: 内部错误，响应不包含敏感详情
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

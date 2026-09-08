@@ -35,6 +35,8 @@
 
 ## 目标仓库结构
 
+2026-09-08 用户确认：后端位于 `backend/`，iOS 位于 `app/`（原 `ios/` 已迁移）。保持单个 ThenApp 生产模块；只按已实现职责建目录，不增加转发层、空包或额外项目包装。
+
 以下结构随实施计划逐步落地，不表示所有条目当前都已存在。不要为了填满结构创建空文件或空目录。
 
 ```text
@@ -46,7 +48,7 @@
 │   ├── validate-commit-message.sh
 │   ├── validate-ios-architecture.sh
 │   └── verify-toolchain.sh
-├── ios/
+├── app/
 │   ├── README.md
 │   ├── ThenApp/
 │   │   ├── openapi.yaml -> ../../backend/openapi.yaml
@@ -168,6 +170,8 @@
 
 ### 架构与运行形态
 
+- 后端编码前按 `docs/design/02-后端架构.md` 的目录职责、服务代码规范和开发交付 SOP 完成输入/产物/门禁核对；精确版本只认 Design 01，执行状态只认对应 FF-SS 计划。保持 `backend/main.go` + `internal`，不增加项目包装层；健康检查不机械增加 Service/Repository 转发包，业务规则及状态机归 Service/领域层。
+
 - 编码规范与模块职责固定于 `docs/design/02-后端架构.md`，首版功能固定于 PRD 10，编码准入登记固定于产品实施计划。各切片先明确状态/数据/API/删除/失败/测试与迁移，再批准执行计划；技术选型固定不代表所有服务首版都启动。
 - 后端只使用一个 `go.mod`、一个 `main.go`、一个二进制与一个 OCI 镜像，不创建独立 module 或微服务仓库。
 - 同一二进制支持 `APP_ROLE=api|worker|all`。本地和集成测试可用 `all`；生产默认用同一镜像分别运行 API 与 worker。
@@ -201,7 +205,7 @@
 - `backend/openapi.yaml` 是 iOS、Go 后端和 Swagger UI 的唯一接口契约。不得复制第二份 YAML/JSON、使用 Swagger 注解生成契约或手写 iOS transport DTO。
 - 契约固定 OpenAPI 3.1.2；公开业务接口使用 `/v1`。每个 operation 必须有全局唯一、稳定、可读的 `operationId`。
 - 修改顺序：先改 OpenAPI 并校验，再生成并编译 iOS Client，手写 Go Handler 与纯 struct，最后更新契约测试和示例。
-- iOS 生成代码只存在 DerivedData；`ios/ThenApp/openapi.yaml` 必须保持指向 `backend/openapi.yaml` 的符号链接。
+- iOS 生成代码只存在 DerivedData；`app/ThenApp/openapi.yaml` 必须保持指向 `backend/openapi.yaml` 的符号链接。
 - 请求与响应 schema 明确 required、可空性、枚举、格式、单位和示例；不得用无约束 object 代替稳定结构。
 - 创建、上传 finalize、生成、取消、删除、同步和第三方回调支持幂等键；列表优先使用稳定游标。
 - 长任务返回 `202 Accepted`、稳定 job ID、状态 URL 和建议轮询间隔。
