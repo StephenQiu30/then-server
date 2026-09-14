@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then/backend/internal/model"
-	"github.com/StephenQiu30/then/backend/internal/repository"
-	"github.com/StephenQiu30/then/backend/internal/service"
+	"github.com/StephenQiu30/then-server/backend/internal/model"
+	"github.com/StephenQiu30/then-server/backend/internal/repository"
+	"github.com/StephenQiu30/then-server/backend/internal/service"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"

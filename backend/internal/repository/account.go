@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/StephenQiu30/then/backend/internal/model"
+	"github.com/StephenQiu30/then-server/backend/internal/model"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )

@@ -1,6 +1,6 @@
-# 于是
+# then-server
 
-“于是”正在从历史个人生活管理实现切换为一款仅面向 iOS 的 C 端 OOTD 穿搭产品。按 2026-09-14 用户决定，主路径先实现无需上传照片或衣物的内置服装、真实 3D 角色换装与观察，同时保留 Woo 可见页面和照片 AI 穿搭增强。SwiftUI 原生 Liquid Glass，最低 iOS 26；本地衣橱/记录独立可用，多设备同步继续分期，生成与三维分别验收。
+`then-server` 是“于是”OOTD 的 Go 服务端与产品级契约仓库。按 2026-09-14 用户决定，本地统一放在 `Then/` 父目录下，服务端位于 `Then/then-server`，iOS 位于 `Then/then-app`；两个子目录是独立 Git 项目。本仓库继续拥有唯一 OpenAPI、数据库迁移、后端运行代码、可选开发依赖编排和 Design → PRD → Plan → Acceptance 文档。
 
 ## 当前状态
 
@@ -8,7 +8,7 @@
 | --- | --- |
 | OOTD 产品需求 | 10 号产品总纲与 11–19 号单功能 PRD 已批准或按功能门禁批准 |
 | 产品与技术设计 | 01–12 号设计为当前基线；13 号保留三维研究及待 POC 参数，首版范围已回写 PRD 11/12 与 Design 04/05 |
-| iOS 工程 | 已切换今日/衣橱/穿搭簿三个 SwiftUI 入口；生成 Client 使用 ThenTransport，业务仍在 ThenApp |
+| iOS 工程 | 位于独立 `then-app`；已切换今日/衣橱/穿搭簿三个 SwiftUI 入口，生成 Client 使用 ThenTransport |
 | OOTD Feature | 已接无图/单件图衣橱、16-01 本地穿搭计划与日期回看；快照、编辑/取消/删除和含图组合已实现，验收继续。实际穿着、反馈、受控 AI 与真实 3D 分片推进 |
 | Go 后端 | Gin 健康/数据库运行、容器与内嵌 Swagger 已实现；账号注册、Cookie 会话与本人账户 API 已通过单元、竞态及 PostgreSQL 集成测试 |
 | Web 前端 | Design 16 与 17-13 草案已固定；按用户要求暂停实现，当前不创建 `frontend/` 代码目录 |
@@ -40,7 +40,6 @@
 ## 目录
 
 - `design.md`：全仓库通用页面设计与交付规范，固定自指定上游提交；产品范围、技术栈和功能行为仍由 `AGENTS.md` 与 `docs/` 对应事实源定义。
-- `app/`：SwiftUI 客户端、GRDB 数据层、系统能力适配与测试。
 - `backend/`：Go 后端、OpenAPI 唯一契约与 Atlas migration 目录。
 - `frontend/`：待 17-13 批准后创建的注册、登录与本人账户 CRUD 响应式 Web 应用。
 - `docker-compose.yml`：可选隔离环境的标准 Compose 入口。
@@ -57,6 +56,7 @@
 | --- | --- |
 | [`AGENTS.md`](AGENTS.md) | 全仓库当前产品、架构、隐私、数据与测试规范 |
 | [`design.md`](design.md) | 通用页面视觉、组件、交互与交付质量规范 |
+| [`then-app`](https://github.com/StephenQiu30/then-app) | 独立 SwiftUI 客户端、GRDB 本地数据与 iOS 测试 |
 | [`docs/README.md`](docs/README.md) | 当前文档索引与历史文档边界 |
 | [`docs/prd/README.md`](docs/prd/README.md) | 产品总纲与 11–19 号单功能需求索引 |
 | [`docs/plan/README.md`](docs/plan/README.md) | 产品级实施计划与单切片执行计划的准入、编号、状态和模板 |
@@ -72,24 +72,10 @@
 
 ## 本地校验
 
-开始工作前核对固定工具链：
+开始工作前核对服务端固定工具链：
 
 ```bash
-xcodebuild -version
-swift --version
 go version
-```
-
-iOS 通用模拟器构建：
-
-```bash
-xcodebuild \
-  -project app/ThenApp.xcodeproj \
-  -scheme ThenApp \
-  -configuration Debug \
-  -destination 'generic/platform=iOS Simulator' \
-  -skipPackagePluginValidation \
-  build
 ```
 
 Go 校验：
@@ -110,10 +96,12 @@ brew services start rabbitmq
 (cd backend && go test -race -tags=services ./tests -count=1)
 ```
 
-后端镜像使用 `docker build --tag then-backend:local backend` 构建。Swagger 由 Go API 内嵌并读取同一份 OpenAPI，不需要独立 Swagger 容器。确需隔离依赖时再使用 `docker compose --profile isolated-env up --detach --wait`；Compose 不是日常开发前置，也不代表生产部署已完成。
+后端镜像使用 `docker build --tag then-server:local backend` 构建。Swagger 由 Go API 内嵌并读取同一份 OpenAPI，不需要独立 Swagger 容器。确需隔离依赖时再使用 `docker compose --profile isolated-env up --detach --wait`；Compose 不是日常开发前置，也不代表生产部署已完成。
+
+GitHub Actions 的 `Go quality`、`PostgreSQL integration` 与 `OCI container` 是每次 push/PR 的必要服务端门禁。需要本机 MinIO、Redis 和 RabbitMQ 的 `services` 测试仍按对应验收显式运行。
 
 旧生活管理脚本随 19-02 退役；历史验收只在 Git/旧文档中保留。
 
 ## 协作
 
-开始贡献前阅读 [`AGENTS.md`](AGENTS.md) 与 [`CONTRIBUTING.md`](CONTRIBUTING.md)，检查工作区已有修改，并按 design → PRD → execution plan → implementation → acceptance 推进。切片排入近期产品计划后、编码前创建一份统一范围契约、任务和证据的 `FF-SS` 执行计划；不要恢复 `backend/schema.sql`，不要在生产使用 GORM `AutoMigrate`，也不要为清理旧界面而零散破坏现有 GRDB migration 或测试夹具。
+开始贡献前阅读 [`AGENTS.md`](AGENTS.md) 与 [`CONTRIBUTING.md`](CONTRIBUTING.md)，检查工作区已有修改，并按 design → PRD → execution plan → implementation → acceptance 推进。切片排入近期产品计划后、编码前创建一份统一范围契约、任务和证据的 `FF-SS` 执行计划；不要恢复 `backend/schema.sql`，不要在生产使用 GORM `AutoMigrate`。涉及 iOS 时在 `then-app` 独立提交，并让 App CI 从本仓库唯一契约生成和编译请求代码。

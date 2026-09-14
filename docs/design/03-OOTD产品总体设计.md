@@ -16,7 +16,7 @@
 ## 2026-09-14品牌与固定资产策略
 
 - Logo、AppIcon、favicon、Swagger 品牌图、首批离线角色/服装和 renderer 运行文件属于启动必需固定资产，随 iOS App 或 Go 二进制编译打包并进入版本控制；首次运行不下载，也不依赖对象存储。
-- iOS 品牌资产统一位于 `app/ThenApp/Assets.xcassets`，AppIcon 使用无透明通道的 1024 px 原图，页面标记使用 `BrandMark`；Swagger 品牌资产位于 `backend/internal/transport/swaggerui`，只通过明确的同源只读路由提供。
+- iOS 品牌资产统一位于 `Then/then-app/ThenApp/Assets.xcassets`，AppIcon 使用无透明通道的 1024 px 原图，页面标记使用 `BrandMark`；Swagger 品牌资产位于 `Then/then-server/backend/internal/transport/swaggerui`，只通过明确的同源只读路由提供。
 - 后续只有体积较大、需要独立发布的角色/服装目录或生成媒体才进入私有对象存储。客户端下载前必须取得版本化 manifest，验证用途、字节数和 SHA-256 后原子写入受保护本地缓存；失败继续使用随包资产，不能让品牌和离线主路径空白。
 - 当前对象存储尚未启用，不新增上传 API、匿名远程目录或兼容分支。Logo 与 favicon 选择本地打包即为本阶段定案。
 

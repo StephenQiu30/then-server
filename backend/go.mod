@@ -1,4 +1,4 @@
-module github.com/StephenQiu30/then/backend
+module github.com/StephenQiu30/then-server/backend
 
 go 1.26.0
 

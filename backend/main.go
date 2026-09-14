@@ -10,12 +10,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/StephenQiu30/then/backend/internal/platform/config"
-	"github.com/StephenQiu30/then/backend/internal/platform/database"
-	"github.com/StephenQiu30/then/backend/internal/platform/httpserver"
-	"github.com/StephenQiu30/then/backend/internal/repository"
-	"github.com/StephenQiu30/then/backend/internal/service"
-	"github.com/StephenQiu30/then/backend/internal/transport"
+	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
+	"github.com/StephenQiu30/then-server/backend/internal/platform/database"
+	"github.com/StephenQiu30/then-server/backend/internal/platform/httpserver"
+	"github.com/StephenQiu30/then-server/backend/internal/repository"
+	"github.com/StephenQiu30/then-server/backend/internal/service"
+	"github.com/StephenQiu30/then-server/backend/internal/transport"
 	"github.com/gin-gonic/gin"
 )
 
