@@ -2,6 +2,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -35,12 +36,14 @@ type errorResponse struct {
 	Retryable bool   `json:"retryable"`
 }
 
-func NewRouter(ctx context.Context, document []byte, probe DependencyProbe, timeout time.Duration, log *slog.Logger) (*Router, error) {
+func NewRouter(ctx context.Context, document []byte, docsEnabled bool, probe DependencyProbe, timeout time.Duration, log *slog.Logger) (*Router, error) {
 	if probe == nil || log == nil || timeout <= 0 || timeout > 5*time.Second {
 		return nil, errors.New("invalid router dependencies")
 	}
 	loader := openapi3.NewLoader()
 	loader.Context = ctx
+	// Own the contract used for both validation and documentation.
+	document = bytes.Clone(document)
 	doc, err := loader.LoadFromData(document)
 	if err != nil {
 		return nil, errors.New("OpenAPI document cannot be loaded")
@@ -99,6 +102,11 @@ func NewRouter(ctx context.Context, document []byte, probe DependencyProbe, time
 			return
 		}
 		c.Next()
+	}
+	if docsEnabled {
+		if err := registerDocs(engine, document); err != nil {
+			return nil, err
+		}
 	}
 	engine.GET("/v1/health/live", validate, func(c *gin.Context) {
 		c.JSON(http.StatusOK, healthResponse{Status: "live", RequestID: c.GetString("request_id")})

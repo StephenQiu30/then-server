@@ -1,23 +1,66 @@
 # OOTD Backend
 
+## 本地数据库与中间件
+
+在仓库根目录执行（Docker daemon 需已运行，Go 版本按 Design 01）：
+
+```sh
+cp .env.example .env
+chmod 600 .env
+# 替换 .env 中四个占位值后：
+docker compose up --detach --wait
+(cd backend && go test -race -tags=services ./tests -count=1)
+```
+
+上述命令在仓库根目录执行。原始契约和 Swift 生成不依赖独立 Swagger 容器。
+
+| 服务 | 本机入口 | 用途 |
+| --- | --- | --- |
+| PostgreSQL | 127.0.0.1:18432，数据库/用户 then_dev | API 数据库与事务验证 |
+| MinIO | [Console](http://127.0.0.1:18901)，S3 127.0.0.1:18900 | 私有对象开发验证 |
+| Redis | 127.0.0.1:18379 | 可失效缓存/TTL 验证 |
+| RabbitMQ | [Management](http://127.0.0.1:18673)，AMQP 127.0.0.1:18672，vhost then_dev | quorum/确认/重投递验证 |
+
+账号均为 then_dev（Redis 为默认用户），随机密码只保存在仓库根目录忽略文件 `.env`，权限 0600；不要复制到源码、命令行参数或日志。此开发账号仅供本机合成数据，不是生产应用权限模型。
+
+`docker compose ps` 查看状态，`docker compose config --quiet` 通过默认 `docker-compose.yml` 校验并包含 `docker-compose-env.yml`，`docker compose down` 停止本项目并保留卷；`docker build --tag then-backend:local backend` 构建镜像。Redis 按可重建缓存设计，未启用磁盘持久化；其他三项使用独立命名卷。只发布 loopback 端口，但 bridge 网络并非出站防火墙。不要对其他项目执行清理，也不要用这份单节点配置做生产 HA 部署。
+
+**MinIO 官方服务端已归档，不再维护；当前锁定历史发行版仅用于隔离开发。生产发行版、维护支持和安全修复方案尚未确定。** 选型来源、镜像/SDK 版本与限制归 [Design 01](../docs/design/01-技术选型.md#数据库与中间件接入决策)，spec/checklist 归 [17-10](../docs/plan/17-10-数据库与中间件开发环境执行计划.md)。四项协议测试通过不代表业务任务 Outbox/Inbox、取消/删除或用户媒体链路完成。
+
+## Swagger接口文档
+
+设置好本地 PostgreSQL 18 的 `DATABASE_URL` 后，在 `backend/` 目录运行：
+
+```sh
+API_DOCS_ENABLED=true go run .
+```
+
+默认地址为 [Swagger UI](http://127.0.0.1:8080/docs/) 和 [原始契约](http://127.0.0.1:8080/openapi.yaml)；自定义 HTTP_ADDR 时使用对应端口。页面、脚本、样式、许可证与唯一 OpenAPI 都随 Go 二进制嵌入，页面展示 API 实际校验的契约版本。修改源契约后需要重建/重启后端。
+
+`API_DOCS_ENABLED` 默认 false，仅接受 true/false，启用时必须绑定回环 IP；关闭时所有文档路径返回 404。当前只提供本机开发文档，Try it out、外部 validator、查询配置覆盖与鉴权持久化关闭，生产文档未启用。API 仍按既有语义要求数据库可用才能启动。
+
+Swift 生成不要求 Docker、文档页面或 API 运行，直接读取仓库唯一 YAML；见 [iOS README](../app/README.md#openapi请求代码生成)。独立 Swagger Compose 和管理脚本已退役，不提供旧 18108 端口或脚本兼容入口。当前 spec/checklist 和证据见 [17-09](../docs/plan/17-09-后端内嵌接口文档执行计划.md)。
+
+## 后端基线
+
 OOTD 后端采用 Go 1.26.5 模块化单体：一个 `go.mod`、一个 `main.go`、一个 OCI 镜像。目标是相同二进制通过 `APP_ROLE=api|worker|all` 运行 Gin API 或异步 worker；当前仅实现 api，worker/all 明确拒绝启动，本地 OCI 构建与运行验证已落地，生产发布尚未完成。生产按角色部署，不拆业务微服务。
 
 ## 固定技术栈
 
-2026-09-08 已固定后端设计规范及启用边界。首版先交付本地 3D 穿搭闭环，后端留作后续云能力；当前已开始 17-01 API 运行基线实现，不启动生产云服务，不为本地角色调参/换装建立 API，也不复制衣橱到服务端。
+当前保留小型 Go 单体，按实际代码区分组件：
 
-- Gin `v1.12.0`
-- GORM `v1.31.2` Generics + PostgreSQL driver `v1.6.2`
-- PostgreSQL 18；Atlas `v1.3.0` versioned SQL migrations
-- RabbitMQ `4.3.5` quorum queues + `amqp091-go v1.14.0`
-- Redis 8.10 + `go-redis/v9 v9.22.0`
-- 私有 S3-compatible 对象存储
-- OpenAPI 3.1.2、kin-openapi `v0.149.0`
-- OpenTelemetry Go `v1.46.0`、otelgin `v0.71.0`
-- Testcontainers for Go `v0.44.0`
-- FFmpeg `8.1.2`
+| 状态 | 组件 | 本阶段用途 |
+| --- | --- | --- |
+| 已接入 | Gin、GORM/PostgreSQL、kin-openapi、标准库 slog/context/config | API 启动、两个健康接口、数据库连接和内嵌 Swagger；尚无用户云业务 |
+| 已接入开发验证 | Go testing/httptest、Testcontainers/Moby | 后两者用于带标签的数据库/镜像集成测试，不是 API 的 Docker 运行依赖 |
+| 首个业务 schema 时 | Atlas versioned SQL | 先核定发行版/许可和所需命令，不预建空 migration 或默认依赖 Pro |
+| 已接入开发验证 | RabbitMQ | 17-10 验证 quorum、confirm、ack/requeue；业务 Outbox/Inbox 尚待任务切片 |
+| 已接入开发验证 | Redis、MinIO | TTL、鉴权、私有对象读写删除；MinIO 历史镜像只用于合成数据开发 |
+| 明确需要时 | FFmpeg、OTel exporter | 视频处理及生产观测；不作为本地三维前置 |
 
-精确边界和版本事实源见 [`../docs/design/01-技术选型.md`](../docs/design/01-技术选型.md)，模块与进程设计见 [`../docs/design/02-后端架构.md`](../docs/design/02-后端架构.md)，异步细节见 [`../docs/design/10-OOTD服务端与异步任务设计.md`](../docs/design/10-OOTD服务端与异步任务设计.md)。
+精确版本和开源复用决策统一见 [Design 01](../docs/design/01-技术选型.md#当前最小技术栈与开源复用)，不维护第二份可能被误当成“全部已运行”的版本清单。当前三维开发只需 iOS 本地应用；后端开发环境由 17-10 提供 PG/MinIO/Redis/RabbitMQ，API 当前只连接 PG，其余由真实协议测试消费。API 启动要求数据库的现有语义保留，生成 Swift 请求文件则不需要它们运行。
+
+不增加微服务、BFF、通用 BaseRepository、自动依赖注入框架、另一套任务队列或独立 Swagger 服务。角色/衣物固定资产随 App 提供，不为内置目录创建远程 Catalog 或上传接口。
 
 ## 当前文件
 
@@ -47,7 +90,7 @@ model/service/repository/worker 在真实业务进入切片后按需建立；当
 
 ## 编码前必须阅读
 
-1. [PRD 10 功能清单](../docs/prd/10-OOTD产品需求.md#编码前固定的功能清单)：首版、分期与非目标。
+1. [PRD 10 功能清单](../docs/prd/10-OOTD产品需求.md#当前功能清单2026-09-13更新)：首版、分期与非目标。
 2. [Design 01 技术冻结](../docs/design/01-技术选型.md#编码前技术冻结与启用界限)：固定组件、精确版本和启用阶段。
 3. [Design 02 编码规范](../docs/design/02-后端架构.md#编码前固定的模块职责)：模块所有权、依赖/事务、HTTP/数据、故障与合入规则。
 4. [Design 10 云任务](../docs/design/10-OOTD服务端与异步任务设计.md)：认证/幂等顺序、队列/租约、上传/删除生命周期。
@@ -76,7 +119,7 @@ model/service/repository/worker 在真实业务进入切片后按需建立；当
 - `go test ./...`、`go vet ./...`、`go test -race ./...`：单元和 HTTP 契约验证。
 - `go test -race -tags=integration ./tests -v`：需要 Docker，自动创建并清理固定 digest 的 PostgreSQL 18.4 容器，验证断连恢复。
 
-具体范围和交付门禁见 [17-01 执行计划](../docs/plan/17-01-后端服务启动与健康契约执行计划.md)。当前 Swift 生成 Client 的默认 MainActor 隔离冲突仍阻断该切片完整交付；没有新增包装模块或更改 UI 并发规则。
+具体范围和交付门禁见 [17-01 执行计划](../docs/plan/17-01-后端服务启动与健康契约执行计划.md)。用户已批准仅编译生成代码的 ThenTransport 技术模块，Swift Client 与正式 App 构建及相关测试已通过；ThenApp/UI 继续 MainActor。17-01 当前待提交交付，完整云业务与生产验收分别按所属切片推进。
 
 2026-09-08 运行基线补充：监听异常返回前会关闭活动连接；实际 binary 已验证缺少 DATABASE_URL、worker/all 未实现、错误数据库凭据和监听端口占用均非零退出，错误输出不包含数据库 URL/密码。测试与限制见 [运行验收记录](../docs/acceptance/17-云端生成与任务管理验收.md#17-01-运行异常清理与启动失败补充验证)。
 
@@ -85,7 +128,12 @@ model/service/repository/worker 在真实业务进入切片后按需建立；当
 在仓库根目录执行：
 
 ```sh
-scripts/validate-backend.sh integration
+cd backend
+go test ./...
+go vet ./...
+go test -race ./...
+go test -race -tags=integration ./tests -count=1
+cd ..
 docker build -t then-backend:local backend
 ```
 
@@ -97,4 +145,4 @@ THEN_BACKEND_TEST_IMAGE=then-backend:local go test -race -tags=container ./tests
 
 镜像非 root，无 shell；默认监听仍为 127.0.0.1:8080。容器需要对外监听时显式设置 HTTP_ADDR=0.0.0.0:8080，并限制宿主发布地址/访问网络。DATABASE_URL 由运行环境提供，非 loopback 数据库要求 verify-full。测试使用隔离共享网络，不作为生产 TLS 部署样板。
 
-统一脚本不要求 Xcode，也不替代 OpenAPI/Swift 的完整契约验收。容器测试验证只读根文件系统、资源限制、健康接口、SIGTERM 和未实现角色拒绝；当前仅验证 linux/arm64。详情见 [17-07](../docs/plan/17-07-后端容器构建与运行验证执行计划.md)。
+这些后端命令不要求 Xcode，也不替代 OpenAPI/Swift 的完整契约验收。容器测试验证只读根文件系统、资源限制、健康接口、SIGTERM 和未实现角色拒绝；当前仅验证 linux/arm64。详情见 [17-07](../docs/plan/17-07-后端容器构建与运行验证执行计划.md)。

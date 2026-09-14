@@ -43,7 +43,7 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 	gin.SetMode(gin.ReleaseMode)
-	router, err := transport.NewRouter(startup, apiDocument, pool, cfg.HealthTimeout, log)
+	router, err := transport.NewRouter(startup, apiDocument, cfg.DocsEnabled, pool, cfg.HealthTimeout, log)
 	if err != nil {
 		return err
 	}

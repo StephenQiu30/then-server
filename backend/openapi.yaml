@@ -138,6 +138,11 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+          example:
+            code: BAD_REQUEST
+            message: Health requests do not accept a body or query.
+            request_id: TESTREQUESTIDENTIFIER00000004
+            retryable: false
     InternalError:
       description: 内部错误，响应不包含敏感详情
       headers:
@@ -147,3 +152,8 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: Internal server error.
+            request_id: TESTREQUESTIDENTIFIER00000005
+            retryable: false
