@@ -34,7 +34,7 @@
 
 证据 `THEN-FLOW-AUD-20260914-01`：按当前用户决定核对 Design 01/02、文档入口、产品计划与全部现有 FF-SS 文件。已修正当前章节中“生成 Client 仍编译受阻”“云 AI 一律后置”和切片漏登记的问题；日期明确的历史失败与批准过程保留。当前顺序已进一步更新为内置服装/真实三维主路径优先，Woo 照片/用户单品/受控 AI 为可选增强，详见 [内置服装三维主路径](../plan/10-OOTD产品实施计划.md#2026-09-14内置服装三维主路径优先)。
 
-该段原 12 份切片审核计数只保留历史基线；当前状态以产品计划和各单切片为准。11-02 已批准但等待唯一视觉方向，16-02 仍待批准；12-03 的 IMAGE/IOS 已完成模拟器合同，TEST/REL 继续验收，16-01 只剩人工 VoiceOver 与物理发布门禁。运行时 OpenAPI、OOTD schema 和 Feature 目录是范围证据，不代表云生成、正式 Woo 视觉、真实三维或实际穿着已实现。
+该段原 12 份切片审核计数只保留历史基线；当前状态以产品计划和各单切片为准。11-02 已批准但等待唯一视觉方向，16-02 仍待批准；12-03 的 IMAGE/IOS/TEST 已完成模拟器合同，REL 继续真机验收，16-01 只剩人工 VoiceOver 与物理发布门禁。运行时 OpenAPI、OOTD schema 和 Feature 目录是范围证据，不代表云生成、正式 Woo 视觉、真实三维或实际穿着已实现。
 
 本轮验证：`scripts/verify-toolchain.sh`、`scripts/validate-ios-architecture.sh`、`git diff --check` 均返回 0；Python 标准库核对 12 份切片状态及登记完整性、七份修订文档原有的 254 个本地文件链接和新增执行标题通过（未宣称检查所有锚点）。只读核对 `DerivedData/WardrobeDeletedEditorEvidence20260914.json` 的 5 个源码哈希及 `DerivedData/OutfitDeletionConflictEvidence20260914.json` 的 4 个源码哈希，均与当前文件一致；对应运行结果仍以 [衣橱验收](12-数字衣橱与衣物录入验收.md) 和 [记录验收](16-穿搭记录与反馈验收.md) 的原始测试记录为准。本轮未修改产品代码、契约或数据，未重跑 App 构建与测试。
 
