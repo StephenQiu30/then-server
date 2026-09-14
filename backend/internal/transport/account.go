@@ -157,7 +157,7 @@ func (h *AccountHandler) current(ctx context.Context, input *authenticatedInput)
 	}
 	user, err := h.service.CurrentUser(ctx, input.Session)
 	if err != nil {
-		return nil, accountError(ctx, err)
+		return nil, h.authenticatedError(ctx, err)
 	}
 	return &userOutput{RequestID: requestID(ctx), Body: newUserResponse(user)}, nil
 }
@@ -171,7 +171,7 @@ func (h *AccountHandler) update(ctx context.Context, input *updateCurrentUserInp
 	}
 	user, err := h.service.UpdateCurrentUser(ctx, input.Session, model.UpdateCurrentUserInput{Email: input.Body.Email, DisplayName: input.Body.DisplayName})
 	if err != nil {
-		return nil, accountError(ctx, err)
+		return nil, h.authenticatedError(ctx, err)
 	}
 	return &userOutput{RequestID: requestID(ctx), Body: newUserResponse(user)}, nil
 }
@@ -184,7 +184,7 @@ func (h *AccountHandler) logout(ctx context.Context, input *authenticatedInput) 
 		return nil, newErrorResponse(http.StatusUnauthorized, requestID(ctx))
 	}
 	if err := h.service.Logout(ctx, input.Session); err != nil {
-		return nil, accountError(ctx, err)
+		return nil, h.authenticatedError(ctx, err)
 	}
 	return &emptySessionOutput{RequestID: requestID(ctx), SetCookie: h.expiredSessionCookie()}, nil
 }
@@ -197,7 +197,7 @@ func (h *AccountHandler) deleteCurrent(ctx context.Context, input *authenticated
 		return nil, newErrorResponse(http.StatusUnauthorized, requestID(ctx))
 	}
 	if err := h.service.DeleteCurrentUser(ctx, input.Session); err != nil {
-		return nil, accountError(ctx, err)
+		return nil, h.authenticatedError(ctx, err)
 	}
 	return &emptySessionOutput{RequestID: requestID(ctx), SetCookie: h.expiredSessionCookie()}, nil
 }
@@ -221,6 +221,15 @@ func accountError(ctx context.Context, err error) error {
 	default:
 		return newErrorResponse(http.StatusInternalServerError, requestID(ctx))
 	}
+}
+
+func (h *AccountHandler) authenticatedError(ctx context.Context, err error) error {
+	response := accountError(ctx, err)
+	if !errors.Is(err, model.ErrAuthentication) {
+		return response
+	}
+	cookie := h.expiredSessionCookie()
+	return huma.ErrorWithHeaders(response, http.Header{"Set-Cookie": []string{cookie.String()}})
 }
 
 func newUserResponse(user model.User) UserResponse {

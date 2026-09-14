@@ -193,6 +193,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 				}
 			}
 		}
+		exerciseAccountHTTPLifecycle(t, ctx, client, "http://"+address, admin)
 	case <-ctx.Done():
 		t.Fatal("startup timeout")
 	}
@@ -264,4 +265,94 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Log("PostgreSQL 18: ready 200 -> disconnected 503; live 200; recovered ready 200")
+}
+
+func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *http.Client, baseURL string, pool *database.Pool) {
+	t.Helper()
+	email := "http-" + strings.ToLower(rand.Text()[:16]) + "@example.test"
+	password := "correct-http-password"
+	registration, _ := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/registrations", `{"email":"`+email+`","display_name":"HTTP User","password":"`+password+`"}`, nil, http.StatusCreated)
+	registrationCookies := registration.Cookies()
+	if len(registrationCookies) != 1 || registrationCookies[0].Name != "then_session" || registrationCookies[0].Value == "" || registrationCookies[0].Path != "/v1" || !registrationCookies[0].HttpOnly || registrationCookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatal("actual registration response did not set the protected session cookie")
+	}
+	firstSession := registrationCookies[0]
+	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/users/me", "", firstSession, http.StatusOK)
+
+	logout, _ := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/auth/session", "", firstSession, http.StatusNoContent)
+	assertExpiredSessionCookie(t, logout)
+	replay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/users/me", "", firstSession, http.StatusUnauthorized)
+	assertAuthenticationFailure(t, body)
+	assertExpiredSessionCookie(t, replay)
+
+	login, _ := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusOK)
+	loginCookies := login.Cookies()
+	if len(loginCookies) != 1 || loginCookies[0].Name != "then_session" || loginCookies[0].Value == "" {
+		t.Fatal("actual login response did not establish a session")
+	}
+	secondSession := loginCookies[0]
+	deletion, _ := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/users/me", "", secondSession, http.StatusNoContent)
+	assertExpiredSessionCookie(t, deletion)
+	deletedReplay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/users/me", "", secondSession, http.StatusUnauthorized)
+	assertAuthenticationFailure(t, body)
+	assertExpiredSessionCookie(t, deletedReplay)
+	failedLogin, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusUnauthorized)
+	assertAuthenticationFailure(t, body)
+	if len(failedLogin.Cookies()) != 0 {
+		t.Fatal("invalid credentials unexpectedly changed browser cookies")
+	}
+
+	var remaining int64
+	if err := pool.ORM().WithContext(ctx).Raw("SELECT count(*) FROM user_credentials WHERE email = ?", email).Scan(&remaining).Error; err != nil || remaining != 0 {
+		t.Fatal("deleted HTTP account still has persisted credentials")
+	}
+	t.Log("actual API process: register -> logout/replay 401 -> login -> account delete/replay 401; credentials removed")
+}
+
+func accountRequest(t *testing.T, ctx context.Context, client *http.Client, method, endpoint, body string, cookie *http.Cookie, expectedStatus int) (*http.Response, []byte) {
+	t.Helper()
+	request, err := http.NewRequestWithContext(ctx, method, endpoint, strings.NewReader(body))
+	if err != nil {
+		t.Fatal("cannot build account request")
+	}
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	if cookie != nil {
+		request.AddCookie(cookie)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal("account request failed")
+	}
+	payload, readErr := io.ReadAll(io.LimitReader(response.Body, 1024*1024))
+	response.Body.Close()
+	if readErr != nil {
+		t.Fatal("account response could not be read")
+	}
+	if response.StatusCode != expectedStatus {
+		t.Fatalf("account response status=%d expected=%d", response.StatusCode, expectedStatus)
+	}
+	if response.Header.Get("X-Request-ID") == "" {
+		t.Fatal("account response omitted request ID")
+	}
+	return response, payload
+}
+
+func assertExpiredSessionCookie(t *testing.T, response *http.Response) {
+	t.Helper()
+	cookies := response.Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "then_session" || cookies[0].Value != "" || cookies[0].MaxAge != -1 || cookies[0].Path != "/v1" || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatal("account response did not clear the session cookie")
+	}
+}
+
+func assertAuthenticationFailure(t *testing.T, body []byte) {
+	t.Helper()
+	var failure struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(body, &failure) != nil || failure.Code != "AUTHENTICATION_FAILED" {
+		t.Fatal("account response did not use the safe authentication error")
+	}
 }

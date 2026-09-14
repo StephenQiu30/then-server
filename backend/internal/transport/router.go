@@ -190,6 +190,10 @@ func normalizeGeneratedOpenAPI(spec *huma.OpenAPI) {
 		Description: "服务端生成的请求关联标识，不采纳客户端原始值",
 		Schema:      &huma.Schema{Type: huma.TypeString, MinLength: integerPointer(26), MaxLength: integerPointer(64), Pattern: "^[A-Za-z0-9]+$"},
 	}
+	clearSessionHeader := &huma.Header{
+		Description: "受保护端点拒绝无效、过期或已撤销会话时清除 HttpOnly 会话 Cookie",
+		Schema:      &huma.Schema{Type: huma.TypeString},
+	}
 	for _, item := range spec.Paths {
 		operations := []*huma.Operation{item.Get, item.Put, item.Post, item.Delete, item.Options, item.Head, item.Patch, item.Trace}
 		for _, operation := range operations {
@@ -207,6 +211,9 @@ func normalizeGeneratedOpenAPI(spec *huma.OpenAPI) {
 					response.Headers = map[string]*huma.Header{}
 				}
 				response.Headers["X-Request-ID"] = requestIDHeader
+				if status == "401" && usesCookieAuthentication(operation) {
+					response.Headers["Set-Cookie"] = clearSessionHeader
+				}
 			}
 		}
 	}
@@ -216,6 +223,15 @@ func normalizeGeneratedOpenAPI(spec *huma.OpenAPI) {
 		}
 		readiness.Headers["Retry-After"] = &huma.Header{Schema: &huma.Schema{Type: huma.TypeString, Const: "1"}}
 	}
+}
+
+func usesCookieAuthentication(operation *huma.Operation) bool {
+	for _, requirement := range operation.Security {
+		if _, ok := requirement["cookieAuth"]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func integerPointer(value int) *int { return &value }

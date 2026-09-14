@@ -17,9 +17,11 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 	var spec struct {
 		OpenAPI string `json:"openapi"`
 		Paths   map[string]map[string]struct {
-			OperationID string                     `json:"operationId"`
-			Responses   map[string]json.RawMessage `json:"responses"`
-			Parameters  []struct {
+			OperationID string `json:"operationId"`
+			Responses   map[string]struct {
+				Headers map[string]json.RawMessage `json:"headers"`
+			} `json:"responses"`
+			Parameters []struct {
 				In   string `json:"in"`
 				Name string `json:"name"`
 			} `json:"parameters"`
@@ -30,6 +32,12 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 	}
 	operations := 0
 	identifiers := map[string]bool{}
+	protectedOperations := map[string]bool{
+		"deleteSession":     true,
+		"getCurrentUser":    true,
+		"updateCurrentUser": true,
+		"deleteCurrentUser": true,
+	}
 	for _, path := range spec.Paths {
 		for method, operation := range path {
 			if method == "parameters" {
@@ -42,6 +50,12 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			identifiers[operation.OperationID] = true
 			if _, exists := operation.Responses["422"]; exists {
 				t.Fatal("generated contract exposed the internal validation status 422")
+			}
+			if protectedOperations[operation.OperationID] {
+				unauthorized, exists := operation.Responses["401"]
+				if !exists || unauthorized.Headers["Set-Cookie"] == nil {
+					t.Fatalf("protected operation %s does not document stale session cleanup", operation.OperationID)
+				}
 			}
 			for _, parameter := range operation.Parameters {
 				if parameter.In == "cookie" && parameter.Name == sessionCookieName {
