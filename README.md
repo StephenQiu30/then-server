@@ -39,6 +39,7 @@
 
 ## 目录
 
+- `design.md`：全仓库通用页面设计与交付规范，固定自指定上游提交；产品范围、技术栈和功能行为仍由 `AGENTS.md` 与 `docs/` 对应事实源定义。
 - `app/`：SwiftUI 客户端、GRDB 数据层、系统能力适配与测试。
 - `backend/`：Go 后端、OpenAPI 唯一契约与 Atlas migration 目录。
 - `frontend/`：待 17-13 批准后创建的注册、登录与本人账户 CRUD 响应式 Web 应用。
@@ -49,13 +50,13 @@
 - `docs/design/`：一个功能一个 design，以及架构与隐私决策。
 - `docs/plan/`：产品级实施计划，以及统一范围契约、任务与证据的单切片执行计划。
 - `docs/acceptance/`：可执行验收标准与证据要求。
-- `references/`：按固定上游提交保存的外部参考快照；其中内容不自动成为项目规范。
 
 核心入口：
 
 | 文件 | 用途 |
 | --- | --- |
 | [`AGENTS.md`](AGENTS.md) | 全仓库当前产品、架构、隐私、数据与测试规范 |
+| [`design.md`](design.md) | 通用页面视觉、组件、交互与交付质量规范 |
 | [`docs/README.md`](docs/README.md) | 当前文档索引与历史文档边界 |
 | [`docs/prd/README.md`](docs/prd/README.md) | 产品总纲与 11–19 号单功能需求索引 |
 | [`docs/plan/README.md`](docs/plan/README.md) | 产品级实施计划与单切片执行计划的准入、编号、状态和模板 |
@@ -66,6 +67,8 @@
 | [`backend/openapi.yaml`](backend/openapi.yaml) | iOS、Web 与 Go 共用的唯一接口契约 |
 | [`docker-compose.yml`](docker-compose.yml) | 默认 Compose 入口，统一包含开发环境配置 |
 | [`docker-compose-env.yml`](docker-compose-env.yml) | 固定镜像、回环端口、命名卷和健康检查的开发依赖 |
+
+根目录 [`design.md`](design.md) 固定自 [StephenQiu30/video-server 提交 `3f95c3d`](https://github.com/StephenQiu30/video-server/blob/3f95c3de67a89ae8988724b0a51a436768ff75e9/design.md)。固定版本的 Git blob SHA 为 `65ca7f18fd4d24ae0b60f91ee582a34aefcda1a8`，SHA-256 为 `fb4ac9a5f11c56a2788ecd69acbaf9654f27f2b1d7a216892497e0480dddcc1d`；更新时必须重新固定上游提交并评审差异。
 
 ## 本地校验
 
