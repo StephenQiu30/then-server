@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -58,11 +57,7 @@ func (s *accountServiceStub) DeleteCurrentUser(_ context.Context, token string) 
 
 func accountRouter(t *testing.T, service AccountService, secure bool) *Router {
 	t.Helper()
-	document, err := os.ReadFile("../../openapi.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	router, err := NewRouter(context.Background(), document, false, probeFunc(func(context.Context) error { return nil }), NewAccountHandler(service, secure), time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), NewAccountHandler(service, secure), time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +129,7 @@ func TestLogoutClearsOnlyCurrentCookie(t *testing.T) {
 }
 
 func TestAccountSuccessResponsesMatchOpenAPI(t *testing.T) {
-	document, err := os.ReadFile("../../openapi.yaml")
+	document, _, err := GeneratedOpenAPI(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

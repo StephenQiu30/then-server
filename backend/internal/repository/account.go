@@ -18,28 +18,30 @@ func NewAccountRepository(database *gorm.DB) *AccountRepository {
 }
 
 type userRecord struct {
-	ID          string    `gorm:"column:id;type:uuid;primaryKey"`
-	DisplayName string    `gorm:"column:display_name"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at"`
+	ID          string             `gorm:"column:id;type:uuid;primaryKey"`
+	DisplayName string             `gorm:"column:display_name;type:text;not null;check:users_display_name_check,display_name = btrim(display_name) AND char_length(display_name) BETWEEN 1 AND 80"`
+	CreatedAt   time.Time          `gorm:"column:created_at;type:timestamptz;not null"`
+	UpdatedAt   time.Time          `gorm:"column:updated_at;type:timestamptz;not null;check:users_timestamps_check,updated_at >= created_at"`
+	Credentials []credentialRecord `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Sessions    []sessionRecord    `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 }
 
 func (userRecord) TableName() string { return "users" }
 
 type credentialRecord struct {
 	UserID       string `gorm:"column:user_id;type:uuid;primaryKey"`
-	Email        string `gorm:"column:email"`
-	PasswordHash string `gorm:"column:password_hash"`
+	Email        string `gorm:"column:email;type:text;not null;uniqueIndex:user_credentials_email_unique;check:user_credentials_email_check,email = lower(btrim(email)) AND char_length(email) BETWEEN 3 AND 254"`
+	PasswordHash string `gorm:"column:password_hash;type:text;not null;check:user_credentials_password_hash_check,char_length(password_hash) BETWEEN 59 AND 72 AND password_hash LIKE '$2%'"`
 }
 
 func (credentialRecord) TableName() string { return "user_credentials" }
 
 type sessionRecord struct {
 	ID        string    `gorm:"column:id;type:uuid;primaryKey"`
-	UserID    string    `gorm:"column:user_id;type:uuid"`
-	TokenHash []byte    `gorm:"column:token_hash"`
-	ExpiresAt time.Time `gorm:"column:expires_at"`
-	CreatedAt time.Time `gorm:"column:created_at"`
+	UserID    string    `gorm:"column:user_id;type:uuid;not null;index:user_sessions_user_id_idx"`
+	TokenHash []byte    `gorm:"column:token_hash;type:bytea;not null;uniqueIndex:user_sessions_token_hash_unique;check:user_sessions_token_hash_check,octet_length(token_hash) = 32"`
+	ExpiresAt time.Time `gorm:"column:expires_at;type:timestamptz;not null;index:user_sessions_expires_at_idx;check:user_sessions_expiry_check,expires_at > created_at"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;not null"`
 }
 
 func (sessionRecord) TableName() string { return "user_sessions" }

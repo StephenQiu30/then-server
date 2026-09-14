@@ -7,7 +7,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -23,12 +22,8 @@ func (f probeFunc) Probe(ctx context.Context) error { return f(ctx) }
 
 func newTestRouter(t *testing.T, probe probeFunc) (*Router, *bytes.Buffer) {
 	t.Helper()
-	doc, err := os.ReadFile("../../openapi.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
 	log := new(bytes.Buffer)
-	router, err := NewRouter(context.Background(), doc, false, probe, nil, 20*time.Millisecond, slog.New(slog.NewJSONHandler(log, nil)))
+	router, err := NewRouter(context.Background(), false, probe, nil, 20*time.Millisecond, slog.New(slog.NewJSONHandler(log, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +31,7 @@ func newTestRouter(t *testing.T, probe probeFunc) (*Router, *bytes.Buffer) {
 }
 
 func TestHealthContractAndFailureIsolation(t *testing.T) {
-	data, err := os.ReadFile("../../openapi.yaml")
+	data, _, err := GeneratedOpenAPI(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

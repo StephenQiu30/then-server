@@ -1,14 +1,16 @@
 # OOTD 技术债清理与迁移设计
 
+2026-09-14 后端事实源进一步收敛：服务端使用 Huma 运行时 OpenAPI 与 GORM AutoMigrate；App 当前没有云端请求调用，因此已移除 ThenTransport、OpenAPI 生成插件和符号链接。本文下方关于保留该模块或 Atlas 的内容只记录此前清理阶段，不指导当前实现。
+
 2026-09-14 清理遗漏修正：旧权限、后台模式和 finance 分类的退出必须同时覆盖源 Info.plist、Xcode 各 build configuration 的 INFOPLIST_KEY 设置与构建成品。不能因为当前手写 plist 未采用遗留设置就将其视为已清理。19-02 补齐 Debug/Release 的六类残留删除，并覆盖 SDK 条件设置的反向检查；不新增当前尚未批准的相机等权限，不改当前 OOTD 数据。
 
 ## 2026-09-13开发阶段基线决策
 
-用户明确确认“当前是开发阶段，不需要保留任何历史数据”。该当前指令替代下文发布未知时的保护分支：本项目采用全新 OOTD 开发基线，旧生活管理代码、migration、测试、权限和资源成组退役，不建设旧数据访问、导出、迁移或兼容层。历史决策与已提交实现由 Git 保存；保留当前新增的照片 POC 和 ThenTransport 工作。此结论来自项目负责人的明确说明，不伪称已独立审计 Apple 分发控制面。
+用户明确确认“当前是开发阶段，不需要保留任何历史数据”。该当前指令替代下文发布未知时的保护分支：本项目采用全新 OOTD 开发基线，旧生活管理代码、migration、测试、权限和资源成组退役，不建设旧数据访问、导出、迁移或兼容层。历史决策与已提交实现由 Git 保存；照片 POC 继续独立，未被业务调用的 ThenTransport 已在后续收敛中移除。此结论来自项目负责人的明确说明，不伪称已独立审计 Apple 分发控制面。
 
-实施顺序：19-02 清理旧业务及启动副作用并建立三个原生 Tab 的无数据入口；12-01 在其上建立有实际衣物用例的首份 OOTD GRDB schema。19-02 没有持久化需求，不预建空数据库、账号或异步启动任务；12-01 引入实际 I/O 时同时实现 starting / ready / recoverableFailure 启动状态。开发验收使用全新隔离模拟器容器，不以读取真实数据或运行旧 migration 准备环境。未来 OOTD 已保存数据仍必须满足数据保护、删除和失败恢复要求，本次旧数据决定不授权清空未来用户衣橱。
+实施顺序：19-02 清理旧业务及启动副作用并建立三个原生 Tab 的无数据入口；12-01 在其上建立有实际衣物用例的首份 OOTD GRDB schema。19-02 没有持久化需求，不预建空数据库、账号或异步启动任务；12-01 引入实际 I/O 时同时实现 starting / ready / recoverableFailure 启动状态。开发验收使用现有模拟器与隔离测试数据，不读取真实数据或运行旧 migration 准备环境。未来 OOTD 已保存数据仍必须满足数据保护、删除和失败恢复要求，本次旧数据决定不授权清空未来用户衣橱。
 
-19-02 文件边界：保留 App 生命周期/Root 文件但重写旧业务接线；成组删除旧 Feature、Core 财务类型、Data、旧系统服务和测试；移除 Info.plist 旧权限/background mode/finance 分类及对应字符串；PBX 保留现有 target/锁版，仅修正源码/资源 membership，ThenTransport 的生成输入与隔离不变。Root 只用系统 TabView/NavigationStack/ContentUnavailableView，保持原生无障碍和后台遮罩；没有假衣物、假推荐、照片或云端入口。独立验证工程引用、启动零旧数据写入、三 Tab、旧权限/入口不可达、相关照片与 API 测试和 Debug/Release 构建。
+19-02 文件边界：保留 App 生命周期/Root 文件但重写旧业务接线；成组删除旧 Feature、Core 财务类型、Data、旧系统服务和测试；移除 Info.plist 旧权限/background mode/finance 分类及对应字符串。Root 只用系统 TabView/NavigationStack/ContentUnavailableView，保持原生无障碍和后台遮罩；没有假衣物、假推荐、照片或云端入口。随后未被业务调用的 ThenTransport 也已按最新服务端事实源决定移除。
 
 ## 早期迁移设计记录（2026-08-30，当前决定优先）
 
@@ -38,10 +40,10 @@
 | 类别 | 现状 | 决策 |
 | --- | --- | --- |
 | 产品事实源 | 旧生活管理 PRD 与 OOTD 设计同时被描述为当前 | PRD 10 为产品总纲，11–19 为单功能需求；旧 PRD 03 仅作历史参考，旧生活管理设计已移出工作树并保留在 Git 历史 |
-| 技术事实源 | chi/pgx/schema.sql/no MQ 与 Gin/GORM/Atlas/RabbitMQ 并存 | 01 与 02 号设计统一为唯一当前基线 |
+| 技术事实源 | chi/pgx/schema.sql 等旧选型与当前实现并存 | 01 与 02 号设计统一为 Gin/Huma/GORM 当前基线 |
 | iOS UI | 工程已使用 SwiftUI，但规范只说“主要使用” | 固定所有产品页面使用 SwiftUI + Observation；UIKit/WebKit 仅限系统能力或经批准的局部图形 renderer adapter，不形成第二套页面架构 |
 | Xcode 工程 | 存在 SDK 绝对路径 framework 与悬空 plist 引用 | 直接删除无业务语义的引用，并用构建验证 |
-| 服务端 schema | 空 `backend/schema.sql` 仍被称为事实源 | 删除空壳，改为 Atlas versioned migration 目录 |
+| 服务端 schema | 空 `backend/schema.sql` 曾被称为事实源 | 删除空壳；当前开发 schema 由 GORM record + AutoMigrate 管理 |
 | 旧业务 Feature | Ledger、Calendar、Travel、Life、Today、Profile 仍组成五 Tab | 冻结；数据策略批准后按完整垂直切片成组移除 |
 | App 依赖容器 | `AppEnvironment` 聚合二十余项依赖，多页面接收完整容器 | OOTD Feature 只注入精确依赖；旧容器随旧 Feature 迁移收缩 |
 | 启动路径 | 数据库与 Keychain 同步初始化位于 App 初始化 | OOTD shell 落地时改为可观测 bootstrap 状态与可恢复失败页 |
@@ -54,7 +56,7 @@
 
 1. 从 Xcode 工程移除硬编码到特定 `iPhoneOS26.0.sdk` 的 `Foundation.framework` 引用及只承载该引用的空分组。系统 framework 由 SDK 和 linker 正常解析，不需要绝对路径引用。
 2. 移除错误指向 `ThenApp/App/Info.plist` 的悬空 PBX 文件引用；构建继续使用实际 `ThenApp/Info.plist`。
-3. 删除没有领域 DDL 的 `backend/schema.sql` 空壳；Atlas versioned SQL 规则保留在 Design 01/02，首个业务 schema 获批时再成组创建 migration、checksum 与配置，不保留空目录说明。
+3. 删除没有领域 DDL 的 `backend/schema.sql` 空壳；当前业务 schema 由 Repository 的 GORM record 与集中 AutoMigrate 管理，不再创建 Atlas 配置、SQL migration 或 checksum。
 4. 将根规范、README、后端 README 和 OpenAPI 元信息切换为 OOTD。
 5. 新增 `scripts/validate-ios-architecture.sh`，阻断替代 UI/状态/持久化框架、工程设置漂移和越界 UIKit 页面。
 

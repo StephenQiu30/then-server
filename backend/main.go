@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"log/slog"
 	"net"
@@ -18,9 +17,6 @@ import (
 	"github.com/StephenQiu30/then-server/backend/internal/transport"
 	"github.com/gin-gonic/gin"
 )
-
-//go:embed openapi.yaml
-var apiDocument []byte
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -44,12 +40,15 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer pool.Close()
+	if err := repository.Migrate(startup, pool.ORM()); err != nil {
+		return errors.New("database schema migration failed")
+	}
 	accounts, err := service.NewAccountService(repository.NewAccountRepository(pool.ORM()))
 	if err != nil {
 		return err
 	}
 	gin.SetMode(gin.ReleaseMode)
-	router, err := transport.NewRouter(startup, apiDocument, cfg.DocsEnabled, pool, transport.NewAccountHandler(accounts, cfg.SessionSecure), cfg.HealthTimeout, log)
+	router, err := transport.NewRouter(startup, cfg.DocsEnabled, pool, transport.NewAccountHandler(accounts, cfg.SessionSecure), cfg.HealthTimeout, log)
 	if err != nil {
 		return err
 	}

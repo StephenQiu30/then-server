@@ -5,7 +5,7 @@
 - 状态：`draft`。
 - 用户目标：仓库新增语义化顶层目录 `frontend/`，提供注册、登录和本人账户 CRUD 页面。
 - 当前决定：2026-09-14 用户要求先不实施前端服务；当前仓库不保留试做页面、生成物、依赖目录或 lockfile。
-- 上游合同：[Design 15](15-账号认证与账户数据设计.md)、[PRD 17](../prd/17-云端生成与任务管理需求.md#账号认证与web账户管理)、[`backend/openapi.yaml`](../../backend/openapi.yaml)。
+- 上游合同：[Design 15](15-账号认证与账户数据设计.md)、[PRD 17](../prd/17-云端生成与任务管理需求.md#账号认证与web账户管理)、Go API 运行时 `/openapi.json`。
 - 待批准计划：[17-13 Web 账户管理](../plan/17-13-Web账户管理执行计划.md)。
 
 ## 页面范围
@@ -23,18 +23,19 @@ Woo 参考没有展示认证页面，因此这些页面只能沿用“于是”�
 ## 技术边界
 
 - 使用 React、TypeScript、Vite；React Router 管理页面路由，TanStack Query 管理服务端状态。精确版本只认 [Design 01](01-技术选型.md#web-frontend)。
-- `@hey-api/openapi-ts` 只读取 `../backend/openapi.yaml`，生成到 `src/api/generated/`。页面不得手写 URL、DTO 或第二份 schema。
+- `@umijs/openapi` 只读取本机 Go API 的 `/openapi.json`，生成到 `src/api/generated/`。`openapi2ts.config.ts` 固定 `schemaPath`、`serversPath`、`projectName`、`mock: false` 和项目请求适配器；页面不得手写 URL、DTO 或第二份 schema。
 - 本地 Vite 只代理同源 `/v1`；生产静态文件与 API 由同一站点入口提供，不新增 Node BFF、跨源凭据 CORS 或前端直连 PostgreSQL/Redis/RabbitMQ/MinIO。
 - Cookie 由浏览器管理，JavaScript 不读取会话令牌，不把认证信息写入 Local Storage、Session Storage 或日志。
 - 账户删除沿用服务端硬删除合同；前端二次确认不替代服务端授权。
 
 ## 生成器预检结论
 
-2026-09-14 仅做了可撤销的本地生成预检，未保留 `frontend/` 代码：
+2026-09-14 用户进一步确认 Web 使用 Umi OpenAPI 生成 API 文件，替代此前 Hey API 候选。仅做了可撤销的本地生成预检，未保留 `frontend/` 代码：
 
-- `@hey-api/openapi-ts` 0.99.0 与 TypeScript 7.0.2 在当前工具链生成时访问缺失的 `SyntaxKind.AnyKeyword` 并失败；不增加补丁或兼容层。
-- 0.99.0 的解析依赖同时命中 npm audit 高危 YAML 资源消耗公告；不作为固定基线。
-- `@hey-api/openapi-ts` 0.97.0 + TypeScript 6.0.3 能从当前 OpenAPI 成功生成账户 SDK，且生产依赖审计为 0 漏洞。该组合写入 Design 01，正式开工时仍须重新执行生成、审计、typecheck 和 build，不把本次预检当成功能验收。
+- `@umijs/openapi` 1.14.1 + TypeScript 6.0.3 能读取当前 OpenAPI 3.1.2 JSON 表达，并按 tag 生成 3 个 service 文件、8 个请求函数、类型声明和索引。
+- 该 CLI 对 HTTP `schemaPath` 使用 JSON 解析，不能直接消费 `/openapi.yaml`；Go API 因此直接暴露由 Huma operation 与标注类型生成并校验的 `/openapi.json`。
+- 会话 Cookie 只通过 OpenAPI security scheme 表达，不生成函数参数；Umi 产物中没有 `then_session` 参数，浏览器随同源请求自动发送 HttpOnly Cookie。
+- 生成器包没有声明其 CLI 实际需要的 `tslib`，前端正式安装时将 `tslib` 2.8.1 作为显式开发依赖；这不是生成后修补。当前完整开发依赖审计因生成器固定依赖的 `mockjs` 原型污染公告报告 2 个 high 且无上游修复，`npm audit --omit=dev` 为 0。前端开工时必须复核；生成器不进入生产 bundle，`mock` 固定关闭。
 
 ## 页面状态与可访问性清单
 
@@ -56,5 +57,5 @@ Woo 参考没有展示认证页面，因此这些页面只能沿用“于是”�
 
 1. 审核三张页面稿以及手机宽度版本，确认颜色和品牌资产。
 2. 审核路由跳转、401、409、网络错误、退出和删除后的状态矩阵。
-3. 确认正式锁版仍能生成当前 OpenAPI 且无生产依赖漏洞。
+3. 确认正式锁版仍能从 `/openapi.json` 生成当前 OpenAPI，生产依赖审计为 0，并复核开发生成器公告。
 4. 将 [17-13](../plan/17-13-Web账户管理执行计划.md) 契约状态从 `draft` 改为 `approved` 后才创建 `frontend/`。

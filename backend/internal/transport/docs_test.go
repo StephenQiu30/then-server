@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,22 +16,19 @@ import (
 )
 
 func TestDocumentationRoutesAndContractOwnership(t *testing.T) {
-	document, err := os.ReadFile("../../openapi.yaml")
+	document, _, err := GeneratedOpenAPI(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	expected := bytes.Clone(document)
 	for _, enabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
-			input := bytes.Clone(document)
-			router, err := NewRouter(context.Background(), input, enabled,
+			router, err := NewRouter(context.Background(), enabled,
 				probeFunc(func(context.Context) error { return nil }), nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 			if err != nil {
 				t.Fatal(err)
 			}
-			// Caller-owned bytes cannot silently change the running contract.
-			clear(input)
-			for _, path := range []string{"/docs/", "/docs/swagger-initializer.js", "/docs/swagger-ui.css", "/docs/swagger-ui-bundle.js", "/docs/favicon.ico", "/docs/logo-mark.png", "/docs/LICENSE", "/docs/swagger-ui-bundle.js.LICENSE.txt", "/openapi.yaml"} {
+			for _, path := range []string{"/docs/", "/docs/swagger-initializer.js", "/docs/swagger-ui.css", "/docs/swagger-ui-bundle.js", "/docs/favicon.ico", "/docs/logo-mark.png", "/docs/LICENSE", "/docs/swagger-ui-bundle.js.LICENSE.txt", "/openapi.yaml", "/openapi.json"} {
 				w := httptest.NewRecorder()
 				router.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 				want := 404
@@ -45,7 +43,19 @@ func TestDocumentationRoutesAndContractOwnership(t *testing.T) {
 						t.Fatalf("%s: missing content or same-origin policy", path)
 					}
 					if path == "/openapi.yaml" && !bytes.Equal(w.Body.Bytes(), expected) {
-						t.Fatal("served contract differs from validated router input")
+						t.Fatal("served contract differs from generated runtime contract")
+					}
+					if path == "/openapi.json" {
+						var contract struct {
+							OpenAPI string                     `json:"openapi"`
+							Paths   map[string]json.RawMessage `json:"paths"`
+						}
+						if err := json.Unmarshal(w.Body.Bytes(), &contract); err != nil {
+							t.Fatalf("generated JSON contract is invalid: %v", err)
+						}
+						if contract.OpenAPI != "3.1.2" || len(contract.Paths) != 6 {
+							t.Fatalf("generated JSON contract lost API content: version=%q paths=%d", contract.OpenAPI, len(contract.Paths))
+						}
 					}
 					if path == "/docs/" && (!strings.Contains(w.Body.String(), "/docs/favicon.ico") || !strings.Contains(w.Body.String(), "/docs/logo-mark.png")) {
 						t.Fatal("documentation page is missing project branding")
@@ -67,6 +77,11 @@ func TestDocumentationRoutesAndContractOwnership(t *testing.T) {
 			}
 			if w.Code != want {
 				t.Fatalf("POST contract: got %d, want %d", w.Code, want)
+			}
+			w = httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest("POST", "/openapi.json", nil))
+			if w.Code != want {
+				t.Fatalf("POST JSON contract: got %d, want %d", w.Code, want)
 			}
 			w = httptest.NewRecorder()
 			router.ServeHTTP(w, httptest.NewRequest("GET", "/v1/health/live", nil))

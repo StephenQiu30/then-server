@@ -4,7 +4,6 @@ package tests
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -14,7 +13,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -63,6 +61,37 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	admin, err := database.Open(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	migrationGuardID := strings.ToLower(rand.Text()[:12])
+	migrationGuardSchema := "migration_guard_" + migrationGuardID
+	migrationGuardRole := "migration_guard_" + migrationGuardID
+	migrationGuardPassword := rand.Text()
+	if err := admin.ORM().WithContext(ctx).Exec("CREATE SCHEMA " + migrationGuardSchema).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.ORM().WithContext(ctx).Exec("CREATE ROLE " + migrationGuardRole + " LOGIN PASSWORD '" + migrationGuardPassword + "'").Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		if err := admin.ORM().WithContext(cleanup).Exec("DROP SCHEMA " + migrationGuardSchema + " CASCADE").Error; err != nil {
+			t.Error("migration guard schema cleanup failed")
+		}
+		if err := admin.ORM().WithContext(cleanup).Exec("DROP ROLE " + migrationGuardRole).Error; err != nil {
+			t.Error("migration guard role cleanup failed")
+		}
+	}()
+	if err := admin.ORM().WithContext(ctx).Exec("GRANT USAGE ON SCHEMA " + migrationGuardSchema + " TO " + migrationGuardRole).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.ORM().WithContext(ctx).Exec("ALTER ROLE " + migrationGuardRole + " SET search_path TO " + migrationGuardSchema).Error; err != nil {
+		t.Fatal(err)
+	}
 	binary := filepath.Join(t.TempDir(), "then-backend")
 	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "..")
 	if output, err := build.CombinedOutput(); err != nil {
@@ -75,6 +104,8 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 	defer occupied.Close()
 	wrongPassword := u
 	wrongPassword.User = url.UserPassword("then_test", "invalid-"+password)
+	readOnlySchema := u
+	readOnlySchema.User = url.UserPassword(migrationGuardRole, migrationGuardPassword)
 	for _, failure := range []struct {
 		name   string
 		env    []string
@@ -84,6 +115,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		{"unsupported worker", []string{"APP_ROLE=worker"}, "APP_ROLE"},
 		{"unsupported all", []string{"APP_ROLE=all"}, "APP_ROLE"},
 		{"invalid credentials", []string{"DATABASE_URL=" + wrongPassword.String()}, "database unavailable"},
+		{"schema migration", []string{"DATABASE_URL=" + readOnlySchema.String()}, "database schema migration failed"},
 		{"occupied listener", []string{"DATABASE_URL=" + u.String(), "HTTP_ADDR=" + occupied.Addr().String()}, "HTTP listen failed"},
 	} {
 		t.Run(failure.name, func(t *testing.T) {
@@ -98,14 +130,14 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 			if err == nil {
 				t.Fatal("invalid startup returned success")
 			}
-			if strings.Contains(string(output), password) || strings.Contains(string(output), "postgres://") {
+			if strings.Contains(string(output), password) || strings.Contains(string(output), migrationGuardPassword) || strings.Contains(string(output), "postgres://") {
 				t.Fatal("startup log exposed database credentials")
 			}
 			if strings.Contains(string(output), "api_started") {
 				t.Fatal("failed startup reported started")
 			}
 			if !strings.Contains(string(output), failure.reason) {
-				t.Fatal("startup did not return expected safe reason")
+				t.Fatalf("startup did not return expected safe reason: %s", output)
 			}
 		})
 	}
@@ -138,12 +170,8 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		if address == "" {
 			t.Fatal("process did not start")
 		}
-		expected, err := os.ReadFile("../openapi.yaml")
-		if err != nil {
-			t.Fatal(err)
-		}
 		client := &http.Client{Timeout: 2 * time.Second}
-		for _, path := range []string{"/docs/", "/docs/swagger-ui-bundle.js", "/openapi.yaml", "/v1/health/ready"} {
+		for _, path := range []string{"/docs/", "/docs/swagger-ui-bundle.js", "/openapi.yaml", "/openapi.json", "/v1/health/ready"} {
 			response, err := client.Get("http://" + address + path)
 			if err != nil {
 				t.Fatal(err)
@@ -153,8 +181,16 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 			if readErr != nil || response.StatusCode != 200 || len(body) == 0 {
 				t.Fatalf("built process route %s did not serve successfully", path)
 			}
-			if path == "/openapi.yaml" && !bytes.Equal(body, expected) {
-				t.Fatal("binary did not serve its compiled contract")
+			if path == "/openapi.yaml" && !strings.Contains(string(body), "openapi: 3.1.2") {
+				t.Fatal("binary did not serve its runtime-generated YAML contract")
+			}
+			if path == "/openapi.json" {
+				var contract struct {
+					OpenAPI string `json:"openapi"`
+				}
+				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" {
+					t.Fatal("binary did not serve a valid JSON representation of its compiled contract")
+				}
 			}
 		}
 	case <-ctx.Done():
@@ -179,11 +215,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	spec, err := os.ReadFile("../openapi.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	router, err := transport.NewRouter(ctx, spec, false, pool, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := transport.NewRouter(ctx, false, pool, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
