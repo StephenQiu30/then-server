@@ -1,7 +1,7 @@
 # 三维穿搭工作室设计验收
 
 - source visual truth: <https://x.com/LerSentAI/status/2090783821452943404?s=20>
-- implementation: `app/ThenApp/Features/Avatar/Presentation/AvatarStudioView.swift`
+- implementation: `then-app/ThenApp/Features/Avatar/Presentation/AvatarStudioView.swift`
 - viewport: iPhone 17，iOS 26.5，393 × 852 pt（截图 1206 × 2622 px）
 - evidence:
   - `docs/acceptance/evidence/11-02-avatar-studio-main.png`
@@ -12,7 +12,9 @@
 
 | 优先级 | 区域 | 观察结果 | 后续判定 |
 | --- | --- | --- | --- |
-| P1 | 人物视觉 | 已交付可拖动、可转向、可更换上装/下装/鞋履几何的真实 Three.js 三维角色；当前为程序化风格角色，与参考中的高完成度人物视觉仍有明显差距 | 需要正式原创人物、发型、材质、灯光与服装资产后重新逐帧对照 |
+| P0 | 人物视觉 | 已交付可拖动、可转向、可更换上装/下装/鞋履几何的 Three.js 工程角色；当前为不可复现的预编译低模，与参考中的高完成度人物视觉仍有明显差距 | 按 2026-09-15 架构用 Blender 可编辑母版重建人物、发型、材质、灯光与服装资产后重新逐帧对照 |
+| P0 | 服装适配 | 两上装 × 3×3 体型 × 正/侧/背的 54 场景均能加载；人工复核发现蓝色衬衫肩/肘/袖口身体穿出，manifest 的 coverage 还未在 renderer 生效 | 从 `.blend` 修服装留量/权重/shape keys 和 body regions；不以自动测试绿色或运行时推顶点通过 |
+| P0 | 资产事实源 | 八个 GLB 已通过 Khronos validator 和 Swift 恶意资源检查，但 `reproducibleFromRepository=false`、`sourceGeneratorRetained=false` | 正式资产同时交付 `.blend`、源贴图、source revision、许可证、GLB/hash 与验证报告 |
 | P1 | 完整页面 | 首页、内置衣橱分类、选择托盘和换装结果已运行；照片输入、AI Refining、结果确认、360° 生成/分享尚未形成真实业务闭环 | Provider、隐私、质量与成本门通过后按独立切片实现，当前不得以占位页算通过 |
 | P2 | 状态与历史 | 当前换装状态只保存在内存；重启恢复、已保存 Look 浏览、删除与迟到结果恢复尚未接入本地事实源 | 接入 GRDB 配置和完整生命周期测试后验收 |
 | P2 | 视觉对照证据 | 已逐段检查参考视频并保存实现截图；本轮没有取得可合法归档的参考逐帧本地文件，因此无法形成同尺寸叠图差分 | 后续取得可归档参考帧后补同视口并排和像素级差异图 |
