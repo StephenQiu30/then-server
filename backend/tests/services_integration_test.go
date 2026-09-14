@@ -3,7 +3,6 @@
 package tests
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -14,8 +13,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -27,50 +24,11 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func serviceSecret(t *testing.T, name string) string {
-	t.Helper()
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate local service configuration")
+func serviceSetting(name, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
 	}
-	path := filepath.Clean(filepath.Join(filepath.Dir(source), "..", "..", ".env"))
-	metadata, err := os.Lstat(path)
-	if err != nil || !metadata.Mode().IsRegular() || metadata.Mode()&os.ModeSymlink != 0 || metadata.Mode().Perm() != 0o600 {
-		t.Fatal("root .env must be a regular 0600 file")
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		t.Fatal("cannot open local service configuration")
-	}
-	defer file.Close()
-	values := make(map[string]string)
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found || key == "" || value == "" {
-			t.Fatal("root .env contains an invalid entry")
-		}
-		if _, duplicate := values[key]; duplicate {
-			t.Fatal("root .env contains a duplicate key")
-		}
-		values[key] = value
-	}
-	if scanner.Err() != nil {
-		t.Fatal("cannot read local service configuration")
-	}
-	value, found := values[name]
-	if !found {
-		t.Fatal("root .env is missing a service credential")
-	}
-	decoded, err := hex.DecodeString(value)
-	if err != nil || len(decoded) != 24 {
-		t.Fatal("root .env contains an invalid service credential")
-	}
-	return value
+	return fallback
 }
 
 func serviceID(t *testing.T) string {
@@ -91,10 +49,9 @@ func serviceOK(t *testing.T, operation string, err error) {
 }
 
 func TestServicesPostgresRollback(t *testing.T) {
-	password := serviceSecret(t, "POSTGRES_PASSWORD")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	db, err := sql.Open("pgx", "postgres://then_dev:"+password+"@127.0.0.1:18432/then_dev?sslmode=disable")
+	db, err := sql.Open("pgx", serviceSetting("THEN_TEST_DATABASE_URL", "postgres://127.0.0.1/postgres?sslmode=disable"))
 	serviceOK(t, "open database", err)
 	defer db.Close()
 	db.SetMaxOpenConns(1)
@@ -119,10 +76,16 @@ func TestServicesPostgresRollback(t *testing.T) {
 }
 
 func TestServicesMinIOPrivateLifecycle(t *testing.T) {
-	password := serviceSecret(t, "MINIO_ROOT_PASSWORD")
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	client, err := minio.New("127.0.0.1:18900", &minio.Options{Creds: credentials.NewStaticV4("then_dev", password, ""), Secure: false})
+	client, err := minio.New(serviceSetting("THEN_TEST_MINIO_ENDPOINT", "127.0.0.1:9000"), &minio.Options{
+		Creds: credentials.NewStaticV4(
+			serviceSetting("THEN_TEST_MINIO_ACCESS_KEY", "minioadmin"),
+			serviceSetting("THEN_TEST_MINIO_SECRET_KEY", "minioadmin"),
+			"",
+		),
+		Secure: false,
+	})
 	serviceOK(t, "create object client", err)
 	bucket := serviceID(t)
 	serviceOK(t, "create private bucket", client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{Region: "us-east-1"}))
@@ -148,7 +111,7 @@ func TestServicesMinIOPrivateLifecycle(t *testing.T) {
 	if !bytes.Equal(data, actual) {
 		t.Fatal("object bytes differ")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:18900/"+bucket+"/synthetic.txt", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+serviceSetting("THEN_TEST_MINIO_ENDPOINT", "127.0.0.1:9000")+"/"+bucket+"/synthetic.txt", nil)
 	serviceOK(t, "build anonymous request", err)
 	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
 	serviceOK(t, "anonymous request", err)
@@ -164,10 +127,10 @@ func TestServicesMinIOPrivateLifecycle(t *testing.T) {
 }
 
 func TestServicesRedisTTL(t *testing.T) {
-	password := serviceSecret(t, "REDIS_PASSWORD")
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:18379", Password: password, DialTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second})
+	password := serviceSetting("THEN_TEST_REDIS_PASSWORD", "")
+	client := redis.NewClient(&redis.Options{Addr: serviceSetting("THEN_TEST_REDIS_ADDR", "127.0.0.1:6379"), Password: password, DialTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second})
 	defer client.Close()
 	key := serviceID(t)
 	defer func() {
@@ -195,18 +158,19 @@ func TestServicesRedisTTL(t *testing.T) {
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	unauth := redis.NewClient(&redis.Options{Addr: "127.0.0.1:18379", MaxRetries: -1})
-	defer unauth.Close()
-	if err := unauth.Ping(ctx).Err(); err == nil {
-		t.Fatal("Redis allowed unauthenticated access")
+	if password != "" {
+		unauth := redis.NewClient(&redis.Options{Addr: serviceSetting("THEN_TEST_REDIS_ADDR", "127.0.0.1:6379"), MaxRetries: -1})
+		defer unauth.Close()
+		if err := unauth.Ping(ctx).Err(); err == nil {
+			t.Fatal("Redis allowed unauthenticated access")
+		}
 	}
 }
 
 func TestServicesRabbitConfirmationAndRedelivery(t *testing.T) {
-	password := serviceSecret(t, "RABBITMQ_DEFAULT_PASS")
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	connection, err := amqp.DialConfig("amqp://then_dev:"+password+"@127.0.0.1:18672/then_dev", amqp.Config{
+	connection, err := amqp.DialConfig(serviceSetting("THEN_TEST_RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/"), amqp.Config{
 		Dial: func(network, address string) (net.Conn, error) {
 			conn, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, network, address)
 			if err != nil {

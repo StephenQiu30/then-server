@@ -2,28 +2,28 @@
 
 ## 本地数据库与中间件
 
-在仓库根目录执行（Docker daemon 需已运行，Go 版本按 Design 01）：
+普通开发直接使用本机已经安装并启动的服务，不要求 Docker：
 
 ```sh
-cp .env.example .env
-chmod 600 .env
-# 替换 .env 中四个占位值后：
-docker compose up --detach --wait
+brew services start postgresql@18
+brew services start minio
+brew services start redis
+brew services start rabbitmq
 (cd backend && go test -race -tags=services ./tests -count=1)
 ```
 
-上述命令在仓库根目录执行。原始契约和 Swift 生成不依赖独立 Swagger 容器。
+服务测试默认连接 PostgreSQL `127.0.0.1:5432/postgres`、MinIO `127.0.0.1:9000`、Redis `127.0.0.1:6379` 与 RabbitMQ `127.0.0.1:5672`，适配 Homebrew 默认开发安装。已有自定义账号或端口时，通过 `THEN_TEST_DATABASE_URL`、`THEN_TEST_MINIO_ENDPOINT`、`THEN_TEST_MINIO_ACCESS_KEY`、`THEN_TEST_MINIO_SECRET_KEY`、`THEN_TEST_REDIS_ADDR`、`THEN_TEST_REDIS_PASSWORD`、`THEN_TEST_RABBITMQ_URL` 覆盖；测试只读取进程环境，不解析项目 `.env`，并且不会输出连接密钥。
 
 | 服务 | 本机入口 | 用途 |
 | --- | --- | --- |
-| PostgreSQL | 127.0.0.1:18432，数据库/用户 then_dev | API 数据库与事务验证 |
-| MinIO | [Console](http://127.0.0.1:18901)，S3 127.0.0.1:18900 | 私有对象开发验证 |
-| Redis | 127.0.0.1:18379 | 可失效缓存/TTL 验证 |
-| RabbitMQ | [Management](http://127.0.0.1:18673)，AMQP 127.0.0.1:18672，vhost then_dev | quorum/确认/重投递验证 |
+| PostgreSQL | 127.0.0.1:5432 | API 数据库与事务验证 |
+| MinIO | S3 127.0.0.1:9000 | 私有对象开发验证 |
+| Redis | 127.0.0.1:6379 | 可失效缓存/TTL 验证 |
+| RabbitMQ | AMQP 127.0.0.1:5672 | quorum/确认/重投递验证 |
 
-账号均为 then_dev（Redis 为默认用户），随机密码只保存在仓库根目录忽略文件 `.env`，权限 0600；不要复制到源码、命令行参数或日志。此开发账号仅供本机合成数据，不是生产应用权限模型。
+这些地址只用于 loopback 合成数据开发，不是生产应用权限模型。自定义凭据由本机服务管理，不能复制到源码或日志。
 
-`docker compose ps` 查看状态，`docker compose config --quiet` 通过默认 `docker-compose.yml` 校验并包含 `docker-compose-env.yml`，`docker compose down` 停止本项目并保留卷；`docker build --tag then-backend:local backend` 构建镜像。Redis 按可重建缓存设计，未启用磁盘持久化；其他三项使用独立命名卷。只发布 loopback 端口，但 bridge 网络并非出站防火墙。不要对其他项目执行清理，也不要用这份单节点配置做生产 HA 部署。
+根 `docker-compose.yml` 与 `docker-compose-env.yml` 只保留一个显式的 `isolated-env` 备用环境。确需隔离时才复制 `.env.example`、设置随机凭据并运行 `docker compose --profile isolated-env up --detach --wait`；它使用 18432/18900/18379/18672 等备用端口，不会替代本机默认开发服务。`docker build --tag then-backend:local backend` 仍可独立验证后端镜像。
 
 **MinIO 官方服务端已归档，不再维护；当前锁定历史发行版仅用于隔离开发。生产发行版、维护支持和安全修复方案尚未确定。** 选型来源、镜像/SDK 版本与限制归 [Design 01](../docs/design/01-技术选型.md#数据库与中间件接入决策)，spec/checklist 归 [17-10](../docs/plan/17-10-数据库与中间件开发环境执行计划.md)。四项协议测试通过不代表业务任务 Outbox/Inbox、取消/删除或用户媒体链路完成。
 
@@ -68,7 +68,8 @@ OOTD 后端采用 Go 1.26.5 模块化单体：一个 `go.mod`、一个 `main.go`
 | --- | --- |
 | `go.mod` | 唯一 Go module 与 Go toolchain，实际依赖由 go.sum 锁定。 |
 | `openapi.yaml` | iOS Client、Go contract test 和 Swagger UI 共用的唯一契约。 |
-| `migrations/` | Atlas versioned SQL 事实源；当前等待首个已批准数据模型。 |
+
+首个服务端业务 schema 获批时再创建 `migrations/*.sql`、`atlas.sum` 与 `atlas.hcl`；当前不保留空目录或说明文件。
 
 旧的空 `schema.sql` 已删除，不能与 migration 目录并行恢复。GORM model 是运行时映射，不是生产 schema 管理器。
 
