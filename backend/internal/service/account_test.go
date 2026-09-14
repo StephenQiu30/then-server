@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then/backend/internal/model"
+	"github.com/StephenQiu30/then-server/backend/internal/model"
 	"golang.org/x/crypto/bcrypt"
 )
 

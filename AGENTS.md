@@ -36,7 +36,7 @@ Woo 原帖视频中可见的穿搭主页、左右浏览、日期/颜色/分享/�
 
 ## 产品与技术方向
 
-“于是”当前是一款仅面向 iOS 的 C 端 OOTD 穿搭产品。仓库名为 `then`，用户可见名称暂时保留“于是”，Xcode target 与 Swift module 使用 `ThenApp`。
+“于是”当前是一款仅面向 iOS 的 C 端 OOTD 穿搭产品。本仓库名为 `then-server`，保存服务端、唯一 OpenAPI 和产品级文档；iOS 位于同级独立 `then-app` 仓库，二者统一放在本地 `Then/` 父目录。用户可见名称暂时保留“于是”，Xcode target 与 Swift module 使用 `ThenApp`。
 
 当前产品围绕以下闭环建设：
 
@@ -66,7 +66,7 @@ Woo 原帖视频中可见的穿搭主页、左右浏览、日期/颜色/分享/�
 
 ## 目标仓库结构
 
-2026-09-08 用户确认：后端位于 `backend/`，iOS 位于 `app/`（原 `ios/` 已迁移）。保持单个 ThenApp 产品业务模块；2026-09-13 用户确认增加唯一技术例外 ThenTransport，仅编译 OpenAPI 插件生成的 types/client，默认 nonisolated，Swift 6 Complete Strict Concurrency。ThenApp/UI 继续 MainActor + Approachable Concurrency；不拆分其他业务模块，不增加转发层、空包或额外项目包装。
+2026-09-14 用户确认：服务端仓库为 `then-server`，Go 仍位于 `backend/`；iOS 已从本仓库迁移到同级 `then-app`，本地共同父目录为 `Then/`。App 保持单个 ThenApp 产品业务模块；2026-09-13 用户确认的唯一技术例外 ThenTransport 仅编译 OpenAPI 插件生成的 types/client，默认 nonisolated，Swift 6 Complete Strict Concurrency。ThenApp/UI 继续 MainActor + Approachable Concurrency；不拆分其他业务模块，不增加转发层、空包或额外项目包装。
 
 以下结构随实施计划逐步落地，不表示所有条目当前都已存在。不要为了填满结构创建空文件或空目录。
 
@@ -79,20 +79,7 @@ Woo 原帖视频中可见的穿搭主页、左右浏览、日期/颜色/分享/�
 ├── docker-compose.yml
 ├── docker-compose-env.yml
 ├── .env.example
-├── app/
-│   ├── README.md
-│   ├── ThenApp/
-│   │   ├── openapi.yaml -> ../../backend/openapi.yaml
-│   │   ├── openapi-generator-config.yaml
-│   │   ├── Localizable.xcstrings
-│   │   ├── InfoPlist.xcstrings
-│   │   ├── App/
-│   │   ├── Core/
-│   │   ├── Features/
-│   │   ├── Services/
-│   │   └── Data/
-│   ├── ThenAppTests/
-│   └── ThenAppUITests/
+├── .github/workflows/ci.yml
 ├── backend/
 │   ├── README.md
 │   ├── go.mod
@@ -155,7 +142,7 @@ Woo 原帖视频中可见的穿搭主页、左右浏览、日期/颜色/分享/�
 ## 开始任务前
 
 1. 阅读本文件和任务涉及目录的说明文件。
-2. 直接运行 `xcodebuild -version`、`swift --version`、`go version` 并与 Design 01 核对；版本不一致时停止，不使用未批准的替代工具链。
+2. 直接运行 `go version` 并与 Design 01 核对；涉及跨仓库 OpenAPI 或 iOS 时，再在同级 `then-app` 运行 `xcodebuild -version` 与 `swift --version`。版本不一致时停止，不使用未批准的替代工具链。
 3. 阅读对应单功能 PRD、design、产品级实施计划和验收标准；若任务已进入实现，还要阅读已批准的同编号单切片执行计划。
 4. 检查工作区已有修改，不覆盖或回滚无关改动。
 5. 确认改动是否影响 iOS、后端、OpenAPI、本地 migration、服务端 migration、媒体生命周期和文档。
@@ -169,7 +156,9 @@ Woo 原帖视频中可见的穿搭主页、左右浏览、日期/颜色/分享/�
 - 每个提交只包含一个可独立说明和回滚的变化；破坏性变更在页脚使用 `BREAKING CHANGE:`，说明兼容、迁移与回滚。
 - 完整规则以 `CONTRIBUTING.md` 为准；首次克隆后运行 `git config --local core.hooksPath .githooks`。
 
-## iOS 开发规范
+## 跨仓库 iOS 开发规范
+
+iOS 源码不在本仓库；以下规则是本仓库文档与 OpenAPI 对 `then-app` 的跨仓库约束。iOS 实现和测试必须在 `then-app` 独立提交，不得把源码复制回 `then-server`。
 
 ### SwiftUI 架构
 
@@ -254,7 +243,7 @@ Woo 原帖视频中可见的穿搭主页、左右浏览、日期/颜色/分享/�
 - `backend/openapi.yaml` 是 iOS、Go 后端和 Swagger UI 的唯一接口契约。不得复制第二份 YAML/JSON、使用 Swagger 注解生成契约或手写 iOS transport DTO。
 - 契约固定 OpenAPI 3.1.2；公开业务接口使用 `/v1`。每个 operation 必须有全局唯一、稳定、可读的 `operationId`。
 - 修改顺序：先改 OpenAPI 并校验，再生成并编译 iOS Client，手写 Go Handler 与纯 struct，最后更新契约测试和示例。
-- iOS 生成代码只存在 DerivedData，由 ThenTransport target 的 Build Tool Plugin 编译并以 public 访问级别导出；`app/ThenApp/openapi.yaml` 必须保持指向 `backend/openapi.yaml` 的符号链接。
+- iOS 生成代码只存在 DerivedData，由 ThenTransport target 的 Build Tool Plugin 编译并以 public 访问级别导出；同级 `then-app/ThenApp/openapi.yaml` 必须保持指向 `../../then-server/backend/openapi.yaml` 的符号链接。
 - 请求与响应 schema 明确 required、可空性、枚举、格式、单位和示例；不得用无约束 object 代替稳定结构。
 - 创建、上传 finalize、生成、取消、删除、同步和第三方回调支持幂等键；列表优先使用稳定游标。
 - 长任务返回 `202 Accepted`、稳定 job ID、状态 URL 和建议轮询间隔。

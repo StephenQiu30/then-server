@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/StephenQiu30/then/backend/internal/platform/config"
+	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"

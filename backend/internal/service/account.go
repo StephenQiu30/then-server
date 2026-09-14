@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/StephenQiu30/then/backend/internal/model"
+	"github.com/StephenQiu30/then-server/backend/internal/model"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )

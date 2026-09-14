@@ -14,7 +14,7 @@
 
 当前接口协作按 [17-09 内嵌文档](plan/17-09-后端内嵌接口文档执行计划.md) 执行；17-08 仅保留历史。
 
-接口协作入口：[Swagger 启动与契约地址](../backend/README.md#swagger接口文档) → [iOS 请求代码生成](../app/README.md#openapi请求代码生成) → [17-09 执行计划](plan/17-09-后端内嵌接口文档执行计划.md)。
+接口协作入口：[Swagger 启动与契约地址](../backend/README.md#swagger接口文档) → [then-app iOS 请求代码生成](https://github.com/StephenQiu30/then-app#swaggeropenapi-client-生成) → [17-09 执行计划](plan/17-09-后端内嵌接口文档执行计划.md)。
 
 本地 3D 当前工作入口：[实施准备审核与缺口](acceptance/10-OOTD产品系统验收.md#2026-09-12三维实施准备审核) → [角色开发与交付 SOP](design/04-数字形象与照片采集设计.md#本地三维角色开发与交付sop) / [服装资产交付 SOP](design/05-数字衣橱与衣物录入设计.md#三维服装资产交付sop) → [当前执行与验收边界](plan/10-OOTD产品实施计划.md#2026-09-14当前执行与验收边界)。2026-09-13 已修复 iOS 生成 Client 编译阻断并完成正式构建/相关回归；参考已确认为 Woo；实际动作/资产、最低真机预算仍待收敛，审核完成不等于三维生产准入。
 

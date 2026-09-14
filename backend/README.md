@@ -39,7 +39,7 @@ API_DOCS_ENABLED=true go run .
 
 `API_DOCS_ENABLED` 默认 false，仅接受 true/false，启用时必须绑定回环 IP；关闭时所有文档路径返回 404。当前只提供本机开发文档，Try it out、外部 validator、查询配置覆盖与鉴权持久化关闭，生产文档未启用。API 仍按既有语义要求数据库可用才能启动。
 
-Swift 生成不要求 Docker、文档页面或 API 运行，直接读取仓库唯一 YAML；见 [iOS README](../app/README.md#openapi请求代码生成)。独立 Swagger Compose 和管理脚本已退役，不提供旧 18108 端口或脚本兼容入口。当前 spec/checklist 和证据见 [17-09](../docs/plan/17-09-后端内嵌接口文档执行计划.md)。
+Swift 生成不要求 Docker、文档页面或 API 运行，独立 [`then-app`](https://github.com/StephenQiu30/then-app#swaggeropenapi-client-生成) 通过同级符号链接直接读取本仓库唯一 YAML。独立 Swagger Compose 和管理脚本已退役，不提供旧 18108 端口或脚本兼容入口。当前 spec/checklist 和证据见 [17-09](../docs/plan/17-09-后端内嵌接口文档执行计划.md)。
 
 ## 账号认证与本人账户 API
 
@@ -90,7 +90,7 @@ OOTD 后端采用 Go 1.26.5 模块化单体：一个 `go.mod`、一个 `main.go`
 
 ## 目录与规范入口
 
-仓库顶层为 `backend/` 和 `app/`。后端入口保留根 `main.go`，只按真实职责增加 `internal` 包，不建项目包装层或空业务目录。
+`then-server` 仓库中的 Go 代码位于 `backend/`，iOS 位于同一 `Then/` 父目录下的独立 `then-app`。后端入口保留根 `main.go`，只按真实职责增加 `internal` 包，不建项目包装层或空业务目录。
 
 | 需要回答的问题 | 唯一规范入口 |
 | --- | --- |

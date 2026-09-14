@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then/backend/internal/platform/config"
-	"github.com/StephenQiu30/then/backend/internal/platform/database"
-	"github.com/StephenQiu30/then/backend/internal/transport"
+	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
+	"github.com/StephenQiu30/then-server/backend/internal/platform/database"
+	"github.com/StephenQiu30/then-server/backend/internal/transport"
 	dockerclient "github.com/moby/moby/client"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
