@@ -41,6 +41,21 @@ API_DOCS_ENABLED=true go run .
 
 Swift 生成不要求 Docker、文档页面或 API 运行，直接读取仓库唯一 YAML；见 [iOS README](../app/README.md#openapi请求代码生成)。独立 Swagger Compose 和管理脚本已退役，不提供旧 18108 端口或脚本兼容入口。当前 spec/checklist 和证据见 [17-09](../docs/plan/17-09-后端内嵌接口文档执行计划.md)。
 
+## 账号认证与本人账户 API
+
+当前开发 MVP 已提供 `POST /v1/auth/registrations`、`POST /v1/auth/sessions`、`DELETE /v1/auth/session` 与 `GET/PATCH/DELETE /v1/users/me`。邮箱和密码规则、Cookie 会话、本人授权、错误结构都以 [`openapi.yaml`](openapi.yaml) 与 [Design 15](../docs/design/15-账号认证与账户数据设计.md) 为准。
+
+首次运行前由 Atlas 应用 [`migrations/`](migrations/) 的 versioned SQL；应用进程不执行 DDL 或 `AutoMigrate`：
+
+```sh
+atlas migrate apply --env local
+go run .
+```
+
+本机 `HTTP_ADDR=127.0.0.1:8080` 默认允许 `SESSION_COOKIE_SECURE=false`。监听任何非回环地址必须显式设置 `SESSION_COOKIE_SECURE=true`，否则进程拒绝启动；生产还必须由 TLS 同源入口提供服务。邮件验证、找回密码、Redis 登录限流与生产审计未完成，当前端点不能直接作为公网注册服务发布。
+
+Web 页面归尚未批准的 [17-13](../docs/plan/17-13-Web账户管理执行计划.md)；按用户要求当前不创建 `frontend/`。Swagger 与 Swift Client 已可直接使用新增账户契约。
+
 ## 后端基线
 
 OOTD 后端采用 Go 1.26.5 模块化单体：一个 `go.mod`、一个 `main.go`、一个 OCI 镜像。目标是相同二进制通过 `APP_ROLE=api|worker|all` 运行 Gin API 或异步 worker；当前仅实现 api，worker/all 明确拒绝启动，本地 OCI 构建与运行验证已落地，生产发布尚未完成。生产按角色部署，不拆业务微服务。
@@ -51,9 +66,9 @@ OOTD 后端采用 Go 1.26.5 模块化单体：一个 `go.mod`、一个 `main.go`
 
 | 状态 | 组件 | 本阶段用途 |
 | --- | --- | --- |
-| 已接入 | Gin、GORM/PostgreSQL、kin-openapi、标准库 slog/context/config | API 启动、两个健康接口、数据库连接和内嵌 Swagger；尚无用户云业务 |
+| 已接入 | Gin、GORM/PostgreSQL、kin-openapi、标准库 slog/context/config | API 启动、健康接口、内嵌 Swagger、账号会话与本人账户 CRUD |
 | 已接入开发验证 | Go testing/httptest、Testcontainers/Moby | 后两者用于带标签的数据库/镜像集成测试，不是 API 的 Docker 运行依赖 |
-| 首个业务 schema 时 | Atlas versioned SQL | 先核定发行版/许可和所需命令，不预建空 migration 或默认依赖 Pro |
+| 已接入 | Atlas versioned SQL | 账号表是首份业务 migration；应用身份不执行 DDL |
 | 已接入开发验证 | RabbitMQ | 17-10 验证 quorum、confirm、ack/requeue；业务 Outbox/Inbox 尚待任务切片 |
 | 已接入开发验证 | Redis、MinIO | TTL、鉴权、私有对象读写删除；MinIO 历史镜像只用于合成数据开发 |
 | 明确需要时 | FFmpeg、OTel exporter | 视频处理及生产观测；不作为本地三维前置 |
@@ -69,7 +84,7 @@ OOTD 后端采用 Go 1.26.5 模块化单体：一个 `go.mod`、一个 `main.go`
 | `go.mod` | 唯一 Go module 与 Go toolchain，实际依赖由 go.sum 锁定。 |
 | `openapi.yaml` | iOS Client、Go contract test 和 Swagger UI 共用的唯一契约。 |
 
-首个服务端业务 schema 获批时再创建 `migrations/*.sql`、`atlas.sum` 与 `atlas.hcl`；当前不保留空目录或说明文件。
+`migrations/*.sql`、`migrations/atlas.sum` 与 `atlas.hcl` 是服务端 schema 的唯一事实源。当前首份 migration 创建用户、凭据和会话表。
 
 旧的空 `schema.sql` 已删除，不能与 migration 目录并行恢复。GORM model 是运行时映射，不是生产 schema 管理器。
 
@@ -85,9 +100,9 @@ OOTD 后端采用 Go 1.26.5 模块化单体：一个 `go.mod`、一个 `main.go`
 | 文件放哪里、各层负责什么 | [Design 02 目录职责](../docs/design/02-后端架构.md#目标目录) |
 | 依赖、错误、事务、配置与服务代码如何写 | [Design 02 服务规范](../docs/design/02-后端架构.md#服务代码规范) |
 | 从需求到实现、验证、发布如何推进 | [Design 02 开发交付 SOP](../docs/design/02-后端架构.md#后端开发与交付-sop) |
-| 当前先做什么、什么仍阻断 | [17-01 执行计划](../docs/plan/17-01-后端服务启动与健康契约执行计划.md) |
+| 当前账号实现和剩余门禁 | [17-12 执行计划](../docs/plan/17-12-账号认证与本人账户API执行计划.md) |
 
-model/service/repository/worker 在真实业务进入切片后按需建立；当前 platform/config、database、httpserver 和 transport 已有实际运行职责。首份业务 schema 才创建 SQL 与 atlas.hcl，17-07 已加入 Dockerfile，不为填满架构图创建占位代码。
+账号切片已按实际职责建立 model/service/repository/transport 与首份 migration；worker 仍只在异步业务进入获批切片后创建。17-07 已加入 Dockerfile，不为填满架构图创建占位代码。
 
 ## 编码前必须阅读
 
@@ -116,7 +131,8 @@ model/service/repository/worker 在真实业务进入切片后按需建立；当
 将 `.env.example` 的配置按实际隔离数据库环境设置到进程环境，然后在 `backend/` 执行 `go run .`。程序不自动加载或执行环境文件。PostgreSQL 必须为 major 18；远端连接要求 `sslmode=verify-full`，仅 loopback 开发连接允许 `disable`。
 
 - `GET /v1/health/live`：进程存活，不访问数据库。
-- `GET /v1/health/ready`：数据库可连接为 200，故障或退出中为 503；不代表业务 schema 或云功能就绪。
+- `GET /v1/health/ready`：数据库可连接为 200，故障或退出中为 503；不替代 migration 或账户端点验收。
+- 账号路由：从 Swagger 或生成 Client 按 `registerAccount` → `getCurrentUser` → `updateCurrentUser` → `deleteSession`/`deleteCurrentUser` 调用；浏览器会话使用 HttpOnly Cookie。
 - `go test ./...`、`go vet ./...`、`go test -race ./...`：单元和 HTTP 契约验证。
 - `go test -race -tags=integration ./tests -v`：需要 Docker，自动创建并清理固定 digest 的 PostgreSQL 18.4 容器，验证断连恢复。
 
@@ -146,6 +162,6 @@ docker build -t then-backend:local backend
 THEN_BACKEND_TEST_IMAGE=then-backend:local go test -race -tags=container ./tests -count=1 -v
 ```
 
-镜像非 root，无 shell；默认监听仍为 127.0.0.1:8080。容器需要对外监听时显式设置 HTTP_ADDR=0.0.0.0:8080，并限制宿主发布地址/访问网络。DATABASE_URL 由运行环境提供，非 loopback 数据库要求 verify-full。测试使用隔离共享网络，不作为生产 TLS 部署样板。
+镜像非 root，无 shell；默认监听仍为 127.0.0.1:8080。容器需要对外监听时显式设置 `HTTP_ADDR=0.0.0.0:8080` 与 `SESSION_COOKIE_SECURE=true`，并限制宿主发布地址/访问网络。`DATABASE_URL` 由运行环境提供，非 loopback 数据库要求 verify-full。测试使用隔离共享网络，不作为生产 TLS 部署样板。
 
 这些后端命令不要求 Xcode，也不替代 OpenAPI/Swift 的完整契约验收。容器测试验证只读根文件系统、资源限制、健康接口、SIGTERM 和未实现角色拒绝；当前仅验证 linux/arm64。详情见 [17-07](../docs/plan/17-07-后端容器构建与运行验证执行计划.md)。

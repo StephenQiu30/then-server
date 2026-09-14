@@ -14,6 +14,7 @@ type Config struct {
 	Role            string
 	HTTPAddr        string
 	DocsEnabled     bool
+	SessionSecure   bool
 	DatabaseURL     string
 	MaxOpenConns    int
 	MaxIdleConns    int
@@ -46,6 +47,16 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		c.DocsEnabled = true
 	default:
 		return Config{}, fmt.Errorf("API_DOCS_ENABLED: expected true or false")
+	}
+	switch get("SESSION_COOKIE_SECURE", "false") {
+	case "false":
+	case "true":
+		c.SessionSecure = true
+	default:
+		return Config{}, fmt.Errorf("SESSION_COOKIE_SECURE: expected true or false")
+	}
+	if !c.SessionSecure && !net.ParseIP(host).IsLoopback() {
+		return Config{}, fmt.Errorf("SESSION_COOKIE_SECURE: required for non-loopback HTTP_ADDR")
 	}
 	if c.DocsEnabled && !net.ParseIP(host).IsLoopback() {
 		return Config{}, fmt.Errorf("API_DOCS_ENABLED: documentation requires a loopback HTTP_ADDR")

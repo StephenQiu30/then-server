@@ -24,7 +24,7 @@ func TestDocumentationRoutesAndContractOwnership(t *testing.T) {
 		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
 			input := bytes.Clone(document)
 			router, err := NewRouter(context.Background(), input, enabled,
-				probeFunc(func(context.Context) error { return nil }), time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+				probeFunc(func(context.Context) error { return nil }), nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 			if err != nil {
 				t.Fatal(err)
 			}
