@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -45,9 +43,7 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 	databaseURL.RawQuery = query.Encode()
 	database, err := gorm.Open(postgres.Open(databaseURL.String()), &gorm.Config{Logger: logger.Discard})
 	serviceOK(t, "open isolated account schema", err)
-	migration, err := os.ReadFile(filepath.Join("..", "migrations", "20260914170000_accounts.sql"))
-	serviceOK(t, "read account migration", err)
-	serviceOK(t, "apply account migration", database.WithContext(ctx).Exec(string(migration)).Error)
+	serviceOK(t, "migrate account schema", repository.Migrate(ctx, database))
 
 	accounts, err := service.NewAccountService(repository.NewAccountRepository(database))
 	serviceOK(t, "construct account service", err)

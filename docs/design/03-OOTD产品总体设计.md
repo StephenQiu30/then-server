@@ -93,7 +93,7 @@
 
 ### 应用与后端职责
 
-新 OOTD 业务 ID 与后端统一使用 UUID v4；离线创建无需服务端分配 ID。Swift 领域模型使用类型化 ID，API 使用规范字符串；旧生活管理主键保持原样，迁移按 PRD 19 决策，不批量改号。完整数据规则见 [后端架构](02-后端架构.md#postgresql-约束)。
+新 OOTD 业务 ID 与后端统一使用 UUID v4；离线创建无需服务端分配 ID。Swift 领域模型使用类型化 ID，API 使用规范字符串；旧生活管理主键保持原样，迁移按 PRD 19 决策，不批量改号。完整数据规则见 [后端架构](02-后端架构.md#gorm与数据结构)。
 
 ```mermaid
 flowchart TD
@@ -131,7 +131,7 @@ flowchart TD
 关联需求与设计：
 
 - [`../prd/10-OOTD产品需求.md`](../prd/10-OOTD产品需求.md) 是产品总纲；11–19 号单功能 PRD 是各功能行为与发布门禁的直接需求依据。
-- [`01-技术选型.md`](01-技术选型.md) 固定 SwiftUI iOS、Gin/GORM、Atlas、RabbitMQ、Redis 与私有对象存储技术边界。
+- [`01-技术选型.md`](01-技术选型.md) 固定 SwiftUI iOS、Gin/Huma/GORM、PostgreSQL，以及按功能启用 RabbitMQ、Redis 与私有对象存储的技术边界。
 - [`02-后端架构.md`](02-后端架构.md) 固定模块化单体、同一二进制和 API/worker 角色边界。
 - [`11-OOTD权限隐私与安全设计.md`](11-OOTD权限隐私与安全设计.md) 是 OOTD 敏感数据、同意、保留和删除基线。
 
@@ -356,7 +356,7 @@ OutfitContext
 
 - 衣橱、场景摘要、结构化推荐、方案、穿着与反馈默认本地优先，并应在离线时可读写。
 - OOTD 领域对象与旧账务、日历和行程表分开，不通过外键直接依赖 EventKit identity 或账务记录。
-- 新 migration、服务端表和 OpenAPI operation 只能随进入当前实施阶段的功能增加，并须遵循 Atlas、GRDB 与单一 OpenAPI 事实源规则。
+- 新 GRDB migration、服务端 GORM record 和 Huma operation 只能随进入当前实施阶段的功能增加，并须遵循当前 schema 与运行时 OpenAPI 单一事实源规则。
 - 基础推荐通过本地 Repository 和纯领域对象完成，不因未来试穿供应商而持有供应商 DTO。
 - 静态试穿或动态任务达到各自启用门禁后，使用 [`10-OOTD服务端与异步任务设计.md`](10-OOTD服务端与异步任务设计.md) 的异步边界；API key 永不进入客户端。
 - 人物原图、衣物原图、抠图和生成结果的本地目录、文件保护、TTL 和导出边界按 [`11-OOTD权限隐私与安全设计.md`](11-OOTD权限隐私与安全设计.md) 统一执行。

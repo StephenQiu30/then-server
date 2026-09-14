@@ -1,17 +1,23 @@
 # OOTD 服务端与异步任务设计
 
+## 2026-09-14当前实现边界
+
+当前开发 MVP 的数据库结构由 Repository 内 GORM record 与集中 `AutoMigrate` 管理；接口由 Huma operation/Go tag 在运行时生成 OpenAPI。已删除 Atlas、SQL migration、checksum、`generate_openapi.go` 和仓库内 OpenAPI 物化文件。本文后续关于 Atlas、versioned SQL、受版本控制 `backend/openapi.yaml`、应用禁止执行 DDL、`cmd/migrate` 以及旧 schema 升级的内容属于较早生产设想，已由 [Design 01 当前定案](01-技术选型.md#2026-09-14后端最小技术栈定案) 与 [Design 02](02-后端架构.md) 覆盖，不指导当前实现。
+
+Redis、RabbitMQ、MinIO 和本文的异步任务链仍是条件架构：只有实际云生成任务获批后才逐项进入运行时。当前账号 API 只连接 PostgreSQL，不为未来链路创建空表、空 worker 或通用抽象。
+
 ## 2026-09-13实施顺序更新
 
 用户已明确先实现 Woo 式照片与单品生成流程，同时保留真实 3D 模型及其交互目标，替代旧“本地 3D 完成后才推进云 AI”的顺序。账号/授权、逐次同意、私有上传、任务恢复和云删除随首个静态生成闭环前移，按本文现有职责准入。不默认上传完整衣橱、不建立隐含同步，不让云任务承载设备上的模板调参/观察。Provider、地域和生产配置须有实际验证。 当前范围由 [PRD 10](../prd/10-OOTD产品需求.md#2026-09-13当前交付目标) 和 [总体设计](03-OOTD产品总体设计.md#2026-09-13当前产品路径) 固定；下文旧阶段描述按历史语境阅读。
 
 ## 文档状态
 
-2026-09-08 收敛：用户已确认本地 3D 首版、云端分期。本文的云任务与配额体系不承载本地调参或换装；后端模块和编码规范统一见 [Design 02](02-后端架构.md#编码前固定的模块职责)。首版不建立匿名云身份、云衣橱表或远程 Catalog。后续首次云上传必须同时交付授权、同意、删除链和恢复，不能先上线上传再补隐私控制。
+2026-09-08 收敛：用户已确认本地 3D 首版、云端分期。本文的云任务与配额体系不承载本地调参或换装；后端模块和编码规范统一见 [Design 02](02-后端架构.md#依赖方向)。首版不建立匿名云身份、云衣橱表或远程 Catalog。后续首次云上传必须同时交付授权、同意、删除链和恢复，不能先上线上传再补隐私控制。
 
 - 状态：已批准，2026-08-30。
 - 适用对象：面向 C 端的 OOTD 产品服务端与异步任务；本地体验阶段不依赖后端运行。
 - 决策日期：2026-08-30。
-- 核心选择：Go + Gin、GORM v2 Generics、PostgreSQL、Atlas versioned SQL、Redis、RabbitMQ quorum queue、事务 Outbox/Inbox、私有对象存储；新 GORM CLI 不作为强制依赖。
+- 核心选择：Go + Gin/Huma、GORM v2 Generics + AutoMigrate、PostgreSQL；Redis、RabbitMQ 与私有对象存储按实际异步业务启用。
 - 进程边界：一个 Go module、一个 `main.go`、一个二进制和一个 OCI 镜像，通过 `APP_ROLE=api|worker|all` 选择角色；生产以同镜像的独立 API/worker 进程部署、扩缩和回滚。
 - 契约：单一 OpenAPI 3.1.2 文档，仍遵循 3.1 系列语义。
 
@@ -48,7 +54,7 @@
 2. 让同步业务写入与异步任务创建具备原子性，任务可重试、可审计、可取消、可恢复。
 3. 面向 C 端流量提供鉴权、用户级授权、限流、配额、幂等、回压和隐私删除能力。
 4. 保持一个 Go module 和清晰的模块化单体边界，暂不把业务拆成微服务。
-5. 通过版本化 SQL、契约测试和真实依赖集成测试，使数据库与 API 变更可评审、可回滚。
+5. 通过 GORM record、运行时契约测试和真实依赖集成测试，使当前开发数据库与 API 变更可评审、可重建。
 6. 将照片、人体与生成结果按高敏感数据处理，不让队列、日志、缓存或公开 URL 扩大暴露面。
 
 ### 非目标
@@ -78,18 +84,18 @@
 | --- | --- | --- |
 | HTTP | Gin，使用 `gin.New()` 显式组装中间件 | 第一个云端 API 开始实施时启用；不保留 chi 路由并行栈 |
 | 数据访问 | GORM v2 Generics；复杂路径使用 Repository 内命名 raw SQL/pgx | GORM CLI 不是强制依赖；只在生成稳定、版本锁定和 SQL 可审查时按需采用 |
-| Schema | `backend/migrations/*.sql` + `atlas.sum`，Atlas versioned workflow | 物理结构只随真实功能 migration 增加；禁止 `AutoMigrate` 修改共享或生产环境 |
+| Schema | Repository GORM record + 集中 `AutoMigrate` | 当前开发阶段启动监听前执行；破坏性变化重建本地数据库 |
 | 运行形态 | 一个 Go module、一个 `main.go`、一个二进制和一个镜像；`APP_ROLE=api|worker|all` | 本地/集成测试可用 `all`；生产以同镜像的 `api`、`worker` 进程独立扩缩 |
 | 异步任务 | PostgreSQL 任务状态 + Outbox/Inbox + RabbitMQ quorum queue | 第一个云端 AI 生成能力进入 POC 时启用；本地核心不依赖队列 |
 | Redis | 短 TTL 缓存、限流、SSE 通知和可重建协调 | 云端生成阶段按需启用；任何权威状态仍在 PostgreSQL |
 | 文件 | 私有、同地域、S3-compatible 对象存储 | 云端生成阶段必须启用；本地衣橱不因技术选型自动上传 |
-| API | 单一 `backend/openapi.yaml`，OpenAPI 3.1.2 | operation 随实施功能增加并先完成 iOS Client 与契约测试 |
+| API | Huma 运行时 OpenAPI 3.1.2 | Swagger/Umi 读取 `/openapi.json`；仓库不保存契约副本 |
 
 分阶段运行边界：
 
 1. **本地体验**：只运行 SwiftUI、GRDB、Vision 和结构化推荐；Go、RabbitMQ、Redis、对象存储和第三方 AI 均不运行。
 2. **静态试穿 POC**：隔离环境运行 `APP_ROLE=all` 或同镜像的 API/worker、PostgreSQL、RabbitMQ、Redis、对象存储和单一 Provider；只处理合成或书面授权样本。
-3. **云端生成首发**：生产使用同镜像的 `APP_ROLE=api` 与 `APP_ROLE=worker` 独立进程；只有供应商、地域、删除、成本、SLO、OpenAPI/Atlas、安全和合规验收通过后开启真实流量。
+3. **云端生成首发**：生产使用同镜像的 API 与 worker 独立进程；届时需重新评审持久数据迁移、供应商、地域、删除、成本、SLO、安全和合规后才开启真实流量。
 4. **规模化**：只按 SLO、积压、成本和故障证据扩容，不提前拆微服务、分库分表或更换技术栈。
 
 ## 系统架构
@@ -134,19 +140,13 @@ flowchart LR
 
 ## 模块和目录
 
-目录随真实代码与 migration 逐步创建，不为未实施功能填充空文件：
+目录随真实代码逐步创建，不为未实施功能填充空文件：
 
 ```text
 backend/
 ├── main.go
 ├── go.mod
 ├── go.sum
-├── openapi.yaml
-├── atlas.hcl
-├── migrations/
-│   ├── README.md
-│   ├── atlas.sum
-│   └── YYYYMMDDHHMMSS_name.sql
 └── internal/
     ├── model/
     ├── service/
@@ -161,7 +161,7 @@ backend/
 - 唯一 `main.go` 负责配置加载、依赖组装、`APP_ROLE` 分支、统一生命周期和退出码；业务规则不进入入口。
 - 同一个编译产物和镜像通过 `APP_ROLE=api|worker|all` 运行，不创建 `cmd/api`、`cmd/worker`、`cmd/migrate` 或第二个服务入口。
 - `worker` 内按 `relay/media/avatar/tryon/motion/deletion/recovery` 组织消费者；生产进程可通过配置只启用指定消费者集合。
-- Atlas 由受控部署作业执行，应用启动不迁移，应用数据库身份不拥有 DDL 权限。
+- 当前 Main 在监听前调用 Repository 的 GORM AutoMigrate；失败时不报告服务启动成功。
 - `model` 是纯 Go struct；不依赖 Gin、GORM 会话、AMQP delivery 或供应商 DTO。
 - 新 GORM CLI 不是目录或构建前置条件；若未来对少量查询启用生成，必须精确锁定版本、限定输出目录并由 CI 检查 SQL 与生成漂移。
 
@@ -262,7 +262,7 @@ stateDiagram-v2
 
 ### OpenAPI 3.1
 
-- `backend/openapi.yaml` 是 iOS、Go Handler 和 Swagger UI 的唯一契约；不新增 Swagger 注解、第二份 YAML/JSON 或生成 Go server。
+- Go transport 的 Huma operation、请求/响应类型与 struct tag 是接口定义源；`backend/openapi.yaml` 是供 iOS 离线构建的生成产物，不新增第二份 YAML/JSON 或生成 Go server。
 - 固定 OpenAPI 3.1.2；每个 operation 使用唯一稳定的 `operationId`，公开业务路径继续使用 `/v1`。
 - 长任务创建返回 `202 Accepted`、稳定任务 ID、状态 URL 和建议轮询间隔；结果未完成时不返回虚假成功。
 - 创建、finalize、生成、取消、删除和供应商回调全部定义幂等语义。

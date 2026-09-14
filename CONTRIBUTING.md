@@ -13,7 +13,7 @@
 
 ## 后端开发入口
 
-开始后端编码前，按 [目录职责](docs/design/02-后端架构.md#目标目录)、[服务规范](docs/design/02-后端架构.md#服务代码规范)与[开发交付 SOP](docs/design/02-后端架构.md#后端开发与交付-sop)核对切片。依赖精确版本仍归 Design 01；不另建第二份技术规范或重复任务清单。SOP 中未建立的流水线需在对应切片补齐，不能写作已通过。
+开始后端编码前，按 [目录职责](docs/design/02-后端架构.md#目录)、[服务规范](docs/design/02-后端架构.md#依赖方向)与[开发交付 SOP](docs/design/02-后端架构.md#开发sop)核对切片。依赖精确版本仍归 Design 01；不另建第二份技术规范或重复任务清单。SOP 中未建立的流水线需在对应切片补齐，不能写作已通过。
 
 ## Git 提交规范
 
@@ -101,9 +101,9 @@ fix(ios,backend): 修复同步         # 包含多个 scope
 
 - 用户可见项目名使用“于是”；本仓库名使用 `then-server`；iOS 仓库名使用 `then-app`，技术标识使用 `ThenApp`；本地统一放在 `Then/` 父目录。
 - 工具链、依赖、供应商或最低系统版本变更必须先更新 `docs/design/01-技术选型.md` 并说明迁移与回滚。
-- 接口变更必须先修改 `backend/openapi.yaml`，再由独立 `then-app` 的 CI 重新生成并编译 iOS Client。
+- 接口变更必须先修改 Huma operation、请求/响应类型与 tag，并验证运行时 `/openapi.json`；不得提交第二份 OpenAPI 契约。
 - Web 接口调用必须由同一 OpenAPI 生成到 `frontend/src/api/generated/`，不得手写第二份请求模型。
-- PostgreSQL 结构只由 `backend/migrations/*.sql` 与 `atlas.sum` 定义；生产禁止 GORM `AutoMigrate`。
+- 当前无历史数据的开发 schema 只由 Repository 内 GORM record 定义，并由 Main 启动时集中 `AutoMigrate`；需要保留数据或进入生产前另立版本化迁移计划。
 - 产品或架构行为变化时，同步更新 `docs/` 中的对应文档。
 - 交付按 design → PRD → execution plan → implementation → acceptance 推进。执行计划仅为已排期的可独立交付切片创建，并在同一文件中统一范围契约、任务、依赖与完成证据；不得用任务表反向替代产品或设计决策。
 
@@ -111,7 +111,7 @@ fix(ios,backend): 修复同步         # 包含多个 scope
 
 - 不提交密钥、令牌、生产连接串或真实用户数据。
 - iOS 修改应通过构建和相关测试；Go 修改应通过 `gofmt`、`go test ./...` 和已配置的静态检查。
-- iOS 修改至少直接运行相关 `xcodebuild build` 与 `xcodebuild test`；工程、target、OpenAPI 输入和并发隔离边界同时通过 Xcode 构建验证。
+- iOS 修改至少直接运行相关 `xcodebuild build` 与 `xcodebuild test`；工程、target 和并发隔离边界同时通过 Xcode 构建验证。
 - iOS 测试不能只依据 xcodebuild 退出码：使用 `-resultBundlePath` 保存独立结果包，再通过 `xcrun xcresulttool get test-results summary --path <结果包路径>` 核对注册数、通过数、失败、跳过与预期失败。筛选测试只能证明所选范围，物理设备限制必须单独记录。
 - 人物与衣物图片、生成结果、穿着规律和认证信息按敏感数据处理，遵循最小收集、最短保留、目的分离和可验证删除原则。
 

@@ -13,7 +13,7 @@ var docsFiles embed.FS
 
 const docsCSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
 
-func registerDocs(engine *gin.Engine, document []byte) error {
+func registerDocs(engine *gin.Engine, yamlDocument, jsonDocument []byte) error {
 	// Register exact paths, so no directory, source map or filesystem path is exposed.
 	for _, asset := range []struct{ route, name, contentType string }{
 		{"/docs/", "index.html", "text/html; charset=utf-8"},
@@ -31,7 +31,8 @@ func registerDocs(engine *gin.Engine, document []byte) error {
 		}
 		engine.GET(asset.route, documentationResponse(asset.contentType, data))
 	}
-	engine.GET("/openapi.yaml", documentationResponse("application/yaml; charset=utf-8", document))
+	engine.GET("/openapi.yaml", documentationResponse("application/yaml; charset=utf-8", yamlDocument))
+	engine.GET("/openapi.json", documentationResponse("application/json; charset=utf-8", jsonDocument))
 	return nil
 }
 

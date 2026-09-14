@@ -1,19 +1,21 @@
-// Package transport implements the explicitly enabled HTTP contract.
+// Package transport owns the HTTP contract and generates OpenAPI from the
+// registered operations and annotated Go request/response types.
 package transport
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humagin"
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/getkin/kin-openapi/routers/gorillamux"
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,48 +26,82 @@ type Router struct {
 	draining atomic.Bool
 }
 
-type healthResponse struct {
-	Status    string `json:"status"`
-	RequestID string `json:"request_id"`
+type requestIDContextKey struct{}
+
+type LivenessResponse struct {
+	Status    string `json:"status" enum:"live" example:"live"`
+	RequestID string `json:"request_id" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" example:"TESTREQUESTIDENTIFIER00000001"`
 }
 
-type errorResponse struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	RequestID string `json:"request_id"`
-	Retryable bool   `json:"retryable"`
+type ReadinessResponse struct {
+	Status    string `json:"status" enum:"ready" example:"ready"`
+	RequestID string `json:"request_id" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" example:"TESTREQUESTIDENTIFIER00000002"`
 }
 
-func NewRouter(ctx context.Context, document []byte, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, timeout time.Duration, log *slog.Logger) (*Router, error) {
+type ErrorResponse struct {
+	status    int
+	Code      string `json:"code" enum:"BAD_REQUEST,EMAIL_CONFLICT,AUTHENTICATION_FAILED,NOT_READY,NOT_FOUND,METHOD_NOT_ALLOWED,INTERNAL_ERROR" example:"AUTHENTICATION_FAILED"`
+	Message   string `json:"message" minLength:"1" maxLength:"160" example:"Sign-in information is invalid."`
+	RequestID string `json:"request_id" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" example:"TESTREQUESTIDENTIFIER00000003"`
+	Retryable bool   `json:"retryable" example:"false"`
+}
+
+func (e *ErrorResponse) Error() string  { return e.Message }
+func (e *ErrorResponse) GetStatus() int { return e.status }
+
+type livenessOutput struct {
+	RequestID string           `header:"X-Request-ID" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" doc:"服务端生成的请求关联标识，不采纳客户端原始值"`
+	Body      LivenessResponse `json:"body"`
+}
+
+type readinessOutput struct {
+	RequestID string            `header:"X-Request-ID" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" doc:"服务端生成的请求关联标识，不采纳客户端原始值"`
+	Body      ReadinessResponse `json:"body"`
+}
+
+var configureHumaErrors sync.Once
+
+func NewRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, timeout time.Duration, log *slog.Logger) (*Router, error) {
 	if probe == nil || log == nil || timeout <= 0 || timeout > 5*time.Second || (accounts != nil && accounts.service == nil) {
 		return nil, errors.New("invalid router dependencies")
 	}
-	loader := openapi3.NewLoader()
-	loader.Context = ctx
-	// Own the contract used for both validation and documentation.
-	document = bytes.Clone(document)
-	doc, err := loader.LoadFromData(document)
+	engine, err := newEngine(log)
 	if err != nil {
-		return nil, errors.New("OpenAPI document cannot be loaded")
+		return nil, err
 	}
-	if err = doc.Validate(ctx); err != nil {
-		return nil, errors.New("OpenAPI document is invalid")
-	}
-	contract, err := gorillamux.NewRouter(doc)
+	router := &Router{engine: engine}
+	api := registerAPI(engine, router, probe, accounts, timeout)
+	yamlDocument, jsonDocument, err := serializeOpenAPI(ctx, api.OpenAPI())
 	if err != nil {
-		return nil, errors.New("OpenAPI routes are invalid")
+		return nil, err
 	}
+	if docsEnabled {
+		if err := registerDocs(engine, yamlDocument, jsonDocument); err != nil {
+			return nil, err
+		}
+	}
+	engine.NoRoute(func(c *gin.Context) { respondError(c, http.StatusNotFound, "NOT_FOUND", "Resource not found.", false) })
+	engine.NoMethod(func(c *gin.Context) {
+		c.Header("Allow", "GET")
+		respondError(c, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed.", false)
+	})
+	return router, nil
+}
+
+func newEngine(log *slog.Logger) (*gin.Engine, error) {
 	engine := gin.New()
 	engine.RedirectTrailingSlash = false
 	engine.RedirectFixedPath = false
 	engine.HandleMethodNotAllowed = true
-	if err = engine.SetTrustedProxies(nil); err != nil {
+	if err := engine.SetTrustedProxies(nil); err != nil {
 		return nil, errors.New("invalid proxy configuration")
 	}
-	r := &Router{engine: engine}
 	engine.Use(func(c *gin.Context) {
 		id := rand.Text()
 		c.Set("request_id", id)
+		requestContext := context.WithValue(c.Request.Context(), requestIDContextKey{}, id)
+		requestContext = context.WithValue(requestContext, httpRequestContextKey{}, c.Request)
+		c.Request = c.Request.WithContext(requestContext)
 		c.Header("X-Request-ID", id)
 		c.Header("Cache-Control", "no-store")
 		c.Header("X-Content-Type-Options", "nosniff")
@@ -73,7 +109,7 @@ func NewRouter(ctx context.Context, document []byte, docsEnabled bool, probe Dep
 		defer func() {
 			if recover() != nil {
 				if !c.Writer.Written() {
-					respondError(c, 500, "INTERNAL_ERROR", "Internal server error.", false)
+					respondError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error.", false)
 				} else {
 					c.Abort()
 				}
@@ -86,74 +122,177 @@ func NewRouter(ctx context.Context, document []byte, docsEnabled bool, probe Dep
 		}()
 		c.Next()
 	})
-	validate := func(c *gin.Context) {
-		route, params, err := contract.FindRoute(c.Request)
-		if err != nil {
-			respondError(c, 500, "INTERNAL_ERROR", "Internal server error.", false)
-			return
-		}
-		input := &openapi3filter.RequestValidationInput{
-			Request: c.Request, PathParams: params, Route: route,
-			Options: &openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
-		}
-		if err = openapi3filter.ValidateRequest(c.Request.Context(), input); err != nil {
-			respondError(c, 400, "BAD_REQUEST", "Request does not satisfy the API contract.", false)
-			return
-		}
-		c.Next()
-	}
-	if docsEnabled {
-		if err := registerDocs(engine, document); err != nil {
-			return nil, err
-		}
-	}
-	engine.GET("/v1/health/live", validate, func(c *gin.Context) {
-		if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 {
-			respondError(c, 400, "BAD_REQUEST", "Health requests do not accept a body or query.", false)
-			return
-		}
-		c.JSON(http.StatusOK, healthResponse{Status: "live", RequestID: c.GetString("request_id")})
-	})
-	engine.GET("/v1/health/ready", validate, func(c *gin.Context) {
-		if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 {
-			respondError(c, 400, "BAD_REQUEST", "Health requests do not accept a body or query.", false)
-			return
-		}
-		if r.draining.Load() {
-			notReady(c)
-			return
-		}
-		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
-		defer cancel()
-		if err := probe.Probe(ctx); err != nil || r.draining.Load() {
-			notReady(c)
-			return
-		}
-		c.JSON(http.StatusOK, healthResponse{Status: "ready", RequestID: c.GetString("request_id")})
-	})
-	if accounts != nil {
-		engine.POST("/v1/auth/registrations", validate, accounts.register)
-		engine.POST("/v1/auth/sessions", validate, accounts.login)
-		engine.DELETE("/v1/auth/session", validate, accounts.logout)
-		engine.GET("/v1/users/me", validate, accounts.current)
-		engine.PATCH("/v1/users/me", validate, accounts.update)
-		engine.DELETE("/v1/users/me", validate, accounts.deleteCurrent)
-	}
-	engine.NoRoute(func(c *gin.Context) { respondError(c, 404, "NOT_FOUND", "Resource not found.", false) })
-	engine.NoMethod(func(c *gin.Context) {
-		c.Header("Allow", "GET")
-		respondError(c, 405, "METHOD_NOT_ALLOWED", "Method not allowed.", false)
-	})
-	return r, nil
+	return engine, nil
 }
 
-func notReady(c *gin.Context) {
-	c.Header("Retry-After", "1")
-	respondError(c, 503, "NOT_READY", "Service is not ready.", true)
+func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, accounts *AccountHandler, timeout time.Duration) huma.API {
+	configureHumaErrors.Do(func() {
+		huma.NewError = func(status int, _ string, _ ...error) huma.StatusError {
+			return newErrorResponse(status, "")
+		}
+		huma.NewErrorWithContext = func(ctx huma.Context, status int, _ string, _ ...error) huma.StatusError {
+			return newErrorResponse(status, requestID(ctx.Context()))
+		}
+	})
+	config := huma.DefaultConfig("于是 OOTD API", "0.4.0")
+	config.OpenAPI.OpenAPI = "3.1.2"
+	config.Info.Description = "“于是”OOTD 产品后端接口。OpenAPI 由 Go operation 与类型字段标签生成。"
+	config.OpenAPIPath = ""
+	config.DocsPath = ""
+	config.SchemasPath = ""
+	config.CreateHooks = nil
+	config.RejectUnknownQueryParameters = true
+	config.Servers = []*huma.Server{{URL: "/", Description: "Same-origin API"}}
+	config.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"cookieAuth": {Type: "apiKey", In: "cookie", Name: sessionCookieName, Description: "HttpOnly、SameSite=Strict 会话 Cookie"},
+	}
+	api := humagin.New(engine, config)
+	registerHealthOperations(api, router, probe, timeout)
+	registerAccountOperations(api, accounts)
+	normalizeGeneratedOpenAPI(api.OpenAPI())
+	return api
+}
+
+func registerHealthOperations(api huma.API, router *Router, probe DependencyProbe, timeout time.Duration) {
+	huma.Register(api, huma.Operation{
+		OperationID: "getLiveness", Method: http.MethodGet, Path: "/v1/health/live", Tags: []string{"Health"},
+		Summary: "检查 API 进程存活", Description: "仅供受限运维访问，不查询数据库，不代表云业务已启用。", Errors: []int{http.StatusBadRequest, http.StatusInternalServerError},
+	}, func(ctx context.Context, _ *struct{}) (*livenessOutput, error) {
+		if err := rejectHealthPayload(ctx); err != nil {
+			return nil, err
+		}
+		id := requestID(ctx)
+		return &livenessOutput{RequestID: id, Body: LivenessResponse{Status: "live", RequestID: id}}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "getReadiness", Method: http.MethodGet, Path: "/v1/health/ready", Tags: []string{"Health"},
+		Summary: "检查 API 接纳就绪状态", Description: "有界探测 PostgreSQL；退出或依赖故障时返回 503，不输出连接详情。", Errors: []int{http.StatusBadRequest, http.StatusServiceUnavailable, http.StatusInternalServerError},
+	}, func(ctx context.Context, _ *struct{}) (*readinessOutput, error) {
+		if err := rejectHealthPayload(ctx); err != nil {
+			return nil, err
+		}
+		if router.draining.Load() {
+			return nil, notReadyError(ctx)
+		}
+		probeContext, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		if err := probe.Probe(probeContext); err != nil || router.draining.Load() {
+			return nil, notReadyError(ctx)
+		}
+		id := requestID(ctx)
+		return &readinessOutput{RequestID: id, Body: ReadinessResponse{Status: "ready", RequestID: id}}, nil
+	})
+}
+
+func normalizeGeneratedOpenAPI(spec *huma.OpenAPI) {
+	requestIDHeader := &huma.Header{
+		Description: "服务端生成的请求关联标识，不采纳客户端原始值",
+		Schema:      &huma.Schema{Type: huma.TypeString, MinLength: integerPointer(26), MaxLength: integerPointer(64), Pattern: "^[A-Za-z0-9]+$"},
+	}
+	for _, item := range spec.Paths {
+		operations := []*huma.Operation{item.Get, item.Put, item.Post, item.Delete, item.Options, item.Head, item.Patch, item.Trace}
+		for _, operation := range operations {
+			if operation == nil {
+				continue
+			}
+			// Huma uses 422 internally for validation. Our public error contract
+			// deliberately maps every contract validation failure to 400.
+			delete(operation.Responses, "422")
+			for status, response := range operation.Responses {
+				if status < "400" || response == nil {
+					continue
+				}
+				if response.Headers == nil {
+					response.Headers = map[string]*huma.Header{}
+				}
+				response.Headers["X-Request-ID"] = requestIDHeader
+			}
+		}
+	}
+	if readiness := spec.Paths["/v1/health/ready"].Get.Responses["503"]; readiness != nil {
+		if readiness.Headers == nil {
+			readiness.Headers = map[string]*huma.Header{}
+		}
+		readiness.Headers["Retry-After"] = &huma.Header{Schema: &huma.Schema{Type: huma.TypeString, Const: "1"}}
+	}
+}
+
+func integerPointer(value int) *int { return &value }
+
+func rejectHealthPayload(ctx context.Context) error {
+	if request, ok := ctx.Value(httpRequestContextKey{}).(*http.Request); ok && (request.URL.RawQuery != "" || request.ContentLength != 0 || len(request.TransferEncoding) != 0) {
+		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
+	}
+	return nil
+}
+
+type httpRequestContextKey struct{}
+
+func notReadyError(ctx context.Context) error {
+	return huma.ErrorWithHeaders(newErrorResponse(http.StatusServiceUnavailable, requestID(ctx)), http.Header{"Retry-After": []string{"1"}})
+}
+
+func newErrorResponse(status int, id string) *ErrorResponse {
+	if status == http.StatusUnprocessableEntity || status == http.StatusRequestEntityTooLarge || status == http.StatusRequestTimeout {
+		status = http.StatusBadRequest
+	}
+	response := &ErrorResponse{status: status, RequestID: id}
+	switch status {
+	case http.StatusBadRequest:
+		response.Code, response.Message = "BAD_REQUEST", "Request does not satisfy the API contract."
+	case http.StatusUnauthorized:
+		response.Code, response.Message = "AUTHENTICATION_FAILED", "Sign-in information is invalid."
+	case http.StatusConflict:
+		response.Code, response.Message = "EMAIL_CONFLICT", "This email cannot be used."
+	case http.StatusServiceUnavailable:
+		response.Code, response.Message, response.Retryable = "NOT_READY", "Service is not ready.", true
+	case http.StatusNotFound:
+		response.Code, response.Message = "NOT_FOUND", "Resource not found."
+	case http.StatusMethodNotAllowed:
+		response.Code, response.Message = "METHOD_NOT_ALLOWED", "Method not allowed."
+	default:
+		response.status, response.Code, response.Message = http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error."
+	}
+	return response
+}
+
+func requestID(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDContextKey{}).(string)
+	return id
+}
+
+func serializeOpenAPI(ctx context.Context, spec *huma.OpenAPI) ([]byte, []byte, error) {
+	yamlDocument, err := spec.YAML()
+	if err != nil {
+		return nil, nil, errors.New("OpenAPI YAML document cannot be generated")
+	}
+	jsonDocument, err := json.Marshal(spec)
+	if err != nil {
+		return nil, nil, errors.New("OpenAPI JSON document cannot be generated")
+	}
+	loader := openapi3.NewLoader()
+	loader.Context = ctx
+	document, err := loader.LoadFromData(jsonDocument)
+	if err != nil {
+		return nil, nil, errors.New("generated OpenAPI document cannot be loaded")
+	}
+	if err := document.Validate(ctx); err != nil {
+		return nil, nil, errors.New("generated OpenAPI document is invalid")
+	}
+	return yamlDocument, jsonDocument, nil
+}
+
+// GeneratedOpenAPI returns the same generated contract that the runtime serves.
+func GeneratedOpenAPI(ctx context.Context) ([]byte, []byte, error) {
+	gin.SetMode(gin.ReleaseMode)
+	engine := gin.New()
+	api := registerAPI(engine, &Router{}, nil, nil, time.Second)
+	return serializeOpenAPI(ctx, api.OpenAPI())
 }
 
 func respondError(c *gin.Context, status int, code, message string, retryable bool) {
-	c.AbortWithStatusJSON(status, errorResponse{Code: code, Message: message, RequestID: c.GetString("request_id"), Retryable: retryable})
+	c.AbortWithStatusJSON(status, ErrorResponse{status: status, Code: code, Message: message, RequestID: c.GetString("request_id"), Retryable: retryable})
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.engine.ServeHTTP(w, req) }
