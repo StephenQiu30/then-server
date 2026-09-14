@@ -154,7 +154,7 @@ Woo 原帖视频中可见的穿搭主页、左右浏览、日期/颜色/分享/�
 - type 只允许 `feat`、`fix`、`docs`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`style` 和 `revert`。
 - scope 使用小写英文、数字和连字符；优先使用 `ios`、`backend`、`openapi`、`db`、`docs`、`repo`、`ci`、`deps`、`security` 或明确业务域。
 - 每个提交只包含一个可独立说明和回滚的变化；破坏性变更在页脚使用 `BREAKING CHANGE:`，说明兼容、迁移与回滚。
-- 完整规则以 `CONTRIBUTING.md` 为准；首次克隆后运行 `git config --local core.hooksPath .githooks`。
+- 完整规则以 `CONTRIBUTING.md` 为准；仓库不依赖本地 hook 或脚本才能提交。
 
 ## 跨仓库 iOS 开发规范
 
