@@ -10,7 +10,7 @@
 | 产品与技术设计 | 01–12 号设计为当前基线；13 号保留三维研究及待 POC 参数，首版范围已回写 PRD 11/12 与 Design 04/05 |
 | iOS 工程 | 已切换今日/衣橱/穿搭簿三个 SwiftUI 入口；生成 Client 使用 ThenTransport，业务仍在 ThenApp |
 | OOTD Feature | 已接无图/单件图衣橱、16-01 本地穿搭计划与日期回看；快照、编辑/取消/删除和含图组合已实现，验收继续。实际穿着、反馈、受控 AI 与真实 3D 分片推进 |
-| Go 后端 | Gin 健康/数据库运行、容器与内嵌 Swagger 已实现；无业务 migration 或云端业务 |
+| Go 后端 | Gin 健康/数据库运行、容器与内嵌 Swagger 已实现；B0 MVP 与独立测试矩阵已固定，无业务 migration 或云端业务 |
 | 旧生活管理代码 | 用户确认仅开发阶段且无需保留旧数据，已成组退役；不建设历史兼容层 |
 
 ## 固定技术栈
@@ -23,6 +23,7 @@
 - 运行形态：一个 Go module、一个二进制与一个镜像，`APP_ROLE=api|worker|all`。
 
 精确版本、分阶段启用边界和禁止项以 [`docs/design/01-技术选型.md`](docs/design/01-技术选型.md) 为唯一事实源；后端职责见 [`docs/design/02-后端架构.md`](docs/design/02-后端架构.md)。
+后端 MVP 分期与 test 边界见 [`docs/design/14-后端MVP与测试边界设计.md`](docs/design/14-后端MVP与测试边界设计.md)。
 
 ## 产品结构
 
