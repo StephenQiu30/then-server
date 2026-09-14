@@ -45,3 +45,33 @@ func TestConfigurationBoundaries(t *testing.T) {
 		})
 	}
 }
+
+func TestDocumentationConfiguration(t *testing.T) {
+	tests := []struct {
+		name, enabled, address string
+		valid                  bool
+	}{
+		{"disabled on all interfaces", "false", "0.0.0.0:8080", true},
+		{"local IPv4", "true", "127.0.0.1:8080", true},
+		{"local IPv6", "true", "[::1]:8080", true},
+		{"public IPv4", "true", "0.0.0.0:8080", false},
+		{"public IPv6", "true", "[::]:8080", false},
+		{"invalid boolean", "synthetic-secret", "127.0.0.1:8080", false},
+		{"empty boolean", "", "127.0.0.1:8080", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := map[string]string{
+				"DATABASE_URL":     "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable",
+				"API_DOCS_ENABLED": tt.enabled, "HTTP_ADDR": tt.address,
+			}
+			_, err := Load(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+			if (err == nil) != tt.valid {
+				t.Fatalf("configuration valid=%v, expected %v", err == nil, tt.valid)
+			}
+			if err != nil && strings.Contains(err.Error(), "synthetic-secret") {
+				t.Fatal("documentation configuration leaked raw input")
+			}
+		})
+	}
+}

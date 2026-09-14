@@ -1,0 +1,7 @@
+name: then-services
+
+# Keep the default entrypoint small. Application containers can be added here
+# when the api/worker runtime contracts are approved; local dependencies live
+# in the dedicated environment file.
+include:
+  - docker-compose-env.yml

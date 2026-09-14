@@ -13,6 +13,7 @@ import (
 type Config struct {
 	Role            string
 	HTTPAddr        string
+	DocsEnabled     bool
 	DatabaseURL     string
 	MaxOpenConns    int
 	MaxIdleConns    int
@@ -38,6 +39,16 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	p, portErr := strconv.Atoi(port)
 	if err != nil || net.ParseIP(host) == nil || portErr != nil || p < 0 || p > 65535 {
 		return Config{}, fmt.Errorf("HTTP_ADDR: expected IP:port")
+	}
+	switch get("API_DOCS_ENABLED", "false") {
+	case "false":
+	case "true":
+		c.DocsEnabled = true
+	default:
+		return Config{}, fmt.Errorf("API_DOCS_ENABLED: expected true or false")
+	}
+	if c.DocsEnabled && !net.ParseIP(host).IsLoopback() {
+		return Config{}, fmt.Errorf("API_DOCS_ENABLED: documentation requires a loopback HTTP_ADDR")
 	}
 	u, err := url.Parse(c.DatabaseURL)
 	if err != nil || u == nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Hostname() == "" || u.User == nil || u.User.Username() == "" || strings.Trim(u.Path, "/") == "" || u.Fragment != "" {

@@ -4,6 +4,7 @@ package tests
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -109,7 +110,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		})
 	}
 	process := exec.CommandContext(ctx, binary)
-	process.Env = []string{"DATABASE_URL=" + u.String(), "HTTP_ADDR=127.0.0.1:0", "APP_ROLE=api"}
+	process.Env = []string{"DATABASE_URL=" + u.String(), "HTTP_ADDR=127.0.0.1:0", "APP_ROLE=api", "API_DOCS_ENABLED=true"}
 	stdout, err := process.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -137,6 +138,25 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		if address == "" {
 			t.Fatal("process did not start")
 		}
+		expected, err := os.ReadFile("../openapi.yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		client := &http.Client{Timeout: 2 * time.Second}
+		for _, path := range []string{"/docs/", "/docs/swagger-ui-bundle.js", "/openapi.yaml", "/v1/health/ready"} {
+			response, err := client.Get("http://" + address + path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, readErr := io.ReadAll(io.LimitReader(response.Body, 2*1024*1024))
+			response.Body.Close()
+			if readErr != nil || response.StatusCode != 200 || len(body) == 0 {
+				t.Fatalf("built process route %s did not serve successfully", path)
+			}
+			if path == "/openapi.yaml" && !bytes.Equal(body, expected) {
+				t.Fatal("binary did not serve its compiled contract")
+			}
+		}
 	case <-ctx.Done():
 		t.Fatal("startup timeout")
 	}
@@ -163,7 +183,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router, err := transport.NewRouter(ctx, spec, pool, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := transport.NewRouter(ctx, spec, false, pool, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

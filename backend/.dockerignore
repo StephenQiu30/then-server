@@ -6,4 +6,9 @@
 !internal/
 !internal/**/
 !internal/**/*.go
+!internal/transport/swaggerui/*.html
+!internal/transport/swaggerui/*.js
+!internal/transport/swaggerui/*.css
+!internal/transport/swaggerui/LICENSE
+!internal/transport/swaggerui/*.LICENSE.txt
 **/*_test.go

@@ -1,0 +1,96 @@
+# Local synthetic-data development dependencies. Versions and scope: Design 01 / 17-10.
+# Use through the repository's docker-compose.yml entrypoint.
+
+services:
+  postgres:
+    image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+    environment:
+      POSTGRES_USER: then_dev
+      POSTGRES_DB: then_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Copy .env.example to .env and replace every placeholder}
+    ports:
+      - "127.0.0.1:18432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U then_dev -d then_dev"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    stop_grace_period: 30s
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+
+  minio:
+    # Archived upstream; this historical build is not a production baseline.
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: then_dev
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Copy .env.example to .env and replace every placeholder}
+    ports:
+      - "127.0.0.1:18900:9000"
+      - "127.0.0.1:18901:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    stop_grace_period: 30s
+    mem_limit: 768m
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:8.10.0@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Copy .env.example to .env and replace every placeholder}
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$REDIS_PASSWORD" --maxmemory 128mb --maxmemory-policy allkeys-lru --save '' --appendonly no
+    ports:
+      - "127.0.0.1:18379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -qx PONG"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    stop_grace_period: 15s
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+
+  rabbitmq:
+    image: rabbitmq:4.3.5-management@sha256:57bddb6fbc3498b5d8b5a14dc6f4506073ebcf94c66ba2a7678c335faa8dd631
+    hostname: then-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: then_dev
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?Copy .env.example to .env and replace every placeholder}
+      RABBITMQ_DEFAULT_VHOST: then_dev
+    ports:
+      - "127.0.0.1:18672:5672"
+      - "127.0.0.1:18673:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+    stop_grace_period: 30s
+    mem_limit: 768m
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres_data:
+  minio_data:
+  rabbitmq_data:
+
+networks:
+  default:
+    driver: bridge
