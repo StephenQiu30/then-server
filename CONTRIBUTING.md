@@ -5,7 +5,7 @@
 ## 工作流程
 
 1. 先阅读任务对应的单功能 PRD、design、产品级计划和验收文档；进入实现的切片还必须阅读已批准的同编号执行计划。
-2. 运行 `scripts/verify-toolchain.sh`，确认本机工具链与固定基线一致。
+2. 使用 `xcodebuild -version`、`swift --version` 与 `go version` 确认本机工具链和 Design 01 固定基线一致。
 3. 从 `main` 创建短周期分支，推荐使用 `<type>/<short-name>`，例如 `feat/wardrobe-import`、`fix/tryon-retry` 或 `docs/commit-convention`。
 4. 使用小而聚焦的提交，提交标题和 Pull Request 标题必须遵循下方 Git 提交规范。
 5. 提交 Pull Request 前运行与风险匹配的测试和生成检查。
@@ -95,19 +95,7 @@ fix(ios,backend): 修复同步         # 包含多个 scope
 
 ### 本地校验
 
-首次克隆仓库后启用版本化 hook：
-
-```sh
-git config --local core.hooksPath .githooks
-```
-
-之后 `git commit` 会通过 `.githooks/commit-msg` 自动校验标题。也可以直接验证一条标题：
-
-```sh
-scripts/validate-commit-message.sh --message "feat(wardrobe): 新增手工录入衣物入口"
-```
-
-未来 CI 必须使用同一校验脚本检查 Pull Request 范围内的提交，避免本地 hook 被跳过后产生不同规则。
+提交前使用 `git log -1 --format=%s` 复核标题，并按本文件的格式、type、scope 与长度规则检查。仓库不保留本地脚本或 Git hook；未来 CI 应直接实现相同规则并覆盖 Pull Request 范围内的提交。
 
 ## 文档和契约
 
@@ -122,7 +110,8 @@ scripts/validate-commit-message.sh --message "feat(wardrobe): 新增手工录入
 
 - 不提交密钥、令牌、生产连接串或真实用户数据。
 - iOS 修改应通过构建和相关测试；Go 修改应通过 `gofmt`、`go test ./...` 和已配置的静态检查。
-- iOS 修改至少运行 `scripts/validate-ios-architecture.sh`；旧 `validate-p0-scope.sh` 只用于历史生活管理实现，不是 OOTD 发布门禁。
+- iOS 修改至少直接运行相关 `xcodebuild build` 与 `xcodebuild test`；工程、target、OpenAPI 输入和并发隔离边界同时通过 Xcode 构建验证。
+- iOS 测试不能只依据 xcodebuild 退出码：使用 `-resultBundlePath` 保存独立结果包，再通过 `xcrun xcresulttool get test-results summary --path <结果包路径>` 核对注册数、通过数、失败、跳过与预期失败。筛选测试只能证明所选范围，物理设备限制必须单独记录。
 - 人物与衣物图片、生成结果、穿着规律和认证信息按敏感数据处理，遵循最小收集、最短保留、目的分离和可验证删除原则。
 
 2026-09-08 当前实施顺序按用户明确要求为 design → PRD → plan → implementation → acceptance，替代此前 PRD 先行的执行顺序；目录职责、需求边界与已批准契约要求不变。
