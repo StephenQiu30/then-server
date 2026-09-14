@@ -112,6 +112,38 @@ func TestCurrentUserRequiresSession(t *testing.T) {
 	}
 }
 
+func TestRejectedAuthenticatedSessionClearsStaleCookie(t *testing.T) {
+	service := &accountServiceStub{user: fixtureUser(), err: model.ErrAuthentication}
+	router := accountRouter(t, service, true)
+	request := httptest.NewRequest(http.MethodGet, "/v1/users/me", nil)
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != sessionCookieName || cookies[0].Value != "" || cookies[0].MaxAge != -1 || cookies[0].Path != "/v1" || !cookies[0].HttpOnly || !cookies[0].Secure || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatal("rejected authenticated session did not clear the stale cookie with matching security attributes")
+	}
+}
+
+func TestFailedLoginDoesNotClearExistingSessionCookie(t *testing.T) {
+	service := &accountServiceStub{user: fixtureUser(), err: model.ErrAuthentication}
+	router := accountRouter(t, service, true)
+	request := httptest.NewRequest(http.MethodPost, "/v1/auth/sessions", strings.NewReader(`{"email":"person@example.test","password":"wrong-password"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if len(response.Result().Cookies()) != 0 {
+		t.Fatal("failed login unexpectedly changed the existing browser session")
+	}
+}
+
 func TestLogoutClearsOnlyCurrentCookie(t *testing.T) {
 	service := &accountServiceStub{user: fixtureUser()}
 	router := accountRouter(t, service, false)
