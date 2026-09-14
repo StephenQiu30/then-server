@@ -16,4 +16,5 @@
 - Service 不接收 Gin/GORM/AMQP/供应商 SDK 类型；接口由消费方定义；禁止万能 BaseRepository、全局服务容器与纯转发包装层。
 - 当前健康检查可直接依赖窄 Probe 接口，不建立没有业务价值的 Service/Repository。
 - OpenAPI 仍只在 `openapi.yaml`；schema 只在获批 migration SQL 和 atlas.sum；测试与实际职责一起交付。
+- 包级单元测试与源码同目录；跨包真实依赖测试只在 `backend/tests`，通过 `services`、`integration`、`container` 标签独立运行。不得增加 `APP_ROLE=test`、测试微服务或第二个 `go.mod`。
 - 修改职责回写 Design 02，修改选型回写 Design 01，修改任务状态只回写原 FF-SS 计划。文档规划不能代替实现或验收通过。

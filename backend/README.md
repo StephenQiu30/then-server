@@ -12,7 +12,7 @@ brew services start rabbitmq
 (cd backend && go test -race -tags=services ./tests -count=1)
 ```
 
-服务测试默认连接 PostgreSQL `127.0.0.1:5432/postgres`、MinIO `127.0.0.1:9000`、Redis `127.0.0.1:6379` 与 RabbitMQ `127.0.0.1:5672`，适配 Homebrew 默认开发安装。已有自定义账号或端口时，通过 `THEN_TEST_DATABASE_URL`、`THEN_TEST_MINIO_ENDPOINT`、`THEN_TEST_MINIO_ACCESS_KEY`、`THEN_TEST_MINIO_SECRET_KEY`、`THEN_TEST_REDIS_ADDR`、`THEN_TEST_REDIS_PASSWORD`、`THEN_TEST_RABBITMQ_URL` 覆盖；测试只读取进程环境，不解析项目 `.env`，并且不会输出连接密钥。
+服务测试默认连接 PostgreSQL `127.0.0.1:5432/postgres`、MinIO `127.0.0.1:9000`、Redis `127.0.0.1:6379` 的 DB 15 与 RabbitMQ `127.0.0.1:5672`，适配 Homebrew 默认开发安装。已有自定义账号或端口时，通过 `THEN_TEST_DATABASE_URL`、`THEN_TEST_MINIO_ENDPOINT`、`THEN_TEST_MINIO_ACCESS_KEY`、`THEN_TEST_MINIO_SECRET_KEY`、`THEN_TEST_REDIS_ADDR`、`THEN_TEST_REDIS_PASSWORD`、`THEN_TEST_REDIS_DB`、`THEN_TEST_RABBITMQ_URL` 覆盖；测试只允许 loopback、只读取进程环境、不解析项目 `.env`，并且不会输出连接密钥。
 
 | 服务 | 本机入口 | 用途 |
 | --- | --- | --- |
@@ -125,6 +125,8 @@ model/service/repository/worker 在真实业务进入切片后按需建立；当
 2026-09-08 运行基线补充：监听异常返回前会关闭活动连接；实际 binary 已验证缺少 DATABASE_URL、worker/all 未实现、错误数据库凭据和监听端口占用均非零退出，错误输出不包含数据库 URL/密码。测试与限制见 [运行验收记录](../docs/acceptance/17-云端生成与任务管理验收.md#17-01-运行异常清理与启动失败补充验证)。
 
 ## 后端统一验证与容器构建
+
+测试与生产进程边界：包级 unit/contract 使用同目录 `_test.go`；`backend/tests` 是独立黑盒测试包，只有显式 build tag 才加载本机服务、Testcontainers 或镜像测试依赖。它不是运行时微服务，不增加第二个 Go module 或 `APP_ROLE=test`。详细矩阵见 [Design 14](../docs/design/14-后端MVP与测试边界设计.md#独立测试矩阵)。
 
 在仓库根目录执行：
 
