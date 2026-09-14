@@ -1,0 +1,76 @@
+{
+  "evidence_id": "OUTFIT-ACCESSIBILITY-20260915-01",
+  "recorded_at": "2026-09-15T01:36:00+08:00",
+  "executor": "Codex",
+  "reviewer": "pending",
+  "environment": {
+    "xcode": "26.6 (17F113)",
+    "swift": "6.3.3",
+    "device": "iPhone 17 Simulator",
+    "device_id": "CB37F50E-D231-4FE1-A1C8-B461DDB6B506",
+    "os": "iOS 26.5 (23F77)",
+    "locale": "zh_CN",
+    "fixture": "random synthetic garment; no user data"
+  },
+  "source": {
+    "then_app_head": "b3d2cffe5aed16b9ead43cde664ad8c91a937c70",
+    "then_server_head": "699b80e3691e00717b5006a3640292c2845cac2b",
+    "state": "uncommitted working tree",
+    "outfit_plan_view_sha256": "47282e17c73f78671c5e18b9f5d7f382db3fff6022a8671a09fbd7c7b443120a",
+    "ui_tests_sha256": "4cacaabde0a3555a7a82c171a57eb7b7415f3223252f43bb67f2263777b32cfc"
+  },
+  "results": [
+    {
+      "scope": "ThenApp Debug simulator build",
+      "result": "passed"
+    },
+    {
+      "scope": "ThenApp Release simulator build",
+      "result": "passed"
+    },
+    {
+      "scope": "OutfitPlanTests, OutfitPlanViewModelTests, OutfitPlanRepositoryTests",
+      "result": "passed",
+      "tests": 29,
+      "failures": 0,
+      "skipped": 0
+    },
+    {
+      "scope": "testOwnedGarmentCanCreateAndDeleteOutfitPlan and testOutfitPlanAtLargestAccessibilityText",
+      "result": "passed",
+      "tests": 2,
+      "failures": 0,
+      "skipped": 0
+    },
+    {
+      "scope": "final repeat of testOutfitPlanAtLargestAccessibilityText",
+      "result": "passed",
+      "tests": 1,
+      "failures": 0,
+      "skipped": 0,
+      "duration_seconds": 64.388
+    }
+  ],
+  "assertions": [
+    "maximum accessibility text size",
+    "tomorrow is selected in the graphical date picker",
+    "future YYYY-MM-DD section appears after save",
+    "contrast and textClipped audits pass in editor, active detail, and cancelled detail",
+    "cancellation scrolls the changed status into view",
+    "plan and synthetic garment are deleted after verification"
+  ],
+  "artifacts": [
+    {
+      "path": "docs/acceptance/evidence/16-01-outfit-future-date-largest-text.png",
+      "sha256": "38f98ba7b75cb237950fb8b9757662f79a92dba2600c230fcf0686d435f2cf5e"
+    },
+    {
+      "path": "docs/acceptance/evidence/16-01-outfit-cancelled-largest-text.png",
+      "sha256": "6df634d54d491657edc659e984efaee39e772da4cfa84d6cb821ea37f1d7ae41"
+    }
+  ],
+  "limitations": [
+    "The xcresult bundles are local rerun artifacts and are not committed.",
+    "Manual VoiceOver, physical-device data protection, release CI, actual wear, feedback, and history reuse are outside this automated checkpoint."
+  ]
+}
