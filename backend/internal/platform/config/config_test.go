@@ -23,6 +23,7 @@ func TestConfigurationBoundaries(t *testing.T) {
 		{"host override", "DATABASE_URL", url + "&host=example.test", false},
 		{"duplicate TLS", "DATABASE_URL", url + "&sslmode=verify-full", false},
 		{"wildcard hostname", "HTTP_ADDR", ":8080", false},
+		{"public listener without secure cookie", "HTTP_ADDR", "0.0.0.0:8080", false},
 		{"bad port", "HTTP_ADDR", "127.0.0.1:70000", false},
 		{"unbounded pool", "DB_MAX_OPEN_CONNS", "0", false},
 		{"pool over budget", "DB_MAX_OPEN_CONNS", "101", false},
@@ -46,6 +47,33 @@ func TestConfigurationBoundaries(t *testing.T) {
 	}
 }
 
+func TestSessionCookieConfiguration(t *testing.T) {
+	const databaseURL = "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable"
+	for _, test := range []struct {
+		name, address, secure string
+		valid                 bool
+	}{
+		{"loopback development", "127.0.0.1:8080", "false", true},
+		{"public secure", "0.0.0.0:8080", "true", true},
+		{"public insecure", "0.0.0.0:8080", "false", false},
+		{"invalid value", "127.0.0.1:8080", "synthetic-secret", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			environment := map[string]string{
+				"DATABASE_URL": databaseURL, "HTTP_ADDR": test.address,
+				"SESSION_COOKIE_SECURE": test.secure,
+			}
+			_, err := Load(func(key string) (string, bool) { value, ok := environment[key]; return value, ok })
+			if (err == nil) != test.valid {
+				t.Fatalf("configuration valid=%v expected=%v", err == nil, test.valid)
+			}
+			if err != nil && strings.Contains(err.Error(), "synthetic-secret") {
+				t.Fatal("session configuration exposed raw input")
+			}
+		})
+	}
+}
+
 func TestDocumentationConfiguration(t *testing.T) {
 	tests := []struct {
 		name, enabled, address string
@@ -63,7 +91,7 @@ func TestDocumentationConfiguration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			env := map[string]string{
 				"DATABASE_URL":     "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable",
-				"API_DOCS_ENABLED": tt.enabled, "HTTP_ADDR": tt.address,
+				"API_DOCS_ENABLED": tt.enabled, "HTTP_ADDR": tt.address, "SESSION_COOKIE_SECURE": "true",
 			}
 			_, err := Load(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
 			if (err == nil) != tt.valid {

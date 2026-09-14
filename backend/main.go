@@ -13,6 +13,8 @@ import (
 	"github.com/StephenQiu30/then/backend/internal/platform/config"
 	"github.com/StephenQiu30/then/backend/internal/platform/database"
 	"github.com/StephenQiu30/then/backend/internal/platform/httpserver"
+	"github.com/StephenQiu30/then/backend/internal/repository"
+	"github.com/StephenQiu30/then/backend/internal/service"
 	"github.com/StephenQiu30/then/backend/internal/transport"
 	"github.com/gin-gonic/gin"
 )
@@ -42,8 +44,12 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer pool.Close()
+	accounts, err := service.NewAccountService(repository.NewAccountRepository(pool.ORM()))
+	if err != nil {
+		return err
+	}
 	gin.SetMode(gin.ReleaseMode)
-	router, err := transport.NewRouter(startup, apiDocument, cfg.DocsEnabled, pool, cfg.HealthTimeout, log)
+	router, err := transport.NewRouter(startup, apiDocument, cfg.DocsEnabled, pool, transport.NewAccountHandler(accounts, cfg.SessionSecure), cfg.HealthTimeout, log)
 	if err != nil {
 		return err
 	}

@@ -56,6 +56,7 @@ Woo 原帖视频中可见的穿搭主页、左右浏览、日期/颜色/分享/�
 - 客户端数据：GRDB 7.11.1 + 系统 SQLite，本地优先、离线可用；媒体字节使用受保护文件，不存 SQLite BLOB。
 - API：REST + JSON，以 `backend/openapi.yaml` 的 OpenAPI 3.1.2 为唯一契约。
 - 后端：Go 1.26.5、Gin、GORM v2 Generics、PostgreSQL 18、Atlas versioned SQL。
+- Web：待批准的 `frontend/` 使用 React 19.3.0、TypeScript 6.0.3、Vite 8.3.0、React Router 与 TanStack Query；`@hey-api/openapi-ts` 从唯一 OpenAPI 生成请求代码。2026-09-14 用户要求先不实施，当前只保留 Design 16 与 17-13 草案。
 - 异步与媒体：RabbitMQ + PostgreSQL Outbox/Inbox、受限 Redis、私有 S3-compatible 对象存储、受控 FFmpeg worker。
 - 运行形态：一个 Go module、一个二进制、一个 OCI 镜像；通过 `APP_ROLE=api|worker|all` 选择角色，生产 API 与 worker 可独立进程部署。
 
@@ -105,6 +106,14 @@ Woo 原帖视频中可见的穿搭主页、左右浏览、日期/颜色/分享/�
 │   │   ├── worker/
 │   │   └── platform/
 │   └── tests/
+├── frontend/
+│   ├── src/
+│   │   ├── api/generated/
+│   │   ├── features/auth/
+│   │   └── features/account/
+│   ├── tests/
+│   ├── package.json
+│   └── package-lock.json
 └── docs/
     ├── prd/
     ├── design/
@@ -113,6 +122,15 @@ Woo 原帖视频中可见的穿搭主页、左右浏览、日期/颜色/分享/�
 ```
 
 `backend/migrations/*.sql` 与 `atlas.sum` 是 PostgreSQL schema 的唯一事实源；不得恢复第二份 `schema.sql`。固定文件名与详细文档目录规则见下文。
+
+## Web frontend 开发规范
+
+- `frontend/` 是独立 Web 应用，只承载用户可见页面和浏览器状态；不复制 Go 业务规则、不直接连接 PostgreSQL/Redis/RabbitMQ/MinIO。
+- API 请求与类型由 `backend/openapi.yaml` 生成到 `frontend/src/api/generated/`；不手写第二份 DTO、接口路径或兼容适配层。
+- 认证使用同源 HttpOnly Cookie；浏览器代码不得读取、持久化或记录会话令牌，不在 localStorage/sessionStorage 保存认证信息。
+- 服务端状态使用 TanStack Query，页面路由使用 React Router；不引入第二套状态框架、UI 大型组件库或 CSS 框架。
+- 测试放在 `frontend/tests/` 并由 Vitest 独立执行；断言角色、名称、错误、路由和服务调用等可观察行为，不以 CSS 类名或像素位置作为业务通过证据。
+- 修改 OpenAPI 后先重新生成 SDK，再运行 TypeScript 检查、Vitest 和生产构建；生成差异必须与契约改动一致。
 
 ## 信息源优先级
 

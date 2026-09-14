@@ -1,6 +1,6 @@
 # 于是
 
-“于是”正在从历史个人生活管理实现切换为一款仅面向 iOS 的 C 端 OOTD 穿搭产品。按 2026-09-13 用户决定，先实现 Woo 式照片/真实单品的受控 AI 穿搭流程，同时保留真实 3D 模型及角色/换装/观察交互的完整目标。SwiftUI 原生 Liquid Glass，最低 iOS 26；本地衣橱/记录独立可用，多设备同步继续分期，生成与三维分别验收。
+“于是”正在从历史个人生活管理实现切换为一款仅面向 iOS 的 C 端 OOTD 穿搭产品。按 2026-09-14 用户决定，主路径先实现无需上传照片或衣物的内置服装、真实 3D 角色换装与观察，同时保留 Woo 可见页面和照片 AI 穿搭增强。SwiftUI 原生 Liquid Glass，最低 iOS 26；本地衣橱/记录独立可用，多设备同步继续分期，生成与三维分别验收。
 
 ## 当前状态
 
@@ -10,7 +10,8 @@
 | 产品与技术设计 | 01–12 号设计为当前基线；13 号保留三维研究及待 POC 参数，首版范围已回写 PRD 11/12 与 Design 04/05 |
 | iOS 工程 | 已切换今日/衣橱/穿搭簿三个 SwiftUI 入口；生成 Client 使用 ThenTransport，业务仍在 ThenApp |
 | OOTD Feature | 已接无图/单件图衣橱、16-01 本地穿搭计划与日期回看；快照、编辑/取消/删除和含图组合已实现，验收继续。实际穿着、反馈、受控 AI 与真实 3D 分片推进 |
-| Go 后端 | Gin 健康/数据库运行、容器与内嵌 Swagger 已实现；B0 MVP 与独立测试矩阵已固定，无业务 migration 或云端业务 |
+| Go 后端 | Gin 健康/数据库运行、容器与内嵌 Swagger 已实现；账号注册、Cookie 会话与本人账户 API 已通过单元、竞态及 PostgreSQL 集成测试 |
+| Web 前端 | Design 16 与 17-13 草案已固定；按用户要求暂停实现，当前不创建 `frontend/` 代码目录 |
 | 旧生活管理代码 | 用户确认仅开发阶段且无需保留旧数据，已成组退役；不建设历史兼容层 |
 
 ## 固定技术栈
@@ -19,6 +20,7 @@
 - 本地数据：GRDB 7.11.1 + SQLite；结构化数据本地优先，媒体保存在受保护的私有文件目录。
 - API：REST + JSON、OpenAPI 3.1.2；Apple Swift OpenAPI Generator 生成 iOS Client。
 - 后端：Go 1.26.5、Gin、GORM v2 Generics、PostgreSQL 18、Atlas versioned SQL。
+- Web：规划使用 React 19.3.0、TypeScript 6.0.3、Vite 8.3.0；从唯一 OpenAPI 生成请求 SDK，当前尚未开工。
 - 异步与媒体：RabbitMQ + Outbox/Inbox、受限 Redis、私有 S3-compatible 对象存储、受控 FFmpeg worker。
 - 运行形态：一个 Go module、一个二进制与一个镜像，`APP_ROLE=api|worker|all`。
 
@@ -39,6 +41,7 @@
 
 - `app/`：SwiftUI 客户端、GRDB 数据层、系统能力适配与测试。
 - `backend/`：Go 后端、OpenAPI 唯一契约与 Atlas migration 目录。
+- `frontend/`：待 17-13 批准后创建的注册、登录与本人账户 CRUD 响应式 Web 应用。
 - `docker-compose.yml`：可选隔离环境的标准 Compose 入口。
 - `docker-compose-env.yml`：可选的 PostgreSQL、MinIO、Redis、RabbitMQ 容器配置；日常开发使用本机已安装服务。
 - `.env.example`：仅供可选隔离环境使用的配置格式。
@@ -59,7 +62,7 @@
 | [19-02 开发基线与旧实现清理](docs/plan/19-02-开发基线与旧实现清理执行计划.md) | 用户确认无旧数据保留后的清理与验收；原 19-01 已替代 |
 | [`docs/acceptance/README.md`](docs/acceptance/README.md) | 10 号系统验收与 11–19 号单功能验收索引 |
 | [`docs/design/12-OOTD技术债清理与迁移设计.md`](docs/design/12-OOTD技术债清理与迁移设计.md) | 当前开发基线、清理分组与未来数据保护 |
-| [`backend/openapi.yaml`](backend/openapi.yaml) | iOS 与 Go 共用的唯一接口契约 |
+| [`backend/openapi.yaml`](backend/openapi.yaml) | iOS、Web 与 Go 共用的唯一接口契约 |
 | [`docker-compose.yml`](docker-compose.yml) | 默认 Compose 入口，统一包含开发环境配置 |
 | [`docker-compose-env.yml`](docker-compose-env.yml) | 固定镜像、回环端口、命名卷和健康检查的开发依赖 |
 

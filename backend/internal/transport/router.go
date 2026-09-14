@@ -36,8 +36,8 @@ type errorResponse struct {
 	Retryable bool   `json:"retryable"`
 }
 
-func NewRouter(ctx context.Context, document []byte, docsEnabled bool, probe DependencyProbe, timeout time.Duration, log *slog.Logger) (*Router, error) {
-	if probe == nil || log == nil || timeout <= 0 || timeout > 5*time.Second {
+func NewRouter(ctx context.Context, document []byte, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, timeout time.Duration, log *slog.Logger) (*Router, error) {
+	if probe == nil || log == nil || timeout <= 0 || timeout > 5*time.Second || (accounts != nil && accounts.service == nil) {
 		return nil, errors.New("invalid router dependencies")
 	}
 	loader := openapi3.NewLoader()
@@ -87,16 +87,15 @@ func NewRouter(ctx context.Context, document []byte, docsEnabled bool, probe Dep
 		c.Next()
 	})
 	validate := func(c *gin.Context) {
-		if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 {
-			respondError(c, 400, "BAD_REQUEST", "Health requests do not accept a body or query.", false)
-			return
-		}
 		route, params, err := contract.FindRoute(c.Request)
 		if err != nil {
 			respondError(c, 500, "INTERNAL_ERROR", "Internal server error.", false)
 			return
 		}
-		input := &openapi3filter.RequestValidationInput{Request: c.Request, PathParams: params, Route: route}
+		input := &openapi3filter.RequestValidationInput{
+			Request: c.Request, PathParams: params, Route: route,
+			Options: &openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
+		}
 		if err = openapi3filter.ValidateRequest(c.Request.Context(), input); err != nil {
 			respondError(c, 400, "BAD_REQUEST", "Request does not satisfy the API contract.", false)
 			return
@@ -109,9 +108,17 @@ func NewRouter(ctx context.Context, document []byte, docsEnabled bool, probe Dep
 		}
 	}
 	engine.GET("/v1/health/live", validate, func(c *gin.Context) {
+		if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 {
+			respondError(c, 400, "BAD_REQUEST", "Health requests do not accept a body or query.", false)
+			return
+		}
 		c.JSON(http.StatusOK, healthResponse{Status: "live", RequestID: c.GetString("request_id")})
 	})
 	engine.GET("/v1/health/ready", validate, func(c *gin.Context) {
+		if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 {
+			respondError(c, 400, "BAD_REQUEST", "Health requests do not accept a body or query.", false)
+			return
+		}
 		if r.draining.Load() {
 			notReady(c)
 			return
@@ -124,6 +131,14 @@ func NewRouter(ctx context.Context, document []byte, docsEnabled bool, probe Dep
 		}
 		c.JSON(http.StatusOK, healthResponse{Status: "ready", RequestID: c.GetString("request_id")})
 	})
+	if accounts != nil {
+		engine.POST("/v1/auth/registrations", validate, accounts.register)
+		engine.POST("/v1/auth/sessions", validate, accounts.login)
+		engine.DELETE("/v1/auth/session", validate, accounts.logout)
+		engine.GET("/v1/users/me", validate, accounts.current)
+		engine.PATCH("/v1/users/me", validate, accounts.update)
+		engine.DELETE("/v1/users/me", validate, accounts.deleteCurrent)
+	}
 	engine.NoRoute(func(c *gin.Context) { respondError(c, 404, "NOT_FOUND", "Resource not found.", false) })
 	engine.NoMethod(func(c *gin.Context) {
 		c.Header("Allow", "GET")

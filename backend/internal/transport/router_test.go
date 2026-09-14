@@ -28,7 +28,7 @@ func newTestRouter(t *testing.T, probe probeFunc) (*Router, *bytes.Buffer) {
 		t.Fatal(err)
 	}
 	log := new(bytes.Buffer)
-	router, err := NewRouter(context.Background(), doc, false, probe, 20*time.Millisecond, slog.New(slog.NewJSONHandler(log, nil)))
+	router, err := NewRouter(context.Background(), doc, false, probe, nil, 20*time.Millisecond, slog.New(slog.NewJSONHandler(log, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

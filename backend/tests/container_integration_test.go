@@ -83,7 +83,7 @@ func TestContainerRuntime(t *testing.T) {
 	api, err := createTestContainer(t, ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: image,
-			Env:   map[string]string{"DATABASE_URL": dsn.String(), "HTTP_ADDR": "0.0.0.0:8080", "APP_ROLE": "api"},
+			Env:   map[string]string{"DATABASE_URL": dsn.String(), "HTTP_ADDR": "0.0.0.0:8080", "APP_ROLE": "api", "SESSION_COOKIE_SECURE": "true"},
 			HostConfigModifier: func(h *dockercontainer.HostConfig) {
 				h.NetworkMode = dockercontainer.NetworkMode("container:" + db.GetContainerID())
 				h.ReadonlyRootfs = true

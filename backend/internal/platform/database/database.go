@@ -17,7 +17,10 @@ var (
 	ErrVersion     = errors.New("database requires PostgreSQL major 18")
 )
 
-type Pool struct{ sql *sql.DB }
+type Pool struct {
+	sql *sql.DB
+	orm *gorm.DB
+}
 
 func Open(ctx context.Context, cfg config.Config) (*Pool, error) {
 	orm, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{Logger: logger.Discard, DisableAutomaticPing: true})
@@ -45,7 +48,7 @@ func Open(ctx context.Context, cfg config.Config) (*Pool, error) {
 		_ = db.Close()
 		return nil, ErrVersion
 	}
-	return &Pool{sql: db}, nil
+	return &Pool{sql: db, orm: orm}, nil
 }
 
 func (p *Pool) Probe(ctx context.Context) error {
@@ -56,3 +59,6 @@ func (p *Pool) Probe(ctx context.Context) error {
 }
 
 func (p *Pool) Close() error { return p.sql.Close() }
+
+// ORM returns the configured persistence handle for repository construction.
+func (p *Pool) ORM() *gorm.DB { return p.orm }

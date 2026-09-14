@@ -183,7 +183,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router, err := transport.NewRouter(ctx, spec, false, pool, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := transport.NewRouter(ctx, spec, false, pool, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
