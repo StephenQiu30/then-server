@@ -59,7 +59,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 - [x] 本机 services 测试通过，覆盖 GORM schema、唯一约束、事务与级联删除。
 - [x] Testcontainers integration 通过，覆盖空库迁移、无建表权限失败、实际 binary、健康、断连恢复和 SIGTERM。
 - [x] Xcode 工程仅保留实际 target/GRDB 依赖；Debug Simulator build 与非 UI 测试通过。
-- [ ] 远程 GitHub Actions：本轮未提交，因此尚未触发。
+- [x] 远程 GitHub Actions：服务端 `01937cc` 的 `34860127582` 与 App `8afd8f6` 的 `34860139428` 均成功；后续当前 main 服务端 `e43cc9a` 的 `34877794928`、App `2ee51c4` 的 `34877783052` 继续成功。
 - [ ] 前端项目和 Umi 生成文件：按用户要求暂不创建 `frontend/`。
 
 ## 非目标
