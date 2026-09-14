@@ -1,8 +1,36 @@
 # 于是 OOTD 项目协作规范
 
+## 2026-09-14核心三维与Woo需求固定
+
+用户最新明确无需上传衣物即可使用内置服装换装，并确认“先保持和 Woo 一样的实现”。当前主路径是无账号/无照片/无用户衣物/离线可用的真实三维角色与内置目录；Woo 照片/AI/360 是独立可选增强。该顺序覆盖下文 2026-09-13 照片优先的历史说明。
+
+人物/页面以 Woo 可见观感和状态为目标，使用本项目自有/授权资产；当前不加入新提议的身体展示动作、呼吸、眨眼或持续待机。真实三维与角色编辑的长期要求保留，站姿/转台不算身体动画。当前事实源为 Design 03/04/05/13 顶部、PRD 10/11/12 与 11-02，证据与推断明确分开。
+
+Swift 确定性资产编译器只构成当前 11-02 工程 POC；不得把它或 primitive 人偶当作已通过正式人物美术。正式 Blender/其他制作工具可直接研究，不需要先让 Swift 失败；新增依赖/资产来源仍按 Design 01 和相应执行契约锁定。
+
+## 2026-09-14内置服装与三维主路径
+
+用户最新明确：首次使用不得要求上传本人照片或衣物。默认主路径改为“打开 App → 选择内置服装 → 在真实 3D 虚拟形象上直接换装、旋转观察 → 保存穿搭”；本人照片、用户衣物照片、AI 静态试穿和 360 生成均为用户主动进入的可选增强，不得阻断本地主路径，也不得用空衣橱迫使上传。
+
+Woo 原帖视频中可见的穿搭主页、左右浏览、日期/颜色/分享/删除、衣物明细、分类衣橱、顶部已选托盘、Dress up、处理状态、结果页、Create 360° 和三项底部导航作为逐状态视觉目标；用户可控实时旋转是 Then 已确认的三维需求，视频本身不证明 Woo 使用 mesh。页面结构与交互尽量一比一复现；人物、服装、品牌和图像资产使用本项目自有或已授权资源，系统状态栏/相册由 iOS 提供。视频未展示的账号、设置、错误和商业化页面不得凭空声称来自 Woo；按本项目 PRD、隐私和无障碍要求补齐。
+
+用户另明确页面可以完全复现 Woo 样式与页面，当前视觉目标归 Design 03 的逐页映射；保留 SwiftUI 原生架构和真实业务/无障碍验收，已实现通用衣橱列表不代表 Woo UI 完成。
+
 ## 适用范围
 
 本文件位于仓库根目录，规则适用于仓库内全部文件。若子目录新增更具体的 `AGENTS.md`，可以补充本文件，但不得降低安全、隐私、数据正确性、可访问性和测试要求。
+
+## 2026-09-13模拟器开发优先
+
+用户明确“先使用模拟器进行开发”。当前开发不等待可连接真机；优先推进模拟器真实可执行的选图、复核、保存/删除与 Woo 页面。平台能力缺失如实记录，不将异常当成通过，不用模拟器或 macOS 结果冒充真机发布验收。物理保护/性能等发布检查留待后续设备可用时完成，不重复把设备连接作为继续编码的前置。
+
+## 2026-09-13Woo流程优先与三维保留
+
+历史决定：09-13 用户选择 Woo 照片/单品生成先行且保留真实三维；09-14 已由无上传内置三维优先替代。照片、生成、导出分享及 360 保留完整目标，按独立门禁分期；静态图/视频不得抵扣真实模型交付。当前范围归 PRD 10/11/12/16 与 Design 03/04/05/09/13。
+
+## 2026-09-13当前用户决策
+
+用户确认本项目处于开发阶段，不需要保留任何旧生活管理数据。按 Design 12 / PRD 19 / 19-02 执行全新 OOTD 基线与旧实现成组清理；不建设历史只读、导出、迁移或兼容层。下文“历史数据策略批准前冻结”等条件已由本次决定解除，仅按已定义分组清理，保留照片 POC、ThenTransport、后端及其他已有工作。此决定不豁免未来 OOTD 用户数据的保护、删除与验收。
 
 ## 产品与技术方向
 
@@ -10,7 +38,7 @@
 
 当前产品围绕以下闭环建设：
 
-- 首版以无照片可调 3D 模板角色、兼容服装直接换装、手工/单件图衣橱、基础推荐、穿搭记录与隐私删除组成离线闭环。
+- 首版默认无上传可调三维角色、内置服装换装、观察与 Look 保存/恢复/删除；真实衣橱、推荐、计划和实际记录是独立本地分支，内置造型不证明拥有或实际穿着。
 - 用户已于 2026-09-08 确认云端 AI 与多设备同步分期；首版不创建匿名云账号、不上传个人数据、不依赖生产后端或远程资产目录。
 - 本人 OOTD 照拆分和照片个性化按后续功能门禁建设，不是本地 3D 首版前置。
 - 以低录入成本逐步形成个人数字衣橱。
@@ -35,7 +63,7 @@
 
 ## 目标仓库结构
 
-2026-09-08 用户确认：后端位于 `backend/`，iOS 位于 `app/`（原 `ios/` 已迁移）。保持单个 ThenApp 生产模块；只按已实现职责建目录，不增加转发层、空包或额外项目包装。
+2026-09-08 用户确认：后端位于 `backend/`，iOS 位于 `app/`（原 `ios/` 已迁移）。保持单个 ThenApp 产品业务模块；2026-09-13 用户确认增加唯一技术例外 ThenTransport，仅编译 OpenAPI 插件生成的 types/client，默认 nonisolated，Swift 6 Complete Strict Concurrency。ThenApp/UI 继续 MainActor + Approachable Concurrency；不拆分其他业务模块，不增加转发层、空包或额外项目包装。
 
 以下结构随实施计划逐步落地，不表示所有条目当前都已存在。不要为了填满结构创建空文件或空目录。
 
@@ -44,10 +72,9 @@
 ├── AGENTS.md
 ├── README.md
 ├── CONTRIBUTING.md
-├── scripts/
-│   ├── validate-commit-message.sh
-│   ├── validate-ios-architecture.sh
-│   └── verify-toolchain.sh
+├── docker-compose.yml
+├── docker-compose-env.yml
+├── .env.example
 ├── app/
 │   ├── README.md
 │   ├── ThenApp/
@@ -106,7 +133,7 @@
 ## 开始任务前
 
 1. 阅读本文件和任务涉及目录的说明文件。
-2. 运行 `scripts/verify-toolchain.sh`；版本不一致时停止，不使用未批准的替代工具链。
+2. 直接运行 `xcodebuild -version`、`swift --version`、`go version` 并与 Design 01 核对；版本不一致时停止，不使用未批准的替代工具链。
 3. 阅读对应单功能 PRD、design、产品级实施计划和验收标准；若任务已进入实现，还要阅读已批准的同编号单切片执行计划。
 4. 检查工作区已有修改，不覆盖或回滚无关改动。
 5. 确认改动是否影响 iOS、后端、OpenAPI、本地 migration、服务端 migration、媒体生命周期和文档。
@@ -127,7 +154,7 @@
 - 所有产品页面、导航、Tab、sheet、表单和状态展示固定使用 SwiftUI；App 生命周期使用 SwiftUI `App`。
 - UIKit 只允许通过 `UIViewRepresentable`、`UIViewControllerRepresentable` 或服务适配器封装缺少合适 SwiftUI 接口的系统控制器，以及已批准的局部 WebKit 图形渲染表面。UIKit/WebKit 不承担产品页面、全局导航、领域状态或业务规则。
 - 界面状态使用 Observation 与 `@Observable`；不新增 `ObservableObject`、`@Published`、`@StateObject` 或 Combine 全局状态流。
-- 首版只使用一个生产 `ThenApp` Swift module，加 `ThenAppTests` 与 `ThenAppUITests`；Feature 先按目录和协议隔离。
+- 首版业务仅位于 `ThenApp` Swift module，加 `ThenAppTests` 与 `ThenAppUITests`；2026-09-13 已批准 `ThenTransport` 技术模块，只包含插件生成的 OpenAPI types/client。Feature 继续按目录和协议隔离，不向 ThenTransport 放入 UI、领域、Repository 或手写 DTO。
 - 采用 feature-first + MVVM + Repository。View 只负责展示和用户事件，不直接访问 GRDB、文件系统、Photos、Vision、网络或供应商 SDK。
 - ViewModel 通过初始化器接收完成当前用例所需的精确依赖，不新增包含全 App 服务的巨型环境对象或隐藏全局单例。
 - 系统能力通过协议封装，例如 `PhotoPickerService`、`CameraService`、`ImageAnalysisService`、`MediaStore`、`RecommendationService`、`TryOnService` 和 `NotificationService`。
@@ -205,7 +232,7 @@
 - `backend/openapi.yaml` 是 iOS、Go 后端和 Swagger UI 的唯一接口契约。不得复制第二份 YAML/JSON、使用 Swagger 注解生成契约或手写 iOS transport DTO。
 - 契约固定 OpenAPI 3.1.2；公开业务接口使用 `/v1`。每个 operation 必须有全局唯一、稳定、可读的 `operationId`。
 - 修改顺序：先改 OpenAPI 并校验，再生成并编译 iOS Client，手写 Go Handler 与纯 struct，最后更新契约测试和示例。
-- iOS 生成代码只存在 DerivedData；`app/ThenApp/openapi.yaml` 必须保持指向 `backend/openapi.yaml` 的符号链接。
+- iOS 生成代码只存在 DerivedData，由 ThenTransport target 的 Build Tool Plugin 编译并以 public 访问级别导出；`app/ThenApp/openapi.yaml` 必须保持指向 `backend/openapi.yaml` 的符号链接。
 - 请求与响应 schema 明确 required、可空性、枚举、格式、单位和示例；不得用无约束 object 代替稳定结构。
 - 创建、上传 finalize、生成、取消、删除、同步和第三方回调支持幂等键；列表优先使用稳定游标。
 - 长任务返回 `202 Accepted`、稳定 job ID、状态 URL 和建议轮询间隔。
@@ -270,7 +297,7 @@
 - API：OpenAPI 通过语法、风格与破坏性变更检查；iOS 生成 Client 可编译；Go Handler 通过契约测试。
 - 高风险能力必须真机或隔离环境验证，包括照片权限撤回、低内存、后台恢复、Reduce Motion、VoiceOver、离线恢复、供应商超时、重复消息、迟到结果、删除竞态和失败清理；采用 Three.js 时还必须覆盖 WebGL 能力/context lost、WebContent 终止、bridge/CSP 拒绝、零运行时外联及 App 与 WebContent 合计资源预算。
 - 修复缺陷时优先添加复现测试；无法自动化时写入验收文档并说明原因。
-- 当前 iOS 架构改动至少运行 `scripts/validate-ios-architecture.sh` 与相关 `xcodebuild`；旧 `validate-p0-scope.sh`、旧生活管理 motion/privacy/localization 结果不构成 OOTD 发布证据。
+- 当前 iOS 架构改动至少运行相关 `xcodebuild`、Swift 测试与架构边界检查；旧生活管理测试结果不构成 OOTD 发布证据。
 
 ## 完成标准
 
