@@ -115,3 +115,26 @@ func TestBundledSwaggerIntegrity(t *testing.T) {
 		}
 	}
 }
+
+func TestBundledSwaggerRuntimeConfiguration(t *testing.T) {
+	data, err := docsFiles.ReadFile("swaggerui/swagger-initializer.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := string(data)
+	for _, required := range []string{
+		"validatorUrl: null",
+		"queryConfigEnabled: false",
+		"persistAuthorization: false",
+		"withCredentials: true",
+		`"get"`,
+		`"post"`,
+		`"put"`,
+		`"delete"`,
+		`"patch"`,
+	} {
+		if !strings.Contains(configuration, required) {
+			t.Fatalf("Swagger runtime configuration is missing %q", required)
+		}
+	}
+}

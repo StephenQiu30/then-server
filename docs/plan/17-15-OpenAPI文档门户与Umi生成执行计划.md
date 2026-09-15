@@ -26,7 +26,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 ## SMART范围
 
 - Specific：接口只由 Huma operation/Go tag 声明，schema 只由 Repository GORM record 声明。
-- Measurable：8 个 operation 的运行时契约可校验；空 PostgreSQL 能由实际二进制自动建表并启动；账号唯一约束、事务和级联删除通过。
+- Measurable：当前 11 个 operation 的运行时契约可校验；空 PostgreSQL 能由实际二进制自动建表并启动；账号唯一约束、事务和级联删除通过。
 - Achievable：沿用现有 Gin、Huma、GORM 和测试体系，不引入新框架。
 - Relevant：满足 Swagger/Umi 生成，同时删除 Atlas 和物化 OpenAPI 的维护成本。
 - Time-bound：本切片完成代码、CI、规范与真实 PostgreSQL 验证；不创建 `frontend/` 页面。
@@ -39,7 +39,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 4. GORM record 必须明确账号表的列类型、非空、唯一、检查约束、索引和用户删除级联。
 5. `repository.Migrate` 集中执行 `AutoMigrate`，Main 在 HTTP 监听前调用；失败时进程不报告启动成功。
 6. 当前不保留 Atlas、SQL migration、checksum、旧 schema 探测、回填或双写。
-7. Redis、RabbitMQ、MinIO 不因 schema 调整进入当前 API 运行时。
+7. Redis 只因已批准的认证限流进入当前 API 运行时；RabbitMQ、MinIO 不因 schema 调整或未来规划提前进入生产 binary。
 8. App 当前没有实际网络调用时，移除依赖物化契约的空 transport target、生成插件和未使用依赖；未来接入另立执行计划。
 
 ## Checklist
@@ -50,6 +50,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 - [x] 在 GORM record 上声明 PostgreSQL schema 约束。
 - [x] 新增集中 `repository.Migrate` 并接入 Main 启动顺序。
 - [x] 契约测试直接调用运行时 OpenAPI 生成，不读取磁盘产物。
+- [x] Swagger UI 覆盖当前 GET/POST/PUT/DELETE/PATCH；禁用外部 validator、查询覆盖与授权持久化。实际浏览器展开 PUT 声明接口后可编辑请求并显示 Execute。
 - [x] 进程测试验证运行时 JSON/YAML，不比较仓库文件。
 - [x] CI 删除生成产物漂移步骤。
 - [x] 根规范、后端规范、Design、PRD、README 与 Acceptance 同步。
@@ -59,7 +60,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 - [x] 本机 services 测试通过，覆盖 GORM schema、唯一约束、事务与级联删除。
 - [x] Testcontainers integration 通过，覆盖空库迁移、无建表权限失败、实际 binary、健康、断连恢复和 SIGTERM。
 - [x] Xcode 工程仅保留实际 target/GRDB 依赖；Debug Simulator build 与非 UI 测试通过。
-- [x] 远程 GitHub Actions：服务端 `01937cc` 的 `34860127582` 与 App `8afd8f6` 的 `34860139428` 均成功；后续当前 main 服务端 `e43cc9a` 的 `34877794928`、App `2ee51c4` 的 `34877783052` 继续成功。
+- [x] 远程 GitHub Actions：服务端 `01937cc` 的 `34860127582` 与 App `8afd8f6` 的 `34860139428` 均成功；后续 main 服务端 `6aba3af` 的 `34952510997`、App `26cc8f4` 的对应 CI 继续成功。
 - [ ] 前端项目和 Umi 生成文件：按用户要求暂不创建 `frontend/`。
 
 ## 非目标
