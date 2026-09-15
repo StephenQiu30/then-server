@@ -284,8 +284,12 @@ func (h *AccountHandler) authenticatedError(ctx context.Context, err error) erro
 	if !errors.Is(err, model.ErrAuthentication) {
 		return response
 	}
-	cookie := h.expiredSessionCookie()
-	return huma.ErrorWithHeaders(response, http.Header{"Set-Cookie": []string{cookie.String()}})
+	return authenticatedSessionError(ctx, h.secureCookie)
+}
+
+func authenticatedSessionError(ctx context.Context, secureCookie bool) error {
+	cookie := http.Cookie{Name: sessionCookieName, Path: "/v1", Expires: time.Unix(1, 0), MaxAge: -1, HttpOnly: true, Secure: secureCookie, SameSite: http.SameSiteStrictMode}
+	return huma.ErrorWithHeaders(newErrorResponse(http.StatusUnauthorized, requestID(ctx)), http.Header{"Set-Cookie": []string{cookie.String()}})
 }
 
 func newUserResponse(user model.User) UserResponse {

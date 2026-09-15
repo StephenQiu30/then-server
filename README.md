@@ -4,9 +4,9 @@
 
 ## 当前实现
 
-Go + Gin/Huma + GORM/AutoMigrate + PostgreSQL 已实现健康检查、注册/登录、Cookie 会话、本人账户读取/更新/删除和退出。运行时 OpenAPI 是 Swagger 与未来 Umi 请求生成的唯一输入。目录与规范见 [后端架构](docs/design/02-后端架构.md)，精确版本见 [技术选型](docs/design/01-技术选型.md)。
+Go + Gin/Huma + GORM/AutoMigrate + PostgreSQL 已实现健康检查、注册/登录、Cookie 会话、本人账户 CRUD 与本人成年声明的查询/确认/撤回。运行时 OpenAPI 是 Swagger 与未来 Umi 请求生成的唯一输入。目录与规范见 [后端架构](docs/design/02-后端架构.md)，精确版本见 [技术选型](docs/design/01-技术选型.md)。
 
-日常使用本机已安装 PostgreSQL、Redis、RabbitMQ、MinIO；当前账号 API 只依赖 PostgreSQL，其余服务已有协议测试，业务在批准切片启用。`frontend` 按用户要求暂停实现；App 云接入、上传/生成/同步未完成。
+日常使用本机已安装 PostgreSQL、Redis、RabbitMQ、MinIO；当前 API 以 PostgreSQL 保存账号、会话和声明事实，Redis 只保存认证限流短期计数。RabbitMQ 与 MinIO 已有协议测试，业务尚未启用。`frontend` 按用户要求暂停实现；App 云接入、上传/生成/同步未完成。
 
 ## 目录与入口
 

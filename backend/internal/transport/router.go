@@ -61,8 +61,8 @@ type readinessOutput struct {
 
 var configureHumaErrors sync.Once
 
-func NewRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, timeout time.Duration, log *slog.Logger) (*Router, error) {
-	if probe == nil || log == nil || timeout <= 0 || timeout > 5*time.Second || (accounts != nil && (accounts.service == nil || accounts.limiter == nil)) {
+func NewRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, timeout time.Duration, log *slog.Logger) (*Router, error) {
+	if probe == nil || log == nil || timeout <= 0 || timeout > 5*time.Second || (accounts != nil && (accounts.service == nil || accounts.limiter == nil)) || (privacy != nil && privacy.service == nil) {
 		return nil, errors.New("invalid router dependencies")
 	}
 	engine, err := newEngine(log)
@@ -70,7 +70,7 @@ func NewRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, acc
 		return nil, err
 	}
 	router := &Router{engine: engine}
-	api := registerAPI(engine, router, probe, accounts, timeout)
+	api := registerAPI(engine, router, probe, accounts, privacy, timeout)
 	yamlDocument, jsonDocument, err := serializeOpenAPI(ctx, api.OpenAPI())
 	if err != nil {
 		return nil, err
@@ -125,7 +125,7 @@ func newEngine(log *slog.Logger) (*gin.Engine, error) {
 	return engine, nil
 }
 
-func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, accounts *AccountHandler, timeout time.Duration) huma.API {
+func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, timeout time.Duration) huma.API {
 	configureHumaErrors.Do(func() {
 		huma.NewError = func(status int, _ string, _ ...error) huma.StatusError {
 			return newErrorResponse(status, "")
@@ -134,7 +134,7 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 			return newErrorResponse(status, requestID(ctx.Context()))
 		}
 	})
-	config := huma.DefaultConfig("于是 OOTD API", "0.5.0")
+	config := huma.DefaultConfig("于是 OOTD API", "0.6.0")
 	config.OpenAPI.OpenAPI = "3.1.2"
 	config.Info.Description = "“于是”OOTD 产品后端接口。OpenAPI 由 Go operation 与类型字段标签生成。"
 	config.OpenAPIPath = ""
@@ -149,6 +149,7 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 	api := humagin.New(engine, config)
 	registerHealthOperations(api, router, probe, timeout)
 	registerAccountOperations(api, accounts)
+	registerPrivacyOperations(api, privacy)
 	normalizeGeneratedOpenAPI(api.OpenAPI())
 	return api
 }
@@ -311,7 +312,7 @@ func serializeOpenAPI(ctx context.Context, spec *huma.OpenAPI) ([]byte, []byte, 
 func GeneratedOpenAPI(ctx context.Context) ([]byte, []byte, error) {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
-	api := registerAPI(engine, &Router{}, nil, nil, time.Second)
+	api := registerAPI(engine, &Router{}, nil, nil, nil, time.Second)
 	return serializeOpenAPI(ctx, api.OpenAPI())
 }
 

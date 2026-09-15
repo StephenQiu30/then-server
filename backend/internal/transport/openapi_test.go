@@ -36,10 +36,13 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 	operations := 0
 	identifiers := map[string]bool{}
 	protectedOperations := map[string]bool{
-		"deleteSession":     true,
-		"getCurrentUser":    true,
-		"updateCurrentUser": true,
-		"deleteCurrentUser": true,
+		"deleteSession":                true,
+		"getCurrentUser":               true,
+		"updateCurrentUser":            true,
+		"deleteCurrentUser":            true,
+		"getSelfAdultDeclaration":      true,
+		"confirmSelfAdultDeclaration":  true,
+		"withdrawSelfAdultDeclaration": true,
 	}
 	for _, path := range spec.Paths {
 		for method, operation := range path {
@@ -77,7 +80,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.5.0" || operations != 8 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.6.0" || operations != 11 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
 }
