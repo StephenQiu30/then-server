@@ -19,6 +19,13 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		Info    struct {
 			Version string `json:"version"`
 		} `json:"info"`
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Enum []any `json:"enum"`
+				} `json:"properties"`
+			} `json:"schemas"`
+		} `json:"components"`
 		Paths map[string]map[string]struct {
 			OperationID string `json:"operationId"`
 			Responses   map[string]struct {
@@ -82,5 +89,15 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 	}
 	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.6.0" || operations != 11 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
+	}
+	confirmationConstraintFound := false
+	for _, schema := range spec.Components.Schemas {
+		if property, ok := schema.Properties["confirms_self_and_adult"]; ok {
+			confirmationConstraintFound = len(property.Enum) == 1 && property.Enum[0] == true
+			break
+		}
+	}
+	if !confirmationConstraintFound {
+		t.Fatal("generated contract does not require confirms_self_and_adult to be true")
 	}
 }
