@@ -29,7 +29,7 @@
 - [本人成年声明 API 执行计划](17-18-本人成年声明API执行计划.md)
 - [本人照片私有上传与删除闭环执行计划](17-19-本人照片私有上传与删除闭环执行计划.md)（approved/completed；合成数据开发范围）
 - [结构化衣橱账户 API 执行计划](17-20-结构化衣橱账户API执行计划.md)（approved/completed；后端开发范围）
-- [衣橱确认属性 API 执行计划](17-21-衣橱确认属性API执行计划.md)（approved/in_progress）
+- [衣橱确认属性 API 执行计划](17-21-衣橱确认属性API执行计划.md)（approved/completed；后端开发范围）
 
 ## 单切片要求
 
