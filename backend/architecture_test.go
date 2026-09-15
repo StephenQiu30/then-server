@@ -18,7 +18,6 @@ var allowedInternalImports = map[string]map[string]bool{
 	"repository": {"model": true},
 	"transport":  {"model": true},
 	"platform":   {"platform": true},
-	"worker":     {"model": true, "service": true},
 }
 
 var forbiddenFrameworkImports = map[string][]string{

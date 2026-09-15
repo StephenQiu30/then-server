@@ -160,7 +160,7 @@ stateDiagram-v2
 - ID 使用全局唯一值；时间以 UTC 保存，必要时另存原始时区。
 - 每个用户数据表都包含 `user_id` 或可经不可绕过的外键链归属用户。
 - 更新使用乐观版本或显式状态条件，防止迟到 worker 覆盖新状态。
-- 业务字段、状态、索引、外键和检查约束在版本化 SQL 中明确表达。
+- 当前开发 schema 的业务字段、状态、索引、外键和检查约束由 Repository GORM record 明确表达，并由集中 AutoMigrate 在监听前建立；进入需要保留生产数据的阶段前重新批准版本化迁移方案。
 - 对象存储只保存内容；PostgreSQL 保存用途、归属、状态、生命周期和对象版本。
 - RabbitMQ payload 不包含图片字节、长期 URL、令牌、原始日历正文、精确位置或敏感提示词。
 
@@ -462,7 +462,7 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 ### 指标
 
 - HTTP：按 operation/status 的请求率、错误率、p50/p95/p99、限流/幂等命中。
-- PostgreSQL：连接池等待、事务耗时、慢查询、锁等待、deadlock、migration version/drift。
+- PostgreSQL：连接池等待、事务耗时、慢查询、锁等待、deadlock、当前 schema 初始化耗时与失败；只有版本化迁移方案获批后才增加 migration version/drift 指标。
 - Outbox/Inbox：pending、oldest age、publish attempts、duplicate、expired leases。
 - RabbitMQ：ready、unacked、redelivery、confirm latency、consumer utilization、DLQ 和 rejected publish。
 - worker：按 job type/provider 的排队、处理、成功、重试、取消、成本和租约过期。
@@ -499,7 +499,7 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 - 原始日历正文、参与人、精确地址和账务明细不得与人物照片共同发送供应商；只传最小场景摘要。
 - TLS 覆盖客户端、broker、Redis、数据库、对象存储和供应商连接；内部身份使用短期凭据或工作负载身份。
 - 数据库、备份和对象存储静态加密；高敏感密钥由 KMS 管理，按 API/worker/迁移角色拆分权限。
-- API worker 无权执行 DDL；migration job 无权读取对象正文；媒体 worker 只访问对应用途前缀。
+- 当前开发 API 只在监听前通过集中 AutoMigrate 执行 schema DDL。进入保留生产数据阶段时须重新批准迁移执行身份；媒体 worker 获批后只访问对应用途前缀，不能继承 API 的通用数据权限。
 - 队列管理面、Redis、数据库和对象存储不暴露公网；生产调试入口默认关闭。
 - 输入实施解码限制、MIME/magic byte 双验、像素与帧数上限、恶意文件扫描和提示词/内容安全检查。
 - 输出检查身份漂移、不合理裸露、身体变形与违法内容；失败结果隔离且不用于训练。
@@ -533,8 +533,8 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 
 - [ ] 旧 chi/纯 pgx/`schema.sql`/PostgreSQL jobs 基线没有被新代码继续引用，仓库只存在一套当前技术事实源。
 - [ ] 10 号产品总纲、17/18 号单功能 PRD、当前实施计划、验收和隐私/供应商准入记录一致且均在有效期内。
-- [ ] OpenAPI 只保留一份，异步状态、幂等、错误和删除协议可生成并编译 iOS Client。
-- [ ] 生产入口不存在 `AutoMigrate`，应用数据库角色没有 DDL 权限。
+- [ ] OpenAPI 只有 Huma operation/Go tag 一个声明源，异步状态、幂等、错误和删除协议可被实际 Umi/App 消费者生成并编译。
+- [ ] 真实数据上线前批准版本化迁移、执行身份、前向恢复与演练；当前开发 AutoMigrate 不能直接作为生产升级方案。
 - [ ] GORM CRUD 和 raw SQL 边界有代码所有者；热查询达到计划与延迟预算。
 - [ ] 业务写入与 Outbox 原子；模拟每个崩溃窗口均无丢任务、无重复业务效果。
 - [ ] RabbitMQ confirm、mandatory return、manual ack、retry、delivery limit 和 DLQ 演练通过。

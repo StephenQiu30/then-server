@@ -54,6 +54,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 - [x] 进程测试验证运行时 JSON/YAML，不比较仓库文件。
 - [x] CI 删除生成产物漂移步骤。
 - [x] 根规范、后端规范、Design、PRD、README 与 Acceptance 同步。
+- [x] Design 10/14 删除物化规格、固定 SQL migration job 和已移除 Swift Client 的旧要求；当前开发统一为 GORM AutoMigrate、运行时 OpenAPI 与实际消费者按需生成。
 - [x] 移除 App 中未使用的 ThenTransport、OpenAPI 符号链接、生成配置和 Swift OpenAPI 依赖；CI 不再检出服务端仓库参与 App 构建。
 - [x] `go test ./... -count=1`、`go vet ./...` 通过。
 - [x] `go test -race ./... -count=1` 通过。
