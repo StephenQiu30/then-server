@@ -1,14 +1,10 @@
 # OOTD 服务端与异步任务设计
 
-## 2026-09-14当前实现边界
+## 当前实现与设计边界
 
-当前开发 MVP 的数据库结构由 Repository 内 GORM record 与集中 `AutoMigrate` 管理；接口由 Huma operation/Go tag 在运行时生成 OpenAPI。已删除 Atlas、SQL migration、checksum、`generate_openapi.go` 和仓库内 OpenAPI 物化文件。本文后续关于 Atlas、versioned SQL、受版本控制 `backend/openapi.yaml`、应用禁止执行 DDL、`cmd/migrate` 以及旧 schema 升级的内容属于较早生产设想，已由 [Design 01 当前定案](01-技术选型.md#2026-09-14后端最小技术栈定案) 与 [Design 02](02-后端架构.md) 覆盖，不指导当前实现。
+当前已实现健康、数据库就绪、注册/会话和本人账户 CRUD；业务只依赖 PostgreSQL。目录/SOP 见 [Design 02](02-后端架构.md)，精确技术栈见 [Design 01](01-技术选型.md)。GORM record + 集中 AutoMigrate 管理开发 schema。
 
-Redis、RabbitMQ、MinIO 和本文的异步任务链仍是条件架构：只有实际云生成任务获批后才逐项进入运行时。当前账号 API 只连接 PostgreSQL，不为未来链路创建空表、空 worker 或通用抽象。
-
-## 2026-09-13实施顺序更新
-
-用户已明确先实现 Woo 式照片与单品生成流程，同时保留真实 3D 模型及其交互目标，替代旧“本地 3D 完成后才推进云 AI”的顺序。账号/授权、逐次同意、私有上传、任务恢复和云删除随首个静态生成闭环前移，按本文现有职责准入。不默认上传完整衣橱、不建立隐含同步，不让云任务承载设备上的模板调参/观察。Provider、地域和生产配置须有实际验证。 当前范围由 [PRD 10](../prd/10-OOTD产品需求.md#2026-09-13当前交付目标) 和 [总体设计](03-OOTD产品总体设计.md#2026-09-13当前产品路径) 固定；下文旧阶段描述按历史语境阅读。
+下文为未实施云生成能力的任务、对象生命周期与故障契约；不能视为已存在的 API、表或 worker。按获批任务逐项引入 RabbitMQ/MinIO/Redis，默认连接本机服务，不提前建设分布式平台。
 
 ## 文档状态
 
@@ -76,95 +72,6 @@ Redis、RabbitMQ、MinIO 和本文的异步任务链仍是条件架构：只有�
 - RPO、RTO、跨可用区策略和供应商故障时的降级目标。
 - 删除请求完成时限和可验证证据。
 
-## 已批准技术基线与启用阶段
-
-[`01-技术选型.md`](01-技术选型.md) 和 [`02-后端架构.md`](02-后端架构.md) 已替代旧生活管理产品的 chi、纯 pgx、`backend/schema.sql`、PostgreSQL 轮询任务和无对象存储决定。新功能不得继续沿用旧基线，也不得让两套同类框架长期并存。
-
-| 决策面 | 已批准选择 | 启用边界 |
-| --- | --- | --- |
-| HTTP | Gin，使用 `gin.New()` 显式组装中间件 | 第一个云端 API 开始实施时启用；不保留 chi 路由并行栈 |
-| 数据访问 | GORM v2 Generics；复杂路径使用 Repository 内命名 raw SQL/pgx | GORM CLI 不是强制依赖；只在生成稳定、版本锁定和 SQL 可审查时按需采用 |
-| Schema | Repository GORM record + 集中 `AutoMigrate` | 当前开发阶段启动监听前执行；破坏性变化重建本地数据库 |
-| 运行形态 | 一个 Go module、一个 `main.go`、一个二进制和一个镜像；`APP_ROLE=api|worker|all` | 本地/集成测试可用 `all`；生产以同镜像的 `api`、`worker` 进程独立扩缩 |
-| 异步任务 | PostgreSQL 任务状态 + Outbox/Inbox + RabbitMQ quorum queue | 第一个云端 AI 生成能力进入 POC 时启用；本地核心不依赖队列 |
-| Redis | 短 TTL 缓存、限流、SSE 通知和可重建协调 | 云端生成阶段按需启用；任何权威状态仍在 PostgreSQL |
-| 文件 | 私有、同地域、S3-compatible 对象存储 | 云端生成阶段必须启用；本地衣橱不因技术选型自动上传 |
-| API | Huma 运行时 OpenAPI 3.1.2 | Swagger/Umi 读取 `/openapi.json`；仓库不保存契约副本 |
-
-分阶段运行边界：
-
-1. **本地体验**：只运行 SwiftUI、GRDB、Vision 和结构化推荐；Go、RabbitMQ、Redis、对象存储和第三方 AI 均不运行。
-2. **静态试穿 POC**：隔离环境运行 `APP_ROLE=all` 或同镜像的 API/worker、PostgreSQL、RabbitMQ、Redis、对象存储和单一 Provider；只处理合成或书面授权样本。
-3. **云端生成首发**：生产使用同镜像的 API 与 worker 独立进程；届时需重新评审持久数据迁移、供应商、地域、删除、成本、SLO、安全和合规后才开启真实流量。
-4. **规模化**：只按 SLO、积压、成本和故障证据扩容，不提前拆微服务、分库分表或更换技术栈。
-
-## 系统架构
-
-```mermaid
-flowchart LR
-    IOS[iOS App] --> EDGE[CDN / WAF / TLS 入口]
-    EDGE --> API[Gin API 进程]
-
-    API --> PG[(PostgreSQL<br/>业务状态 / 任务 / Outbox / Inbox)]
-    API --> REDIS[(Redis<br/>缓存 / 限流 / 配额 / SSE 协调)]
-    API --> OBJ[(私有对象存储<br/>原图 / 派生图 / 动态素材)]
-
-    PG --> RELAY[Outbox Relay<br/>worker 角色]
-    RELAY --> MQ[[RabbitMQ<br/>quorum queues]]
-    MQ --> WORKER[Worker 进程<br/>按任务类型独立扩缩]
-
-    WORKER --> PG
-    WORKER --> REDIS
-    WORKER --> OBJ
-    WORKER --> PROVIDER[AI / 图像供应商适配器]
-
-    PROVIDER -. 回调或轮询 .-> WORKER
-    REDIS -. 非持久通知 .-> API
-    API -. SSE 状态提示 .-> IOS
-    IOS -. 断线重连后查询权威状态 .-> API
-```
-
-### 组件职责
-
-| 组件 | 责任 | 不负责 |
-| --- | --- | --- |
-| Gin API | HTTP 协议、鉴权上下文、OpenAPI 校验、幂等入口、签名上传意图、同步命令与查询 | 长耗时生成、自动改 schema、直接持有照片内容 |
-| Application Service | 业务不变量、事务编排、状态机、授权决策 | HTTP/RabbitMQ 细节和供应商 SDK 类型 |
-| PostgreSQL | 业务事实、任务状态、幂等结果、Outbox/Inbox、审计索引 | 大文件本体、瞬时广播 |
-| Outbox Relay | 租约领取待发布事件、发布确认、重试和发布状态 | 创建业务事实或绕过事务补事件 |
-| RabbitMQ | 持久任务分发、消费者隔离、回压缓冲、DLQ | 任务最终状态、长期归档、恰好一次 |
-| Worker | 领取任务、调用供应商、处理媒体、提交结果、补偿与删除 | 接受公网用户请求、持有未界定的无限重试 |
-| Redis | 短 TTL 缓存、令牌桶/滑动窗口、配额快速计数、SSE 跨实例通知 | 用户、任务、幂等结果、权限或删除状态的事实源 |
-| 私有对象存储 | 加密保存原图、处理后图片、生成结果和短动态素材 | 公开 CDN 源、业务元数据权威 |
-| Provider Adapter | 隔离模型供应商 API、错误、配额、回调与删除能力 | 将供应商 DTO 渗透进领域模型 |
-
-## 模块和目录
-
-目录随真实代码逐步创建，不为未实施功能填充空文件：
-
-```text
-backend/
-├── main.go
-├── go.mod
-├── go.sum
-└── internal/
-    ├── model/
-    ├── service/
-    ├── repository/
-    ├── transport/
-    ├── worker/
-    └── platform/
-```
-
-约束如下：
-
-- 唯一 `main.go` 负责配置加载、依赖组装、`APP_ROLE` 分支、统一生命周期和退出码；业务规则不进入入口。
-- 同一个编译产物和镜像通过 `APP_ROLE=api|worker|all` 运行，不创建 `cmd/api`、`cmd/worker`、`cmd/migrate` 或第二个服务入口。
-- `worker` 内按 `relay/media/avatar/tryon/motion/deletion/recovery` 组织消费者；生产进程可通过配置只启用指定消费者集合。
-- 当前 Main 在监听前调用 Repository 的 GORM AutoMigrate；失败时不报告服务启动成功。
-- `model` 是纯 Go struct；不依赖 Gin、GORM 会话、AMQP delivery 或供应商 DTO。
-- 新 GORM CLI 不是目录或构建前置条件；若未来对少量查询启用生成，必须精确锁定版本、限定输出目录并由 CI 检查 SQL 与生成漂移。
-
 ## 用户流程或系统流程
 
 ### 媒体上传与确认
@@ -231,7 +138,6 @@ stateDiagram-v2
 
 ### 数据模型概要
 
-以下是云端能力可能需要的逻辑聚合。物理表只随当前实施功能通过 Atlas migration 增加；本地衣橱、推荐、穿搭和反馈仍以 GRDB 为事实源，未启用同步时不得为了填满本表把完整本地数据上传。最终字段约束由 PRD、OpenAPI 与 migration 共同确定。
 
 | 实体 | 关键字段与约束 | 隐私与生命周期 |
 | --- | --- | --- |
@@ -306,7 +212,7 @@ stateDiagram-v2
 - refresh token 仅保存不可逆 hash，并按设备维护可轮换 token family；检测到旧 token 重用时撤销整族会话。设备会话撤销和账号删除由 PostgreSQL 记录；Redis 可以缓存撤销版本，但缓存 miss 不能等价为授权。
 - App Attest / DeviceCheck 只用于识别自动化滥用、伪造客户端和高风险设备；它们不能充当账号身份，也不能绕过资源归属检查。
 - `user_id` 只来自验证后的服务端身份上下文。每个 Repository 方法显式接收用户作用域，查询和更新都包含归属条件。
-- 首版不默认使用 PostgreSQL RLS；若审计发现应用层隔离不足，再经 Atlas、连接池上下文和迁移评审把 RLS 作为纵深防御。
+- 首版不默认使用 PostgreSQL RLS；若审计发现应用层隔离不足，再经 schema、连接池上下文和权限评审把 RLS 作为纵深防御。
 - 管理和 DLQ 回放使用独立身份、最小权限和双人审批，不复用 C 端访问令牌。
 - 供应商回调使用签名、时间窗、防重放和来源校验；回调只更新预先存在且归属匹配的 provider job。
 
@@ -372,28 +278,6 @@ GORM Generics 用于：
 - CI 使用真实 PostgreSQL，不用 SQLite 代替 PostgreSQL 事务、锁、类型和索引行为。
 - GORM 版本精确锁定；若按需启用 CLI，其版本与生成结果同样必须锁定并 code review，不使用未固定的 `@latest` 作为 CI 输入。
 - CLI 生成输出不稳定、缺少所需 lint 或升级频繁破坏代码时，立即使用手写 Repository raw SQL/pgx，不增加第二套强制生成层。
-
-## Atlas versioned SQL 迁移
-
-### 事实源与流程
-
-`backend/migrations/*.sql` 与 `atlas.sum` 是生产 schema 的唯一变更账本。GORM model 是运行时映射；数据库实际结构由已审核的版本化 SQL 推进。
-
-1. 开发者修改 model 和必要的 SQL 设计。
-2. Atlas 在一次性 dev database 中根据前一版本与期望状态生成候选 diff。
-3. 人工检查 DDL、锁级别、全表重写、索引、默认值、数据回填、兼容窗口与回滚。
-4. CI 校验迁移目录 checksum，并从空库逐条应用；再把应用 model 与最终数据库做 drift 检查。
-5. 先执行 expand 迁移，再发布兼容读写代码，后台回填并验证，最后单独执行 contract 迁移。
-6. 生产由受控 Atlas migration job 执行；应用二进制不拥有 DDL 权限，启动时只校验 schema 版本范围。
-7. 破坏性 DDL 默认阻断；需要审批、备份/恢复点、锁时间演练和明确前向修复或回滚方案。
-
-`AutoMigrate` 只允许临时本地、可丢弃数据库探索，并同时满足 `APP_ENV=local` 和显式 `DB_EPHEMERAL=true`。测试、预发、生产、共享开发库和应用启动一律禁止；CI 应扫描生产入口不存在 `AutoMigrate` 调用。
-
-### 历史 `schema.sql` 替代状态
-
-旧 `backend/schema.sql` 空壳已由 `backend/migrations/` 替代，不再作为事实源，也不得重新创建并与 migration 双写。第一个真实 OOTD 领域结构以不可变 baseline migration 引入，并在空 PostgreSQL 18 数据库逐条应用验证。
-
-如果实施前发现任何已有服务端业务库或历史数据，不得直接把 baseline 标记为已应用：必须先盘点实际结构与数据，新增转换、兼容、校验、恢复点和停止条件，并在脱敏快照副本演练。数据迁移默认使用可恢复的前向修复；不可逆转换需在实施计划中列出备份恢复与回滚窗口。
 
 ## 事务边界与 Outbox/Inbox
 
@@ -561,34 +445,6 @@ worker 的 recovery 角色定期扫描：
 
 扫描使用游标、批量上限和 `SKIP LOCKED`，多个实例可并行；恢复本身写 Outbox，不直接绕过正常消费者。
 
-## 部署与扩缩
-
-### 部署单元
-
-- API：同一二进制以 `APP_ROLE=api` 运行，无状态、多副本、面向公网，只依赖短请求路径。
-- worker：同一二进制以 `APP_ROLE=worker` 运行，无公网入口；可通过消费者配置把 `relay/media/avatar/tryon/motion/deletion/recovery` 分配给不同 Deployment。
-- 本地开发、集成测试和小规模隔离 POC 可使用 `APP_ROLE=all`。
-- API 与 worker 来自同一 Git revision、Go module、编译产物和 OCI 镜像；不同版本仅允许在已定义消息/API 兼容窗口内共存。
-- Atlas migration job 在应用发布前运行 expand 迁移；contract 迁移独立审批并晚于旧版本下线。
-- RabbitMQ、PostgreSQL、Redis 和对象存储优先使用同地域托管服务；RabbitMQ quorum 成员跨故障域，避免双节点伪高可用。
-
-### 扩缩信号
-
-- API：请求并发、CPU、p95、连接池等待，不以 RabbitMQ backlog 扩缩。
-- 各 worker：对应队列 ready/unacked、oldest age、任务耗时、供应商限额和成本预算联合决定。
-- relay：Outbox pending 数/age 和 publish confirm 延迟。
-- deletion：最老删除请求 age 是硬 SLO，不与生成 worker 争抢配额。
-- scale-to-zero 只允许非关键、可延迟角色；relay、recovery 和 deletion 保留最小副本。
-
-### 发布与退出
-
-1. 先完成兼容 expand 迁移。
-2. 发布支持旧/新消息 schema 的 worker，再发布 API producer。
-3. 观察错误、DLQ、Outbox age 和成本后逐步放量。
-4. contract 迁移在旧 producer/consumer 全部退场后执行。
-5. 退出时 API 先停止接收并完成有界请求；worker 停止拉取、取消未开始任务、完成或释放租约，并关闭 channel/connection。
-6. 超过退出时限的任务不 ack；若已经 ack 并转交 PostgreSQL，则由租约 recovery 恢复。
-
 ## 可观测性
 
 ### 统一关联
@@ -676,7 +532,6 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 - [ ] 旧 chi/纯 pgx/`schema.sql`/PostgreSQL jobs 基线没有被新代码继续引用，仓库只存在一套当前技术事实源。
 - [ ] 10 号产品总纲、17/18 号单功能 PRD、当前实施计划、验收和隐私/供应商准入记录一致且均在有效期内。
 - [ ] OpenAPI 只保留一份，异步状态、幂等、错误和删除协议可生成并编译 iOS Client。
-- [ ] 从空库、上一发布和脱敏生产快照副本执行 Atlas migrations 成功，drift 为零。
 - [ ] 生产入口不存在 `AutoMigrate`，应用数据库角色没有 DDL 权限。
 - [ ] GORM CRUD 和 raw SQL 边界有代码所有者；热查询达到计划与延迟预算。
 - [ ] 业务写入与 Outbox 原子；模拟每个崩溃窗口均无丢任务、无重复业务效果。
@@ -701,45 +556,11 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 9. 新旧 API/worker 版本同时运行，验证消息 schema 和数据库 expand 兼容。
 10. 迁移执行中断或锁等待超阈值，能够安全停止并恢复服务。
 
-## 备选方案与决策
-
-| 决策 | 已批准选择 | 备选 | 当前取舍 |
-| --- | --- | --- | --- |
-| HTTP | Gin | chi | Gin 中间件生态和工程约定适合新 C 端服务；禁止长期并存两套路由 |
-| ORM | GORM v2 Generics；CLI 可选 | Ent、Bun、sqlc/pgx | GORM 上手与生态成熟，Generics 减少部分类型风险；仍用 Repository 和 raw SQL 抑制隐式行为，CLI 不作为基线依赖 |
-| Schema | Atlas versioned SQL | `schema.sql` 声明式、Goose/Flyway | C 端持续演进需要可审计历史与 expand/contract；代价是迁移纪律和工具链增加 |
-| 异步 | RabbitMQ quorum + Outbox/Inbox | PostgreSQL jobs、SQS、Kafka | 第一个云端生成阶段需要路由、回压、重试隔离和独立 worker，因此固定 RabbitMQ；纯本地阶段不运行队列 |
-| Cache/协调 | Redis | PostgreSQL/实例内缓存 | 适合跨 API 实例限流和 SSE 通知，但被严格排除出事实源 |
-| 文件 | 私有对象存储 | 本地磁盘、数据库 bytea | 大媒体生命周期、签名访问和扩缩需要对象存储；由此引入重大隐私与删除成本 |
-| 部署 | 同 module/二进制/镜像，`APP_ROLE` 分进程 | 单一 `all` 进程、微服务 | 生产分离资源与故障域，同时保留模块化单体；本地可用 `all`，暂无业务理由拆微服务 |
-| 投递一致性 | 至少一次 + 幂等 | 分布式事务/“恰好一次”承诺 | 跨 PostgreSQL、broker、对象存储和供应商无法现实地提供端到端恰好一次 |
-
-### ORM 备选说明
-
-- **Ent**：schema-first、生成类型和隐私规则强，适合团队愿意接受代码生成中心化的场景；但生成/升级成本和 raw SQL 绕过 hook/privacy 的审计风险更高。
-- **Bun**：SQL-first、对复杂 SQL 透明，迁移 pgx 团队较自然；类型化关系和生态约定不如当前选择统一。
-- **sqlc + pgx**：SQL 可预测、性能与事务透明，是 GORM 查询不可控时的首选回退；代价是查询文件和映射工作增加。
-- **纯 pgx**：最小抽象、控制力最高；仅在特定 Repository 有明确性能或能力证据时作为受控逃生口，不替代已选 GORM CRUD 基线。
-
-### 再评估触发器
-
-- 日任务量和积压长期低于 PostgreSQL jobs 可轻松承载范围：移除 RabbitMQ/Redis，回归简单架构。
-- 单个 quorum queue 接近超长 backlog、超大 fan-out 或审计重放需求：评估 RabbitMQ Streams/Kafka，而不是无限扩大队列。
-- 云环境提供更适合的托管队列且运维成本显著更低：评估 SQS 等服务，但保留 Outbox/Inbox 和幂等协议。
-- GORM 生成 SQL 反复突破延迟预算或升级造成高频回归：逐 Repository 切换到 sqlc/pgx 或手写 raw SQL；可选 CLI 不稳定时直接停用，不影响基线。
-- 多租户隔离审计发现应用层 `user_id` 约束不足：评估 PostgreSQL RLS 与连接上下文策略。
-- 数据规模需要分区、读副本或冷热分层：先以查询/容量证据评估，不提前分库分表。
-- Redis 成为高可用与成本负担且用途仅剩可选缓存：删除依赖，不能因已投入而保留。
-- 供应商要求长期公开 URL、训练权或无法满足删除/地域：更换供应商或停止功能，不降低隐私边界。
-- API 与 worker 发布耦合成为主要瓶颈，且团队已具备独立契约治理能力：再评估拆 module/服务。
-- 需要精确尺码、3D mesh 或实时视频：必须新增 PRD、模型/许可/算力/安全评审，本设计不自动覆盖。
-
 ## 生产风险与待决事项
 
 以下参数不改变架构已批准状态，但必须在相关云能力 POC 或真实流量开启前关闭：
 
 1. 若选择启用新 GORM CLI，固定版本、生成稳定性、维护策略和升级窗口；不启用时直接使用 GORM/raw SQL，不阻塞实现。
-2. Atlas edition、CI lint 能力、生产执行身份和不可逆迁移审批流程。
 3. RabbitMQ 托管服务版本、三故障域 quorum、策略声明和灾备恢复能力。
 4. Redis 限流的精确算法、集群时钟/热点 key、故障时 fail-open/fail-closed 清单。
 5. 对象存储和 AI 供应商的数据地域、跨境、保留、训练、删除和分包商条款。
@@ -755,16 +576,10 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 - [Gin 官方 Trusted Proxies](https://gin-gonic.com/en/docs/server-config/trusted-proxies/)
 - [GORM Generics 官方说明](https://gorm.io/docs/the_generics_way.html)
 - [GORM CLI 与旧 Gen 的官方比较](https://gorm.io/cli/cli_vs_gen.html)
-- [GORM Migration 与 Atlas 集成](https://gorm.io/docs/migration.html)
 - [GORM Security](https://gorm.io/docs/security.html)
-- [Atlas：Declarative 与 Versioned Migrations](https://atlasgo.io/concepts/declarative-vs-versioned)
 - [RabbitMQ Quorum Queues](https://www.rabbitmq.com/docs/quorum-queues)
 - [RabbitMQ Publisher Confirms](https://www.rabbitmq.com/docs/confirms)
 - [RabbitMQ 团队维护的 amqp091-go](https://github.com/rabbitmq/amqp091-go)
 - [Redis Pub/Sub 投递语义](https://redis.io/docs/latest/develop/pubsub/)
 - [PostgreSQL SELECT / FOR UPDATE / SKIP LOCKED](https://www.postgresql.org/docs/current/sql-select.html)
 - [OpenAPI Specification 3.1.2](https://spec.openapis.org/oas/v3.1.2.html)
-
-## 实施与启用边界重申
-
-本文与 01、02 号设计共同构成已批准技术基线，可以按实施计划提交实现。批准不等于所有云能力默认开启：本地阶段不运行云基础设施；静态试穿和动态预览只有在各自 POC、供应商、合规、安全、成本、SLO 与删除验收通过，并由 feature flag 开启后才可处理真实用户数据。任何 schema、OpenAPI、iOS 生成配置、Go 入口或基础设施改动必须与当前实施功能、迁移和验收证据一起提交。

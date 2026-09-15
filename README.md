@@ -1,74 +1,26 @@
 # then-server
 
-`then-server` 是“于是”OOTD 的 Go 服务端与产品级文档仓库。服务端位于 `Then/then-server`，iOS 位于同级 `Then/then-app`，两个子目录是独立 Git 项目。本仓库保存后端运行代码、可选开发依赖编排和 Design → PRD → Plan → Acceptance 文档；OpenAPI 与数据库 schema 分别由运行时 Huma 声明和 GORM record 生成，不保存物化副本。
+“于是”OOTD 的 Go 服务端与中央产品文档仓库，位于 `Then/then-server`；客户端是同级独立 [then-app](../then-app/README.md)。
 
-## 当前状态
+## 当前实现
 
-| 范围 | 状态 |
+Go + Gin/Huma + GORM/AutoMigrate + PostgreSQL 已实现健康检查、注册/登录、Cookie 会话、本人账户读取/更新/删除和退出。运行时 OpenAPI 是 Swagger 与未来 Umi 请求生成的唯一输入。目录与规范见 [后端架构](docs/design/02-后端架构.md)，精确版本见 [技术选型](docs/design/01-技术选型.md)。
+
+日常使用本机已安装 PostgreSQL、Redis、RabbitMQ、MinIO；当前账号 API 只依赖 PostgreSQL，其余服务已有协议测试，业务在批准切片启用。`frontend` 按用户要求暂停实现；App 云接入、上传/生成/同步未完成。
+
+## 目录与入口
+
+| 位置 | 内容 |
 | --- | --- |
-| OOTD 产品需求 | 10 号产品总纲与 11–19 号单功能 PRD 已批准或按功能门禁批准 |
-| 产品与技术设计 | 01–12 号设计为当前基线；13 号保留三维研究及待 POC 参数，首版范围已回写 PRD 11/12 与 Design 04/05 |
-| iOS 工程 | 位于独立 `then-app`；已切换今日/衣橱/穿搭簿三个 SwiftUI 入口；当前没有接入云端请求层 |
-| OOTD Feature | 已接无图/单件图衣橱、16-01 本地穿搭计划与日期回看；快照、编辑/取消/删除和含图组合已实现，验收继续。实际穿着、反馈、受控 AI 与真实 3D 分片推进 |
-| Go 后端 | Gin 健康/数据库运行、容器与内嵌 Swagger 已实现；账号注册、Cookie 会话与本人账户 API 已通过单元、竞态及 PostgreSQL 集成测试 |
-| Web 前端 | Design 16 与 17-13 草案已固定；按用户要求暂停实现，当前不创建 `frontend/` 代码目录 |
-| 旧生活管理代码 | 用户确认仅开发阶段且无需保留旧数据，已成组退役；不建设历史兼容层 |
+| [design.md](design.md) | 根目录产品设计规范 |
+| [backend](backend/README.md) | Go 运行说明、内嵌 Swagger、schema 和独立测试 |
+| [docs](docs/README.md) | 当前 Design → PRD → Plan → Acceptance |
+| [产品计划](docs/plan/10-OOTD产品实施计划.md) | 全部切片的当前状态、缺口与下一步 |
+| [系统验收](docs/acceptance/10-OOTD产品系统验收.md) | 局部证据与完整产品的验收边界 |
+| [docker-compose.yml](docker-compose.yml) / [docker-compose-env.yml](docker-compose-env.yml) | 明确需要隔离环境时使用，非日常默认启动 |
+| [AGENTS.md](AGENTS.md) / [CONTRIBUTING.md](CONTRIBUTING.md) | 开发和提交规范 |
 
-## 固定技术栈
-
-- iOS：Xcode 26.6、Swift 6.3.3、最低 iOS 26、SwiftUI + Observation、Swift Concurrency；必要的高级动态效果可在获批 POC 后使用本地锁版 Three.js/WebKit renderer，产品页面仍全部由 SwiftUI 承担。
-- 本地数据：GRDB 7.11.1 + SQLite；结构化数据本地优先，媒体保存在受保护的私有文件目录。
-- API：REST + JSON、Huma 运行时 OpenAPI 3.1.2；Swagger/Umi 读取 `/openapi.json`。
-- 后端：Go 1.26.5、Gin、Huma、GORM v2 Generics + AutoMigrate、PostgreSQL 18。
-- Web：规划使用 React 19.3.0、TypeScript 6.0.3、Vite 8.3.0；`@umijs/openapi` 从 Go API 的 `/openapi.json` 生成请求 SDK，当前尚未创建 `frontend/`。
-- 异步与媒体：RabbitMQ、Redis、MinIO 只在对应业务切片启用；当前仅保留本机服务与协议测试。
-- 运行形态：一个 Go module、一个二进制与一个镜像；当前只实现 `APP_ROLE=api`。
-
-精确版本、分阶段启用边界和禁止项以 [`docs/design/01-技术选型.md`](docs/design/01-技术选型.md) 为唯一事实源；后端职责见 [`docs/design/02-后端架构.md`](docs/design/02-后端架构.md)。
-后端 MVP 分期与 test 边界见 [`docs/design/14-后端MVP与测试边界设计.md`](docs/design/14-后端MVP与测试边界设计.md)。
-
-## 产品结构
-
-首版 iOS 使用三个一级入口：
-
-- 今日：输入场景，查看并调整当天搭配。
-- 衣橱：添加、确认、管理衣物与素材质量。
-- 穿搭簿：保存计划、实际穿着、收藏与反馈。
-
-数字形象、隐私、账号和数据删除从头像入口进入。静态 AI 试穿由用户主动触发；推荐、保存和反馈不依赖生成成功。动态预览只有通过质量、成本、隐私和性能门禁后才启用。
-
-## 目录
-
-- `design.md`：全仓库通用页面设计与交付规范，固定自指定上游提交；产品范围、技术栈和功能行为仍由 `AGENTS.md` 与 `docs/` 对应事实源定义。
-- `backend/`：Go 后端、运行时 OpenAPI、GORM schema 与测试。
-- `frontend/`：待 17-13 批准后创建的注册、登录与本人账户 CRUD 响应式 Web 应用。
-- `docker-compose.yml`：可选隔离环境的标准 Compose 入口。
-- `docker-compose-env.yml`：可选的 PostgreSQL、MinIO、Redis、RabbitMQ 容器配置；日常开发使用本机已安装服务。
-- `.env.example`：仅供可选隔离环境使用的配置格式。
-- `docs/prd/`：产品需求与范围。
-- `docs/design/`：一个功能一个 design，以及架构与隐私决策。
-- `docs/plan/`：产品级实施计划，以及统一范围契约、任务与证据的单切片执行计划。
-- `docs/acceptance/`：可执行验收标准与证据要求。
-
-核心入口：
-
-| 文件 | 用途 |
-| --- | --- |
-| [`AGENTS.md`](AGENTS.md) | 全仓库当前产品、架构、隐私、数据与测试规范 |
-| [`design.md`](design.md) | 通用页面视觉、组件、交互与交付质量规范 |
-| [`then-app`](https://github.com/StephenQiu30/then-app) | 独立 SwiftUI 客户端、GRDB 本地数据与 iOS 测试 |
-| [`docs/README.md`](docs/README.md) | 当前文档索引与历史文档边界 |
-| [`docs/prd/README.md`](docs/prd/README.md) | 产品总纲与 11–19 号单功能需求索引 |
-| [`docs/plan/README.md`](docs/plan/README.md) | 产品级实施计划与单切片执行计划的准入、编号、状态和模板 |
-| [`docs/plan/11-01-照片输入与质量门执行计划.md`](docs/plan/11-01-照片输入与质量门执行计划.md) | 首个统一契约、任务与证据的隔离 POC 执行计划 |
-| [19-02 开发基线与旧实现清理](docs/plan/19-02-开发基线与旧实现清理执行计划.md) | 用户确认无旧数据保留后的清理与验收；原 19-01 已替代 |
-| [`docs/acceptance/README.md`](docs/acceptance/README.md) | 10 号系统验收与 11–19 号单功能验收索引 |
-| [`docs/design/12-OOTD技术债清理与迁移设计.md`](docs/design/12-OOTD技术债清理与迁移设计.md) | 当前开发基线、清理分组与未来数据保护 |
-| [`backend/README.md`](backend/README.md) | 本机启动、运行时 Swagger/OpenAPI、GORM schema 与验证入口 |
-| [`docker-compose.yml`](docker-compose.yml) | 默认 Compose 入口，统一包含开发环境配置 |
-| [`docker-compose-env.yml`](docker-compose-env.yml) | 固定镜像、回环端口、命名卷和健康检查的开发依赖 |
-
-根目录 [`design.md`](design.md) 固定自 [StephenQiu30/video-server 提交 `3f95c3d`](https://github.com/StephenQiu30/video-server/blob/3f95c3de67a89ae8988724b0a51a436768ff75e9/design.md)。固定版本的 Git blob SHA 为 `65ca7f18fd4d24ae0b60f91ee582a34aefcda1a8`，SHA-256 为 `fb4ac9a5f11c56a2788ecd69acbaf9654f27f2b1d7a216892497e0480dddcc1d`；更新时必须重新固定上游提交并评审差异。
+不维护 OpenAPI 物化文件、Atlas 迁移账本、生成脚本或旧项目兼容目录。当前业务未进入实现的模块不建空壳。静态内部素材见 [assets](assets/README.md)。
 
 ## 本地校验
 
@@ -100,8 +52,10 @@ brew services start rabbitmq
 
 GitHub Actions 的 `Go quality`、`PostgreSQL integration` 与 `OCI container` 是每次 push/PR 的必要服务端门禁。需要本机 MinIO、Redis 和 RabbitMQ 的 `services` 测试仍按对应验收显式运行。
 
-旧生活管理脚本随 19-02 退役；历史验收只在 Git/旧文档中保留。
+验证命令直接维护在 README/CI；不新增脚本入口。
+
+
 
 ## 协作
 
-开始贡献前阅读 [`AGENTS.md`](AGENTS.md) 与 [`CONTRIBUTING.md`](CONTRIBUTING.md)，检查工作区已有修改，并按 design → PRD → execution plan → implementation → acceptance 推进。切片排入近期产品计划后、编码前创建一份统一范围契约、任务和证据的 `FF-SS` 执行计划；当前开发 schema 只修改 GORM record，不恢复 `schema.sql`、Atlas 或物化 OpenAPI。涉及 iOS 时在 `then-app` 独立切片处理。
+先读所属 Design、PRD 和切片 spec/checklist，再实现最小闭环并回写 Acceptance。当前技术路径是 SwiftUI 页面 + Three.js/GLB，不使用 Blender。文档原地更新，删除被替代内容，保留未完成门禁与必要证据；提交/推送按用户明确要求执行。
