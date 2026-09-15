@@ -168,7 +168,7 @@ stateDiagram-v2
 
 ### OpenAPI 3.1
 
-- Go transport 的 Huma operation、请求/响应类型与 struct tag 是接口定义源；`backend/openapi.yaml` 是供 iOS 离线构建的生成产物，不新增第二份 YAML/JSON 或生成 Go server。
+- Go transport 的 Huma operation、请求/响应类型与 struct tag 是接口定义源；API 运行时从同一对象提供 `/openapi.json` 与 `/openapi.yaml`，仓库不保存物化规格或生成工具。Swagger 和未来 Umi/客户端生成都读取运行时 JSON。
 - 固定 OpenAPI 3.1.2；每个 operation 使用唯一稳定的 `operationId`，公开业务路径继续使用 `/v1`。
 - 长任务创建返回 `202 Accepted`、稳定任务 ID、状态 URL 和建议轮询间隔；结果未完成时不返回虚假成功。
 - 创建、finalize、生成、取消、删除和供应商回调全部定义幂等语义。
@@ -176,7 +176,7 @@ stateDiagram-v2
 - 错误体包含稳定错误码、安全消息、`request_id`、可重试标志和可选 `retry_after`，不泄露内部 SQL、对象键或供应商响应正文。
 - 列表使用稳定游标；游标绑定用户、过滤条件和排序版本。
 - Swagger UI 生产默认关闭；需要开放时必须身份认证和网络限制。
-- 契约先于 Handler 和 iOS Client 修改；iOS 继续由 OpenAPI 生成 transport types，再映射为领域模型。
+- 契约标注与 Handler 在同一切片修改并由运行时契约测试约束；当前 App 没有云请求 Client，未来客户端接入时从运行时 JSON 生成 transport types，再映射为领域模型。
 
 ### Gin 中间件严格顺序
 
