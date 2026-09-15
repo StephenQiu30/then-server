@@ -4,7 +4,7 @@
 
 后端 MVP 与独立测试入口：[Design 14](design/14-后端MVP与测试边界设计.md) → [PRD 17](prd/17-云端生成与任务管理需求.md#后端mvp与测试服务边界) → [17-11 执行计划](plan/17-11-后端MVP与测试边界执行计划.md) → [验收证据](acceptance/17-云端生成与任务管理验收.md#2026-09-14后端mvp与测试边界验收)。数据库与中间件开发接入见 [17-10](plan/17-10-数据库与中间件开发环境执行计划.md)。
 
-核心阅读入口：[Woo 技术路线研究与决策](design/18-Woo立体数字衣橱技术路线研究与决策.md) → [PRD 11 最新需求](prd/11-数字形象与照片采集需求.md#2026-09-15-woo-多视角形象需求定案) / PRD 12 → [11-03](plan/11-03-Woo多视角形象与内置穿搭执行计划.md) → acceptance 11/12。首版采用三套固定人物、六件内置衣物和预生成/审核三视图；11-02 的 Blender/GLB/Three.js 路线已 no-go。
+核心阅读入口：[Woo 技术路线研究与决策](design/18-Woo立体数字衣橱技术路线研究与决策.md) + [数字衣橱与虚拟试穿竞品研究](design/19-数字衣橱与虚拟试穿竞品研究.md) → [PRD 11 最新需求](prd/11-数字形象与照片采集需求.md#2026-09-15-woo-多视角形象需求定案) / PRD 12 → [11-03](plan/11-03-Woo多视角形象与内置穿搭执行计划.md) → acceptance 11/12。首版采用三套固定人物、六件内置衣物和预生成/审核三视图；11-02 的 Blender/GLB/Three.js 路线已 no-go。
 
 完整 UI 设计入口：[Woo 页面与立体穿搭 UI 设计](design/17-Woo页面与三维穿搭UI设计.md)。页面地图、人物舞台、正侧背状态和无障碍合同已固定；三份视觉稿解释为同一页面中的三套人物预设。
 
@@ -81,6 +81,7 @@ OpenAPI 与数据库 schema 的机器事实源分别是 backend 的 Huma operati
 - [`design/03-OOTD产品总体设计.md`](design/03-OOTD产品总体设计.md)：OOTD 产品承诺、信息架构和端到端闭环。
 - [`design/13-三维虚拟形象与服装系统研究.md`](design/13-三维虚拟形象与服装系统研究.md)：`superseded` 的旧 mesh 研究与 POC 证据。
 - [`design/18-Woo立体数字衣橱技术路线研究与决策.md`](design/18-Woo立体数字衣橱技术路线研究与决策.md)：当前 Woo 证据、需求边界、候选模型、选定多视角架构和重新准入真实 mesh 的门槛。
+- [`design/19-数字衣橱与虚拟试穿竞品研究.md`](design/19-数字衣橱与虚拟试穿竞品研究.md)：Whering/Acloset/Indyx/Stylebook/Alta、Doppl/Doji、DRESSX/Veesual、ZEPETO/Avaturn 与开源 VTON 的横向研究。
 - [`design/14-后端MVP与测试边界设计.md`](design/14-后端MVP与测试边界设计.md)：后端 B0–B3 分期、标准 Go SOP 与独立测试矩阵。
 
 计划与验收：
@@ -107,7 +108,7 @@ OpenAPI 与数据库 schema 的机器事实源分别是 backend 的 Huma operati
 
 - 每个文档目录直接使用 `README.md` 作为入口，不创建编号目录文档。
 - 主题文档使用 `01` 至 `99` 的两位编号与中文名称，例如 `10-OOTD产品需求.md`。
-- PRD 使用稳定的 10–19 号产品编号；design 独立编号并通过本页表格显式映射，不要求两类文档同号；18 号是当前 Woo 技术路线事实源，13 号为 superseded 的旧 mesh 研究。
+- PRD 使用稳定的 10–19 号产品编号；design 独立编号并通过本页表格显式映射，不要求两类文档同号；18 号是当前 Woo 技术路线事实源，19 号是市场竞品研究，13 号为 superseded 的旧 mesh 研究。
 - 单切片执行计划使用 `plan/FF-SS-中文名称执行计划.md`；`FF` 对应单功能 PRD 编号，`SS` 在该功能内递增，因此 PRD 11 对应 design 04 的首个切片仍为 `11-01`。
 - 工具要求的 `README.md`、`AGENTS.md` 等固定文件名不翻译；运行时 OpenAPI 和 GORM schema 不复制为第二份事实源。
 - 已发布文档不为排序随意改号；替代关系写在当前入口和新文档状态中。
