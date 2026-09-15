@@ -19,8 +19,8 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 
 ## 追踪关系
 
-- Design：[技术选型](../design/01-技术选型.md#2026-09-14后端最小技术栈定案)、[后端架构](../design/02-后端架构.md)。
-- PRD：[接口协作需求](../prd/17-云端生成与任务管理需求.md#2026-09-12接口协作需求)。
+- Design：[技术选型](../design/01-技术选型.md)、[后端架构](../design/02-后端架构.md)。
+- PRD：[接口协作需求](../prd/17-云端生成与任务管理需求.md)。
 - Acceptance：[后端收敛验收](../acceptance/17-云端生成与任务管理验收.md#2026-09-14运行时openapi与gorm-schema收敛验收)。
 
 ## SMART范围

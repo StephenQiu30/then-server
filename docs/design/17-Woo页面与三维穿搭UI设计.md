@@ -5,7 +5,7 @@
 - 信息架构与页面状态：`approved`。用户已确认无需上传即可使用虚拟形象换装，并要求参考 Woo 的可见页面、虚拟形象与 UI 完整设计。
 - 视觉方案：`approved`。2026-09-15 用户确认最近一轮 1/2/3 三稿全部需要；统一解释为一套 Woo 黑白极简页面与三套可切换人物预设，不建立三套页面、renderer 或业务状态。
 - 视觉稿证据：三张 `853×1844` 移动端选定稿均以当前 App 与 Woo 可见页面为结构参考，使用可爱的成人立体风格人物、同一底部抽屉和三项导航。图片只固定美术目标，仍须生产正侧背完整渲染集并完成交互和模拟器验收。
-- 参考事实：[Design 03 的 WOO-REF-01～09](03-OOTD产品总体设计.md#2026-09-14内置服装三维主路径与woo逐状态复刻)、[Design 18 的竞品与路线研究](18-Woo立体数字衣橱技术路线研究与决策.md)、[当前 App 五状态审计](03-OOTD产品总体设计.md#2026-09-15当前页面视觉审计与改造基线)。
+- 参考事实：[Design 03 的 WOO-REF-01～09](03-OOTD产品总体设计.md)、[Design 18 的竞品与路线研究](18-Woo立体数字衣橱技术路线研究与决策.md)、[当前 App 五状态审计](03-OOTD产品总体设计.md#2026-09-15当前页面视觉审计与改造基线)。
 - 产品事实：页面借鉴 Woo 已公开演示的层级与操作，不复制其品牌、人物、服装或未公开页面；“于是”使用自有或已授权资产。当前没有公开证据证明 Woo 使用实时 mesh；技术事实以 [Design 18](18-Woo立体数字衣橱技术路线研究与决策.md) 为准。
 
 ## 设计目标
@@ -119,19 +119,19 @@ flowchart TD
 
 ### 短发粉色预设
 
-![短发粉色人物预设](evidence/woo-avatar-presets/short-bob-pink.png)
+![短发粉色人物预设](https://github.com/StephenQiu30/then-server/blob/dd35b002dc6e85c983a5c44a784756bdec3f1af2/docs/design/evidence/woo-avatar-presets/short-bob-pink.png)
 
 ### 双丸子头薄荷色预设
 
-![双丸子头薄荷色人物预设](evidence/woo-avatar-presets/double-bun-mint.png)
+![双丸子头薄荷色人物预设](https://github.com/StephenQiu30/then-server/blob/dd35b002dc6e85c983a5c44a784756bdec3f1af2/docs/design/evidence/woo-avatar-presets/double-bun-mint.png)
 
 ### 半马尾蓝色预设
 
-![半马尾蓝色人物预设](evidence/woo-avatar-presets/half-ponytail-blue.png)
+![半马尾蓝色人物预设](https://github.com/StephenQiu30/then-server/blob/dd35b002dc6e85c983a5c44a784756bdec3f1af2/docs/design/evidence/woo-avatar-presets/half-ponytail-blue.png)
 
 三套人物共享画布、姿态、背景和三视图规范。每套有稳定 preset ID、revision、缩略图和无障碍名称；切换必须原子完成，失败保留上一套有效人物。首发不提供任意捏脸、体型/发色滑杆、下载人物或照片生成人物。
 
-三张选定稿按用户看到的最新显示顺序保存，文件尺寸相同；SHA-256 是 11-02 的视觉基线：
+三张选定稿按用户看到的最新显示顺序保存，文件尺寸相同；SHA-256 固定三套人物的视觉参考：
 
 | 显示顺序 | 文件 | SHA-256 |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ flowchart TD
 
 ## 设计验收清单
 
-- [x] 用户已确认统一 Woo 页面与三套人物预设，三张选定稿及 SHA 已写入本设计和 11-02。
+- [x] 用户已确认统一 Woo 页面与三套人物预设，三张选定稿及 SHA 已写入本设计。
 - [ ] P01～P06 在标准字号和最大辅助字号各有同状态截图；参考与 App 使用同一视口比较。
 - [ ] 新安装断网主旅程无需账号、照片、用户衣物或权限即可完成并在重启后恢复。
 - [ ] tops/bottoms/shoes 同页目录、托盘计数、同槽替换、逐件移除、组合校验和 Dress up 均绑定真实状态。

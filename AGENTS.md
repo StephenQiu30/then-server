@@ -36,8 +36,12 @@ then-server/
 
 1. 先读相关代码、Design、PRD、Plan/checklist、Acceptance 和 Git 状态。
 2. 用户可见行为、API、数据或架构变化时，先把决定同步到 Design/PRD 和单切片 Plan。
-3. 实现最小端到端路径，不预建未来包、表、接口、兼容层或脚本。
+3. 实现最小端到端路径，不预建未来包、表、接口、兼容层或脚本。人物技术遵循 Design 01 的 `AVATAR-BASELINE-01`：不使用 Blender；调研不能自动改写已确认路线，具体资产来源未验证时保持待决。
 4. 用可观察行为验证修复；数据库变化必须在真实 PostgreSQL 上验证。
 5. 回写 checklist 与 Acceptance，准确说明未运行的远程 CI、生产和设备验收。
 
 文件和包使用简短的语义化名称。不得提交 `.env`、凭据、本地数据、日志、缓存、DerivedData 或临时生成物。提交与推送只在用户要求时执行，并只暂存当前任务文件。
+
+## 文档维护
+
+原地更新有效 Design/PRD/Plan/Acceptance；删除已被替代的方案、旧业务迁移和重复实验日志，同步所有索引与交叉链接。保留尚未完成的需求、阻断及必要可复核证据。README 只给入口与当前边界，具体状态归单切片 checklist，测试结果归 Acceptance；不得把开发完成等同于发布完成。

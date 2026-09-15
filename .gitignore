@@ -26,3 +26,10 @@ coverage.out
 .idea/
 .vscode/
 *.swp
+
+# Local web research cache
+.firecrawl/
+
+# Internal POC inputs and recordings stay local; this repository is public.
+assets/avatar-poc/
+assets/acceptance/

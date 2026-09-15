@@ -124,37 +124,64 @@ Woo 公开演示只约束其可观察页面和交互。未公开页面采用同�
 
 ### 运行时决定
 
-iOS 26 客户端采用 SwiftUI + RealityKit 的原生路线，3D 局部舞台使用 `RealityView`：
+用户本轮授权确定人物格式后，正式选定标准 GLB，并确认首版新增眨眼和轻微视线跟随：眼睑使用 morph 权重，眼球使用有界平滑的节点方向控制；当前不引入 VRM/three-vrm。源码、许可证、Context7 核对与 img2threejs 限制见 [Three.js 人物研究](threejs-avatar-research.md)。这是新增的资产/动作验收需求，不表示现有低模已经支持。
 
-- Apple 当前文档明确提供 iOS/macOS 的 `RealityView`，其 `make` 闭包可以异步加载 bundle 或 URL 内容，并通过 `update` 响应 SwiftUI 状态变化。
-- RealityKit 可以加载 `.usd`、`.usda`、`.usdc`、`.usdz` 和 `.reality`，且保留实体层级；本产品交付只选择 **USDZ** 作为 iOS 运行格式，避免多格式兼容分支。
-- 3D 只负责人物舞台。SwiftUI 继续拥有导航、衣物选择、保存、删除、加载/错误、VoiceOver 和回退操作。
+2026-09-15 用户进一步确认用 Three.js 赋予人物灵动感。iOS 26 客户端采用 **SwiftUI 页面 + 隔离 WKWebView 中的锁版 Three.js + GLB**：
 
-一手依据：[RealityView](https://developer.apple.com/documentation/realitykit/realityview)、[Loading entities from a file](https://developer.apple.com/documentation/realitykit/loading-entities-from-a-file)、[RealityKit](https://developer.apple.com/documentation/realitykit)。
+- SwiftUI 继续拥有导航、衣物选择、保存、删除、加载/错误、VoiceOver、Reduce Motion 和静态回退；WebKit 只承载局部人物舞台。
+- Three.js、`GLTFLoader` 和辅助模块随 App 锁版打包，GLB 经 Swift 清单、hash、格式、rig 和资源预算校验后才通过本地自定义 scheme 提供；运行时零远程代码、零 CDN、零任意 URL。
+- 人物微动由 renderer 投影：轻微呼吸起伏、重心摆动、拖动响应和换装确认反馈。它们不修改 Look 事实，不冒充真实生理数据；Reduce Motion 开启后停止自动及装饰性动作，保留直接旋转操作。
+- 页面不可见时停止动画帧，WebContent 退出时释放 geometry、material 和 renderer；进程终止后由 Swift 保持配置并重建舞台。
+
+一手依据：[Three.js](https://github.com/mrdoob/three.js)、[WebKit WKWebView](https://developer.apple.com/documentation/webkit/wkwebview)。
 
 运行时只保留一条生产路径：
 
 | 候选 | 结论 | 原因 |
 | --- | --- | --- |
-| SwiftUI + RealityKit + USDZ | 选择 | 与当前 iOS 26/SwiftUI 工程同一运行时；支持实体层级、动画、运行时更新和异步 URL 加载 |
+| SwiftUI + Three.js + WKWebView + GLB | 选择 | 当前工程已经通过锁版离线模块、原生资源校验、GLB 换装和 Swift bridge 纵切；可直接实现人物微动和交互 |
 | SceneKit | 不选 | 不再为新产品建立第二套 Apple 3D 抽象，无法减少资产生产工作 |
-| Three.js + WKWebView | 不选 | 增加 WebContent、bridge、资源与无障碍边界；既有 11-02 已证明它没有解决人物/服装生产问题 |
+| RealityKit + USDZ | 不选 | 会形成第二套 renderer 和 GLB→USDZ 资产分支；当前需求没有证明迁移能改善人物画风、换装或微动 |
 | Unity / Unreal | 不选 | 当前有限人物工作室不需要完整游戏引擎，包体、工程边界和招聘成本不符合 MVP |
 | 云端实时串流 | 不选 | 弱网、成本、延迟和隐私会破坏本地可用承诺 |
 
-### 资产合同先于建模工具
+### 资产交付合同
 
-不预设 Blender、Maya、生成式 3D 服务或某一 Avatar SaaS。任何生产方式只有输出满足同一合同才可进入候选：
+执行 [Design 01 人物技术冻结](01-技术选型.md#人物技术冻结与变更规则) 的 `AVATAR-BASELINE-01`：项目不使用 Blender 建模、修复、转换或导出，也不要求 `.blend` 母版。优先验证直接交付的授权成品 GLB 人物与配套衣物，具体来源仍为 `pending`；不得将采购策略表述成供应商或人物质量已经验证。任何输入须满足以下交付合同：
 
 | 资产 | 必须满足 |
 | --- | --- |
-| 人物 | 项目自有/授权；稳定比例、骨架、命名、材质、碰撞范围、LOD、默认站姿和展示动作 |
+| 人物 | 项目自有/授权；稳定比例、实体命名、材质和默认站姿；所需骨架由代表包验证后冻结，首个微动切片不强制新增骨架动作或 LOD |
 | 服装 | 绑定支持的人物 revision；稳定槽位；蒙皮和权重通过极限姿态检查；包含遮蔽规则 |
 | 场景 | 人物、服装、灯光和相机锚点具有稳定实体名称；加载后可单独替换服装实体 |
-| 动画 | 待机、展示、复位动作可按稳定名称取得；缺失动作不能导致场景不可用 |
-| Manifest | 资产 ID、revision、兼容人物范围、字节数、SHA-256、LOD、动作和来源权利完整 |
+| 动画 | 保留整体微动；首版新增可定位的眼睑 morph、左右眼球节点及默认方向。需要完整骨骼动作时随资产交付 clips，单独验收；不要求无关表情或行走 |
+| Manifest | 资产 ID、revision、适配人物范围、字节数、SHA-256、来源权利和实际支持能力完整；不虚列 LOD/动作 |
 
-生产工具选型由独立 POC 比较：自有/外包建模、授权 Avatar 平台和生成式静态 mesh 都可以作为输入候选；不能把“得到一个外观相似的静态模型”当成已经完成骨架、可换装、动画、LOD 和权利验收。
+代表验证限定一个人物、两件上装、一件下装、一双鞋，先证明画风和可换装，再扩展完整目录。交付需保留供应方原始包、版本、许可证和发布 hash，能重复导入与验证；不以缺少 `.blend` 否决合格交付。若候选必须由项目人员手工建模或修复才可用，记录不适配并退出，不能悄然恢复 Blender 流程。AI 静态 mesh 和 img2threejs 继续只是研究候选，不承诺自动得到可用的服装、骨架和动画。
+
+### img2threejs 适配评估（2026-09-15）
+
+本轮按仓库 `img2threejs/img2threejs@6e60b5e`、`plugin-character@d875063` 和 `plugin-img2glb@6f7b62a` 复核。三个仓库均为 Apache-2.0；该许可只解决工具代码的使用条件，不自动授予输入图片、生成角色、训练数据或第三方托管服务的商业权利。
+
+`img2threejs` 主项目不是传统的“图片上传后导出角色模型”服务。它把参考图拆成规格、细节清单和质量门，再生成由 primitive、程序化材质与生成几何组成的 TypeScript `THREE.Group`。官方说明运行权威仍是浏览器 Three.js，示例库中的低模人物与 girl-character 目前也明确标为 `placeholder`。它的单图路线会记录不可见区域低置信度，多视角 visual hull 至少需要两张确定性正交轮廓；这些做法适合 Then 的参考分析和验收方法，但不能证明生产人物质量。
+
+两个官方插件也没有补齐 Then 的完整资产链：
+
+| 能力 | 实际边界 | 对 Then 的结论 |
+| --- | --- | --- |
+| `plugin-img2glb` | 把输入图片发送到托管的 `trellis-community/TRELLIS`，下载一个 GLB；实现只检查 GLB 头、mesh/material 数量和压缩扩展，并明确把结果称为 generative proxy | 可作为一个静态 mesh 候选生成器；不直接用于含用户照片的生产任务，不把输出视为可信母版 |
+| `plugin-character` | 基础重建先得到静态 mesh；插件从**已有 GLB**读取 skeleton、skin joint order、inverse bind 和 clips，再执行绑定与测量门。其 README 明确当前仍有 4/12 检查没有输入生产者 | 可借鉴 rig、mesh parity 和“未测量不算通过”的检查思想；不能为无骨架的生成 GLB自动完成项目骨架、动作和服装适配 |
+| GLB baseline integration | 需要现成 multipart GLB 作为测量源，把稀疏截面或密集表面重新编码为 TypeScript/Three.js；不在运行时交付原 GLB | 对已有合格 GLB 是重建/对照工具，不是从零建立人物的捷径；输出格式与 iOS 生产路径不一致 |
+
+因此当前决定如下：
+
+1. **不把 img2threejs 或其插件加入 App/Go 服务运行依赖。** App 使用直接锁版的 Three.js 运行时和经过项目合同校验的 GLB，不执行 img2threejs 生成代码。
+2. **允许把 img2threejs 作为离线 POC 与质量方法参考。** 可复用参考图 intake、细节清单、多视角轮廓、逐阶段对照、rig parity 和 fail-closed gate 的思想；不复制其约九十个 Python/Node 工具到项目，也不新增仓库脚本。
+3. **只允许一个受限候选实验。** 以私有 `assets/avatar-poc/woo-input-v1` 的一套人物三视图为输入，最多生成一个静态候选；保留输入 hash、工具 commit、参数、输出 hash、耗时和人工正/侧/背对照。托管调用前必须另行确认数据去向和服务条款。
+4. **候选必须通过当前 Then 资产合同。** 验证稳定 rest pose、人物/服装独立实体、已有蒙皮与遮蔽、眼睑/眼球数据、GLB 格式与预算、隔离 Three.js 加载、来源权利和最低真机性能。需要完整骨骼动作时才验证对应 clip；不为本轮新增行走门槛。需要开发者手工建模、绑骨或修衣服的候选不适配，不恢复 Blender。
+5. **POC 退出判定是工具适配结论，不是产品交付。** 若静态形体和三视图一致性不达标，直接 no-go；若还需额外拓扑/骨架/服装制作而不能直接交付，保留为概念草模和道具研究，不转入首版人物生产。
+
+一手依据：[img2threejs](https://github.com/img2threejs/img2threejs)、[plugin-character](https://github.com/img2threejs/plugin-character)、[plugin-img2glb](https://github.com/img2threejs/plugin-img2glb)、[Microsoft TRELLIS](https://github.com/microsoft/TRELLIS)。TRELLIS 官方仓库说明其图片输入可产出 textured mesh/GLB，同时自托管环境目前要求 Linux、CUDA 与至少 16 GB NVIDIA GPU；当前 Mac 开发机不把它作为本地服务依赖。
 
 ### 3D 运行结构
 
@@ -162,11 +189,11 @@ iOS 26 客户端采用 SwiftUI + RealityKit 的原生路线，3D 局部舞台使
 flowchart LR
     UI[SwiftUI 选择与状态] --> VM[Avatar Studio ViewModel]
     VM --> Catalog[人物/服装 Manifest]
-    VM --> Cache[校验后的 USDZ 本地缓存]
+    VM --> Cache[校验后的 GLB 本地缓存]
     Catalog --> API[Go Catalog API]
     API --> PG[(PostgreSQL 元数据)]
     API --> MinIO[(MinIO 私有资产)]
-    VM --> Stage[RealityView 舞台]
+    VM --> Stage[隔离 Three.js 舞台]
     Cache --> Stage
     Stage --> Recipe[3D Look Recipe]
     Recipe --> Local[(GRDB 本地保存)]
@@ -179,7 +206,7 @@ flowchart LR
 
 | 对象 | 职责 |
 | --- | --- |
-| `AvatarAssetRevision` | 一套人物 USDZ、骨架/实体合同、动作与版本 |
+| `AvatarAssetRevision` | 一套人物 GLB、骨架/实体合同、动作与版本 |
 | `GarmentAssetRevision` | 一件适配服装、槽位、兼容人物 revision、材质和版本 |
 | `AvatarSceneManifest` | 当前可发布人物、服装、依赖、hash 和资源预算 |
 | `InteractiveLookRecipe` | 人物 revision 与各槽位服装 revision 的有序组合 |
@@ -206,8 +233,19 @@ flowchart LR
 | 默认人物/Look | 随包与 GRDB | 发布目录 | 零账号可用 |
 | 我的衣物和计划 | GRDB 事实源 | 登录后同步副本/云事实 | 具体冲突合同在同步切片冻结 |
 | AI/视频任务 | 最近状态缓存 | PostgreSQL + RabbitMQ | 任务状态不可只存在 Redis |
-| 图片/视频/USDZ | 原子缓存 | 私有 MinIO | PostgreSQL 保存 owner、来源、hash 和生命周期 |
+| 图片/视频/GLB | 原子缓存 | 私有 MinIO | PostgreSQL 保存 owner、来源、hash 和生命周期 |
 | 同意与删除 | 本地提示状态 | PostgreSQL 审计事实 | 每种离机用途分别记录 |
+
+### 静态与三维资源存放规则
+
+| 资源 | 位置 | 规则 |
+| --- | --- | --- |
+| iOS 随包 UI、默认离线 Look 和发布资产 | `then-app/ThenApp/Resources` 或 Asset Catalog | App 可直接读取；名称语义化，随版本发布 |
+| 内部研究、POC 输入和未过发布门的原创素材 | `then-server/assets/` | 可评审、可记录 hash，但不通过 Gin/Swagger 静态路由公开；当前 Woo 输入包位于 `assets/avatar-poc/woo-input-v1` |
+| Web 主动公开且无需鉴权的品牌资源 | 对应 Web 工程的 `public/` | 只有明确允许公开下载的 logo、favicon 等进入；不把用户数据、候选人物或私有模型放入 |
+| 生产图片、视频、GLB 和可撤回资源 | 私有 MinIO bucket | PostgreSQL 保存 owner、用途、来源、revision、hash 与生命周期；客户端只通过受控 API/短期下载地址取得 |
+
+同一二进制只保留一个事实源。POC 素材在进入正式发布前可以保存在版本化 `assets/`；进入生产目录后由发布流程写入 MinIO 或 App bundle，并在 manifest 中绑定新 revision，不在 `assets`、`public` 和 MinIO 三处重复维护。
 
 API 能力按产品域提供，Huma operation 和 Go struct tag 在运行时生成 OpenAPI，Swagger 门户和 Umi 读取同一契约：
 
@@ -227,7 +265,7 @@ API 能力按产品域提供，Huma operation 和 Go struct tag 在运行时生�
 | 多视角资产不完整 | 保持上一完整 Look，显示可重试状态 |
 | AI/VTO 失败 | 保留输入草稿和原状态，可重试或删除；不伪造成功结果 |
 | 360° 失败 | 静态结果仍可使用，视频任务单独恢复 |
-| 3D USDZ/manifest 失败 | 保持上一有效场景；首次失败回到关联多视角 Look |
+| 3D GLB/manifest/WebContent 失败 | 保持上一有效场景；首次失败回到关联多视角 Look |
 | 同步冲突 | 不以最后到达的数据静默覆盖；在同步切片固定按实体的合并/选择规则 |
 | 删除部分失败 | 对用户显示处理中/待重试；Outbox 驱动对象存储和供应商清理，事实可审计 |
 
@@ -243,7 +281,7 @@ API 能力按产品域提供，Huma operation 和 Go struct tag 在运行时生�
 | P2 真实衣橱决策闭环 | 录入、状态、推荐、计划、实际穿着、反馈和历史 | PRD 12/13/16 关键切片通过 |
 | P3 本人 AI 试穿 | 本人照片、所选衣物、异步生成、保存和删除 | 质量、隐私、成本、恢复与供应商门禁通过 |
 | P4 Create 360° | 从静态结果生成、播放、下载、分享和删除视频 | 独立动态价值、质量、成本和删除验收通过 |
-| P5 可交互真 3D | RealityKit 舞台、USDZ 人物/服装、连续观察、换装和动作 | 资产 POC、最低真机、性能、视觉和无障碍通过 |
+| P5 可交互真 3D | Three.js 舞台、GLB 人物/服装、连续观察、换装和动作 | 资产 POC、最低真机、性能、视觉和无障碍通过 |
 | P6 账号同步与产品收口 | 注册/登录、本人 CRUD、跨设备恢复、导出、账户删除与全旅程回归 | 完整产品系统验收全部通过 |
 
 阶段编号表达产品累积能力，不替换现有 `FF-SS` 执行计划编号。每个阶段开工前仍按 Design → PRD → 单切片 Plan/Checklist → Implementation → Acceptance 执行。
@@ -267,6 +305,7 @@ API 能力按产品域提供，Huma operation 和 Go struct tag 在运行时生�
 
 1. 完整产品保留 Woo 式视觉体验、真实衣橱长期闭环、本人 AI 试穿、Create 360° 和可交互真 3D。
 2. P1 的预生成多视角决定只解决首个可靠切片，不再作为永久否决真 3D 的依据。
-3. 真 3D 在 iOS 使用 SwiftUI + RealityKit + USDZ；建模/资产生产工具由合同和 POC 选择，不预设 Blender。
-4. 不做多种 3D 运行格式和 renderer 兼容；选定的 iOS 生产路径只有 RealityKit/USDZ。
-5. 社交、商城和造型师交易属于增长扩展；完整 OOTD 核心经过留存验证后再设计其实施合同。
+3. 真 3D 在 iOS 使用 SwiftUI + 隔离 WKWebView + 锁版 Three.js + GLB；执行 AVATAR-BASELINE-01，不使用 Blender，不建立自有建模链；优先验证授权成品交付，具体来源待代表包通过。
+4. 不做多种 3D 运行格式和 renderer 兼容；选定的 iOS 生产路径只有 Three.js/GLB，不并行维护 RealityKit/USDZ。
+5. 11-04 的首个工程增量包含轻微待机起伏、重心摆动、拖动响应和换装确认；本轮用户将眨眼和轻微注视确认为首版必需，由 REQ-038/ACC-027 验收。挥手、行走及其他表情继续分期；眼部能力尚未实现，不回填为已通过。
+6. 社交、商城和造型师交易属于增长扩展；完整 OOTD 核心经过留存验证后再设计其实施合同。
