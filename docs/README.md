@@ -82,6 +82,7 @@ OpenAPI 与数据库 schema 的机器事实源分别是 backend 的 Huma operati
 - [`design/13-三维虚拟形象与服装系统研究.md`](design/13-三维虚拟形象与服装系统研究.md)：`superseded` 的旧 mesh 研究与 POC 证据。
 - [`design/18-Woo立体数字衣橱技术路线研究与决策.md`](design/18-Woo立体数字衣橱技术路线研究与决策.md)：当前 Woo 证据、需求边界、候选模型、选定多视角架构和重新准入真实 mesh 的门槛。
 - [`design/19-数字衣橱与虚拟试穿竞品研究.md`](design/19-数字衣橱与虚拟试穿竞品研究.md)：Whering/Acloset/Indyx/Stylebook/Alta、Doppl/Doji、DRESSX/Veesual、ZEPETO/Avaturn 与开源 VTON 的横向研究。
+- [`design/20-OOTD完整产品能力与阶段架构设计.md`](design/20-OOTD完整产品能力与阶段架构设计.md)：完整产品能力、全旅程、原生真 3D、数据/API、P1–P6 实施阶段与产品完成定义的统一事实源。
 - [`design/14-后端MVP与测试边界设计.md`](design/14-后端MVP与测试边界设计.md)：后端 B0–B3 分期、标准 Go SOP 与独立测试矩阵。
 
 计划与验收：
