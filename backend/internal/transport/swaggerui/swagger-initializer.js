@@ -10,7 +10,7 @@ window.addEventListener("load", () => {
     validatorUrl: null,
     queryConfigEnabled: false,
     persistAuthorization: false,
-    supportedSubmitMethods: ["get", "post", "delete", "patch"],
+    supportedSubmitMethods: ["get", "post", "put", "delete", "patch"],
     tryItOutEnabled: true,
     withCredentials: true,
     presets: [SwaggerUIBundle.presets.apis],
