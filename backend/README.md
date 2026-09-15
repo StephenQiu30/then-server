@@ -1,6 +1,6 @@
 # OOTD Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis 认证限流和进程生命周期；账号注册、登录、退出及本人账户查询/修改/删除已经实现。
+这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis 认证限流和进程生命周期；账号、会话与本人成年声明 API 已经实现。
 
 ## 本地运行
 
@@ -46,6 +46,14 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `DELETE /v1/users/me`
 
 浏览器会话使用 HttpOnly、SameSite=Strict Cookie。本机回环开发可设置 `SESSION_COOKIE_SECURE=false`；非回环监听必须使用安全 Cookie。注册按直连源 IP 每小时 5 次、登录每 15 分钟 10 次，Redis 原子计数超限返回 429 与 `Retry-After`；Redis 不可用时认证失败关闭且 readiness 返回 503。邮件验证、找回密码、可信代理/边缘防护和生产审计尚未完成，因此当前端点只用于开发 MVP。
+
+## 隐私前置 API
+
+- `GET /v1/privacy/self-adult-declaration`
+- `PUT /v1/privacy/self-adult-declaration`
+- `DELETE /v1/privacy/self-adult-declaration`
+
+该 API 只记录当前账号对 `self-adult-v1` 的确认或撤回，不收集出生日期、证件或照片。它不是第三方 AI 逐次同意，也不会启用上传或生成。
 
 ## 本机中间件验证
 

@@ -12,5 +12,6 @@ func Migrate(ctx context.Context, database *gorm.DB) error {
 		&userRecord{},
 		&credentialRecord{},
 		&sessionRecord{},
+		&selfAdultDeclarationRecord{},
 	)
 }

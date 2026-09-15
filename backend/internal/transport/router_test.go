@@ -23,7 +23,7 @@ func (f probeFunc) Probe(ctx context.Context) error { return f(ctx) }
 func newTestRouter(t *testing.T, probe probeFunc) (*Router, *bytes.Buffer) {
 	t.Helper()
 	log := new(bytes.Buffer)
-	router, err := NewRouter(context.Background(), false, probe, nil, 20*time.Millisecond, slog.New(slog.NewJSONHandler(log, nil)))
+	router, err := NewRouter(context.Background(), false, probe, nil, nil, 20*time.Millisecond, slog.New(slog.NewJSONHandler(log, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

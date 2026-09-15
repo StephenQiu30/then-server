@@ -32,7 +32,7 @@ Woo 参考没有展示认证页面，因此这些页面只能沿用“于是”�
 
 2026-09-14 用户进一步确认 Web 使用 Umi OpenAPI 生成 API 文件，替代此前 Hey API 候选。仅做了可撤销的本地生成预检，未保留 `frontend/` 代码：
 
-- `@umijs/openapi` 1.14.1 + TypeScript 6.0.3 能读取当前 OpenAPI 3.1.2 JSON 表达，并按 tag 生成 3 个 service 文件、8 个请求函数、类型声明和索引。
+- `@umijs/openapi` 1.14.1 + TypeScript 6.0.3 已在 17-15 当时的 8-operation OpenAPI 3.1.2 上验证可生成；当前 API 0.6.0 已增加 Privacy tag 的 3 个 operation。17-13 恢复时必须从实际 `/openapi.json` 重新生成并验证函数数量，不复用旧产物。
 - 该 CLI 对 HTTP `schemaPath` 使用 JSON 解析，不能直接消费 `/openapi.yaml`；Go API 因此直接暴露由 Huma operation 与标注类型生成并校验的 `/openapi.json`。
 - 会话 Cookie 只通过 OpenAPI security scheme 表达，不生成函数参数；Umi 产物中没有 `then_session` 参数，浏览器随同源请求自动发送 HttpOnly Cookie。
 - 生成器包没有声明其 CLI 实际需要的 `tslib`，前端正式安装时将 `tslib` 2.8.1 作为显式开发依赖；这不是生成后修补。当前完整开发依赖审计因生成器固定依赖的 `mockjs` 原型污染公告报告 2 个 high 且无上游修复，`npm audit --omit=dev` 为 0。前端开工时必须复核；生成器不进入生产 bundle，`mock` 固定关闭。

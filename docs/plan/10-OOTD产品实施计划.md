@@ -12,7 +12,7 @@
 | --- | --- | --- | --- |
 | [11-01 照片质量 POC](11-01-照片输入与质量门执行计划.md) | approved / blocked | 领域、临时会话、文件导入、ImageIO 净化和系统适配子集 | 质量阈值、代表数据、完整 Vision 与真机门禁；人物照片生产入口关闭 |
 | [11-03 多视角人物/内置穿搭](11-03-Woo多视角形象与内置穿搭执行计划.md) | approved / in_progress | 原创三人物三视图、六件衣物输入包 | Provider 凭据/地域费用核验、生成 POC、24 套发布矩阵、页面与缓存 |
-| [11-04 Three.js 灵动](11-04-Threejs角色灵动反馈执行计划.md) | approved / in_progress | 待机、拖动/换装反馈及 Reduce Motion 代码；4 项模型测试和 1 条 UI 通过 | 完整动态录屏、原生可见性/恢复修复、眼部代表包、眨眼/视线与最低真机 |
+| [11-04 Three.js 灵动](11-04-Threejs角色灵动反馈执行计划.md) | approved / in_progress | 待机、拖动/换装、Reduce Motion、原生生命周期、拖动中断、WebContent 重建与模拟器动态录屏通过 | 眼部代表包、眨眼/视线与最低真机性能 |
 | [11-05 三维人物与造型闭环](11-05-三维人物与造型闭环执行计划.md) | draft / pending | 本轮补齐完整 spec/checklist、源代码差距和验收映射 | 三人物、完整槽位、缩放、Look 保存/收藏/删除、资产和设备门禁 |
 | [12-01 无图衣橱](12-01-无图衣橱与数据库基础执行计划.md) | approved / blocked（发布） | 真实 SQLite、增删改、重启与自动回归 | 真机及人工发布验收 |
 | [12-03 单件图片](12-03-单件图片导入与媒体生命周期执行计划.md) | approved / in_progress | DATA/IMAGE/IOS/TEST 模拟器开发范围完成；真实系统选图、复核、保存/重启、移除/删除、网络采样 | REL-01 真机保护/锁屏/低存储/性能/网络与人工 VoiceOver |
@@ -23,6 +23,7 @@
 | [17-10 本机依赖](17-10-数据库与中间件开发环境执行计划.md)、[17-11 测试边界](17-11-后端MVP与测试边界执行计划.md) | approved / completed | 本机四服务协议验证、独立 tests 与 tags | 尚无持久云任务/上传消费者 |
 | [17-12 账号 API](17-12-账号认证与本人账户API执行计划.md)、[17-16 会话撤销](17-16-账号HTTP会话撤销闭环执行计划.md) | approved / completed | 注册、Cookie、本人 CRUD、退出/删除后旧会话拒绝；PG/HTTP 回归 | App 接入、公开注册所需邮件/TLS、跨设备同步 |
 | [17-17 认证限流](17-17-账号认证Redis限流执行计划.md) | approved / completed | Redis 原子固定窗口、429/503/OpenAPI、真实服务/进程/受限 OCI 验收 | 可信代理/边缘防护和生产流量验收另行完成 |
+| [17-18 本人成年声明](17-18-本人成年声明API执行计划.md) | approved / in_progress | 契约已固定 | 当前版本查询、确认/撤回、PostgreSQL/HTTP/OpenAPI 验收 |
 | [17-14 仓库与 CI](17-14-客户端服务端仓库拆分与CI执行计划.md)、[17-15 OpenAPI/GORM](17-15-OpenAPI文档门户与Umi生成执行计划.md) | approved / completed | 独立仓库/CI、运行时契约与 AutoMigrate | Web SDK 正式接入不在本片 |
 | [17-13 frontend](17-13-Web账户管理执行计划.md) | draft / pending，按用户要求暂停 | 设计与合同草案 | 不创建页面、目录或空网络层 |
 

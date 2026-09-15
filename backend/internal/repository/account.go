@@ -18,12 +18,13 @@ func NewAccountRepository(database *gorm.DB) *AccountRepository {
 }
 
 type userRecord struct {
-	ID          string             `gorm:"column:id;type:uuid;primaryKey"`
-	DisplayName string             `gorm:"column:display_name;type:text;not null;check:users_display_name_check,display_name = btrim(display_name) AND char_length(display_name) BETWEEN 1 AND 80"`
-	CreatedAt   time.Time          `gorm:"column:created_at;type:timestamptz;not null"`
-	UpdatedAt   time.Time          `gorm:"column:updated_at;type:timestamptz;not null;check:users_timestamps_check,updated_at >= created_at"`
-	Credentials []credentialRecord `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	Sessions    []sessionRecord    `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	ID           string                       `gorm:"column:id;type:uuid;primaryKey"`
+	DisplayName  string                       `gorm:"column:display_name;type:text;not null;check:users_display_name_check,display_name = btrim(display_name) AND char_length(display_name) BETWEEN 1 AND 80"`
+	CreatedAt    time.Time                    `gorm:"column:created_at;type:timestamptz;not null"`
+	UpdatedAt    time.Time                    `gorm:"column:updated_at;type:timestamptz;not null;check:users_timestamps_check,updated_at >= created_at"`
+	Credentials  []credentialRecord           `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Sessions     []sessionRecord              `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Declarations []selfAdultDeclarationRecord `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 }
 
 func (userRecord) TableName() string { return "users" }

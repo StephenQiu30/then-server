@@ -286,7 +286,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	router, err := transport.NewRouter(ctx, false, pool, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := transport.NewRouter(ctx, false, pool, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,16 +341,34 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 	t.Helper()
 	email := "http-" + strings.ToLower(rand.Text()[:16]) + "@example.test"
 	password := "correct-http-password"
-	registration, _ := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/registrations", `{"email":"`+email+`","display_name":"HTTP User","password":"`+password+`"}`, nil, http.StatusCreated)
+	registration, registrationBody := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/registrations", `{"email":"`+email+`","display_name":"HTTP User","password":"`+password+`"}`, nil, http.StatusCreated)
+	registeredUserID := extractUserID(t, registrationBody)
 	registrationCookies := registration.Cookies()
 	if len(registrationCookies) != 1 || registrationCookies[0].Name != "then_session" || registrationCookies[0].Value == "" || registrationCookies[0].Path != "/v1" || !registrationCookies[0].HttpOnly || registrationCookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatal("actual registration response did not set the protected session cookie")
 	}
 	firstSession := registrationCookies[0]
 	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/users/me", "", firstSession, http.StatusOK)
+	_, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/privacy/self-adult-declaration", "", firstSession, http.StatusOK)
+	if !strings.Contains(string(body), `"policy_version":"self-adult-v1"`) || !strings.Contains(string(body), `"confirmed":false`) {
+		t.Fatal("actual API process did not expose the initial declaration state")
+	}
+	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/privacy/self-adult-declaration", `{"policy_version":"self-adult-v1","confirms_self_and_adult":false}`, firstSession, http.StatusBadRequest)
+	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/privacy/self-adult-declaration", `{"policy_version":"self-adult-v1","confirms_self_and_adult":true}`, firstSession, http.StatusOK)
+	if !strings.Contains(string(body), `"confirmed":true`) || !strings.Contains(string(body), `"confirmed_at":`) {
+		t.Fatal("actual API process did not persist the declaration")
+	}
+	_, body = accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/privacy/self-adult-declaration", "", firstSession, http.StatusOK)
+	if !strings.Contains(string(body), `"confirmed":false`) || !strings.Contains(string(body), `"withdrawn_at":`) {
+		t.Fatal("actual API process did not withdraw the declaration")
+	}
+	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/privacy/self-adult-declaration", `{"policy_version":"self-adult-v1","confirms_self_and_adult":true}`, firstSession, http.StatusOK)
 
 	logout, _ := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/auth/session", "", firstSession, http.StatusNoContent)
 	assertExpiredSessionCookie(t, logout)
+	privacyReplay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/privacy/self-adult-declaration", "", firstSession, http.StatusUnauthorized)
+	assertAuthenticationFailure(t, body)
+	assertExpiredSessionCookie(t, privacyReplay)
 	replay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/users/me", "", firstSession, http.StatusUnauthorized)
 	assertAuthenticationFailure(t, body)
 	assertExpiredSessionCookie(t, replay)
@@ -383,7 +401,23 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 	if err := pool.ORM().WithContext(ctx).Raw("SELECT count(*) FROM user_credentials WHERE email = ?", email).Scan(&remaining).Error; err != nil || remaining != 0 {
 		t.Fatal("deleted HTTP account still has persisted credentials")
 	}
-	t.Log("actual API process: account lifecycle, session revocation, deletion and login rate-limit 429 verified; credentials removed")
+	if err := pool.ORM().WithContext(ctx).Raw("SELECT count(*) FROM self_adult_declarations WHERE user_id = ?", registeredUserID).Scan(&remaining).Error; err != nil || remaining != 0 {
+		t.Fatal("deleted HTTP account still has a declaration")
+	}
+	t.Log("actual API process: account lifecycle, declaration confirm/withdraw/reconfirm, session revocation, cascade deletion and login rate-limit 429 verified")
+}
+
+func extractUserID(t *testing.T, data []byte) string {
+	t.Helper()
+	var payload struct {
+		User struct {
+			ID string `json:"id"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil || payload.User.ID == "" {
+		t.Fatal("cannot extract registered user ID")
+	}
+	return payload.User.ID
 }
 
 func accountRequest(t *testing.T, ctx context.Context, client *http.Client, method, endpoint, body string, cookie *http.Cookie, expectedStatus int) (*http.Response, []byte) {

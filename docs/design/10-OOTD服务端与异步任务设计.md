@@ -2,7 +2,7 @@
 
 ## 当前实现与设计边界
 
-当前已实现健康、数据库就绪、注册/会话和本人账户 CRUD；业务只依赖 PostgreSQL。目录/SOP 见 [Design 02](02-后端架构.md)，精确技术栈见 [Design 01](01-技术选型.md)。GORM record + 集中 AutoMigrate 管理开发 schema。
+当前已实现健康、数据库就绪、注册/会话和本人账户 CRUD；本人成年声明按 [17-18](../plan/17-18-本人成年声明API执行计划.md) 进入实现。当前业务依赖 PostgreSQL，Redis 只用于认证限流。目录/SOP 见 [Design 02](02-后端架构.md)，精确技术栈见 [Design 01](01-技术选型.md)。GORM record + 集中 AutoMigrate 管理开发 schema。
 
 下文为未实施云生成能力的任务、对象生命周期与故障契约；不能视为已存在的 API、表或 worker。按获批任务逐项引入 RabbitMQ/MinIO/Redis，默认连接本机服务，不提前建设分布式平台。
 

@@ -65,7 +65,11 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	gin.SetMode(gin.ReleaseMode)
-	router, err := transport.NewRouter(startup, cfg.DocsEnabled, dependencyProbes{pool, limiter}, transport.NewAccountHandler(accounts, cfg.SessionSecure, limiter), cfg.HealthTimeout, log)
+	privacy, err := service.NewPrivacyService(accounts, repository.NewPrivacyRepository(pool.ORM()))
+	if err != nil {
+		return err
+	}
+	router, err := transport.NewRouter(startup, cfg.DocsEnabled, dependencyProbes{pool, limiter}, transport.NewAccountHandler(accounts, cfg.SessionSecure, limiter), transport.NewPrivacyHandler(privacy, cfg.SessionSecure), cfg.HealthTimeout, log)
 	if err != nil {
 		return err
 	}

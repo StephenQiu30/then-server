@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,6 +55,46 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 	if first.User.Email != "first@example.test" {
 		t.Fatal("persisted email was not normalized")
 	}
+	privacy, err := service.NewPrivacyService(accounts, repository.NewPrivacyRepository(database))
+	serviceOK(t, "construct privacy service", err)
+	declaration, err := privacy.CurrentSelfAdultDeclaration(ctx, first.Token)
+	serviceOK(t, "read initial declaration", err)
+	if declaration.PolicyVersion != model.CurrentSelfAdultPolicyVersion || declaration.Confirmed || declaration.ConfirmedAt != nil || declaration.WithdrawnAt != nil {
+		t.Fatal("new account did not expose an explicit unconfirmed current policy")
+	}
+	declaration, err = privacy.ConfirmSelfAdultDeclaration(ctx, first.Token, model.ConfirmSelfAdultDeclarationInput{
+		PolicyVersion: model.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
+	})
+	serviceOK(t, "confirm current declaration", err)
+	if !declaration.Confirmed || declaration.ConfirmedAt == nil || declaration.WithdrawnAt != nil {
+		t.Fatal("confirmed declaration was not persisted")
+	}
+	firstConfirmation := *declaration.ConfirmedAt
+	declaration, err = privacy.ConfirmSelfAdultDeclaration(ctx, first.Token, model.ConfirmSelfAdultDeclarationInput{
+		PolicyVersion: model.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
+	})
+	serviceOK(t, "repeat current declaration", err)
+	if declaration.ConfirmedAt == nil || !declaration.ConfirmedAt.Equal(firstConfirmation) {
+		t.Fatal("repeated declaration changed its confirmation time")
+	}
+	declaration, err = privacy.WithdrawSelfAdultDeclaration(ctx, first.Token)
+	serviceOK(t, "withdraw current declaration", err)
+	if declaration.Confirmed || declaration.WithdrawnAt == nil {
+		t.Fatal("withdrawn declaration remained active")
+	}
+	firstWithdrawal := *declaration.WithdrawnAt
+	declaration, err = privacy.WithdrawSelfAdultDeclaration(ctx, first.Token)
+	serviceOK(t, "repeat declaration withdrawal", err)
+	if declaration.WithdrawnAt == nil || !declaration.WithdrawnAt.Equal(firstWithdrawal) {
+		t.Fatal("repeated withdrawal changed its withdrawal time")
+	}
+	declaration, err = privacy.ConfirmSelfAdultDeclaration(ctx, first.Token, model.ConfirmSelfAdultDeclarationInput{
+		PolicyVersion: model.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
+	})
+	serviceOK(t, "reconfirm withdrawn declaration", err)
+	if !declaration.Confirmed || declaration.ConfirmedAt == nil || !declaration.ConfirmedAt.After(firstConfirmation) || declaration.WithdrawnAt != nil {
+		t.Fatal("reconfirmation did not replace the withdrawn state")
+	}
 	if _, err := accounts.Register(ctx, model.RegisterAccountInput{
 		Email: "first@example.test", DisplayName: "Duplicate", Password: "correct-password-two",
 	}); !errors.Is(err, model.ErrEmailConflict) {
@@ -63,6 +104,41 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 		Email: "second@example.test", DisplayName: "Second User", Password: "correct-password-two",
 	})
 	serviceOK(t, "register second account", err)
+	const concurrentConfirmations = 16
+	confirmationResults := make(chan model.SelfAdultDeclaration, concurrentConfirmations)
+	confirmationErrors := make(chan error, concurrentConfirmations)
+	var confirmationGroup sync.WaitGroup
+	for range concurrentConfirmations {
+		confirmationGroup.Add(1)
+		go func() {
+			declaration, err := privacy.ConfirmSelfAdultDeclaration(ctx, second.Token, model.ConfirmSelfAdultDeclarationInput{
+				PolicyVersion: model.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
+			})
+			if err != nil {
+				confirmationErrors <- err
+			} else {
+				confirmationResults <- declaration
+			}
+			confirmationGroup.Done()
+		}()
+	}
+	confirmationGroup.Wait()
+	close(confirmationErrors)
+	close(confirmationResults)
+	for err := range confirmationErrors {
+		t.Fatalf("concurrent declaration failed: %v", err)
+	}
+	var sharedConfirmation time.Time
+	for declaration := range confirmationResults {
+		if !declaration.Confirmed || declaration.ConfirmedAt == nil {
+			t.Fatal("concurrent declaration did not return the confirmed state")
+		}
+		if sharedConfirmation.IsZero() {
+			sharedConfirmation = *declaration.ConfirmedAt
+		} else if !declaration.ConfirmedAt.Equal(sharedConfirmation) {
+			t.Fatal("concurrent duplicate declarations did not converge on one confirmation")
+		}
+	}
 
 	conflictEmail := first.User.Email
 	newName := "Should Roll Back"
@@ -93,7 +169,7 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 	if err := accounts.DeleteCurrentUser(ctx, loggedIn.Token); err != nil {
 		t.Fatal("delete persisted account failed")
 	}
-	for table, expected := range map[string]int64{"users": 1, "user_credentials": 1, "user_sessions": 1} {
+	for table, expected := range map[string]int64{"users": 1, "user_credentials": 1, "user_sessions": 1, "self_adult_declarations": 1} {
 		var count int64
 		statement := fmt.Sprintf("SELECT count(*) FROM %s", table)
 		serviceOK(t, "verify account cascade", database.WithContext(ctx).Raw(statement).Scan(&count).Error)
