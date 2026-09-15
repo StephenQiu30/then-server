@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
 	"strings"
 	"time"
 	"unicode"
@@ -16,7 +17,8 @@ type WardrobeRepository interface {
 	ListWardrobeItems(context.Context, string, int, *string) (model.WardrobePage, error)
 	GetWardrobeItem(context.Context, string, string) (model.WardrobeItem, error)
 	UpdateWardrobeItem(context.Context, string, string, int, model.UpdateWardrobeItemInput, time.Time) (model.WardrobeItem, error)
-	DeleteWardrobeItem(context.Context, string, string, int) error
+	GetWardrobeDeletionImpact(context.Context, string, string) (model.WardrobeDeletionImpact, error)
+	DeleteWardrobeItem(context.Context, string, string, int, model.WardrobeHistoryPolicy, string, time.Time) error
 }
 
 type WardrobeService struct {
@@ -83,15 +85,27 @@ func (s *WardrobeService) UpdateWardrobeItem(ctx context.Context, token, itemID 
 	return s.repository.UpdateWardrobeItem(ctx, user.ID, itemID, expectedRevision, input, s.now().UTC())
 }
 
-func (s *WardrobeService) DeleteWardrobeItem(ctx context.Context, token, itemID string, expectedRevision int) error {
+func (s *WardrobeService) GetWardrobeDeletionImpact(ctx context.Context, token, itemID string) (model.WardrobeDeletionImpact, error) {
+	user, err := s.authenticator.CurrentUser(ctx, token)
+	if err != nil {
+		return model.WardrobeDeletionImpact{}, err
+	}
+	if !validUUID(itemID) {
+		return model.WardrobeDeletionImpact{}, model.ErrInvalidWardrobeInput
+	}
+	return s.repository.GetWardrobeDeletionImpact(ctx, user.ID, itemID)
+}
+
+func (s *WardrobeService) DeleteWardrobeItem(ctx context.Context, token, itemID string, expectedRevision int, policy model.WardrobeHistoryPolicy, expectedImpact string) error {
 	user, err := s.authenticator.CurrentUser(ctx, token)
 	if err != nil {
 		return err
 	}
-	if !validUUID(itemID) || expectedRevision < 1 {
+	decodedImpact, decodeErr := hex.DecodeString(expectedImpact)
+	if !validUUID(itemID) || expectedRevision < 1 || len(decodedImpact) != 32 || decodeErr != nil || !validWardrobeHistoryPolicy(policy) {
 		return model.ErrInvalidWardrobeInput
 	}
-	return s.repository.DeleteWardrobeItem(ctx, user.ID, itemID, expectedRevision)
+	return s.repository.DeleteWardrobeItem(ctx, user.ID, itemID, expectedRevision, policy, expectedImpact, s.now().UTC())
 }
 
 func validWardrobeFields(id, name string, category model.WardrobeCategory, availability model.WardrobeAvailability) (string, bool) {
@@ -132,6 +146,10 @@ func validWardrobeAvailability(value model.WardrobeAvailability) bool {
 
 func validWardrobeSource(value model.WardrobeSource) bool {
 	return value == model.WardrobeSourceWardrobe || value == model.WardrobeSourceQuickAdd
+}
+
+func validWardrobeHistoryPolicy(value model.WardrobeHistoryPolicy) bool {
+	return value == model.WardrobeHistoryRedactSnapshots || value == model.WardrobeHistoryDeleteAffectedPlans
 }
 
 func validWardrobeAttributes(value model.WardrobeAttributes) bool {

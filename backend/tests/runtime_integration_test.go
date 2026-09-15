@@ -218,7 +218,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 						Version string `json:"version"`
 					} `json:"info"`
 				}
-				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.9.0" || !strings.Contains(string(body), `"operationId":"createWardrobeItem"`) {
+				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.10.0" || !strings.Contains(string(body), `"operationId":"createOutfitPlan"`) {
 					t.Fatal("binary did not serve a valid JSON representation of its compiled contract")
 				}
 			}
@@ -289,7 +289,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	router, err := transport.NewRouter(ctx, false, pool, nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := transport.NewRouter(ctx, false, pool, nil, nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,12 +408,14 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 	if err := pool.ORM().WithContext(ctx).Raw("SELECT count(*) FROM self_adult_declarations WHERE user_id = ?", registeredUserID).Scan(&remaining).Error; err != nil || remaining != 0 {
 		t.Fatal("deleted HTTP account still has a declaration")
 	}
-	t.Log("actual API process: account, declaration, wardrobe CRUD, session revocation, cascade deletion and login rate-limit 429 verified")
+	t.Log("actual API process: account, declaration, wardrobe/outfit-plan lifecycles, session revocation, cascade deletion and login rate-limit 429 verified")
 }
 
 func exerciseWardrobeHTTPLifecycle(t *testing.T, ctx context.Context, client *http.Client, baseURL string, session *http.Cookie) {
 	t.Helper()
 	const itemID = "018f1f74-a2d0-7c6d-9c17-4a0ea2400c11"
+	const planID = "018f1f74-a2d0-7c6d-9c17-4a0ea2400d11"
+	const redactedPlanID = "018f1f74-a2d0-7c6d-9c17-4a0ea2400d12"
 	createBody := `{"id":"` + itemID + `","name":"HTTP Shirt","category":"top","availability":"wearable","source":"quick_add","attributes":{"formality_band":"smart_casual","walking_use":"suitable"}}`
 	_, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/wardrobe/items", createBody, session, http.StatusCreated)
 	if !strings.Contains(string(body), `"revision":1`) || !strings.Contains(string(body), `"source":"user_confirmed"`) || strings.Contains(string(body), "owner_id") {
@@ -430,9 +432,58 @@ func exerciseWardrobeHTTPLifecycle(t *testing.T, ctx context.Context, client *ht
 		t.Fatal("actual wardrobe update lost revision or immutable source")
 	}
 	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/wardrobe/items/"+itemID, updateBody, session, http.StatusConflict)
-	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/wardrobe/items/"+itemID+"?expected_revision=1", "", session, http.StatusConflict)
-	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/wardrobe/items/"+itemID+"?expected_revision=2", "", session, http.StatusNoContent)
+
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	localDate := time.Now().In(location).AddDate(0, 0, 1).Format("2006-01-02")
+	planBody := `{"id":"` + planID + `","local_date":"` + localDate + `","time_zone":"Asia/Shanghai","items":[{"item_id":"` + itemID + `","revision":2}],"confirmed_unavailable_ids":[]}`
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans", planBody, session, http.StatusConflict)
+	planBody = `{"id":"` + planID + `","local_date":"` + localDate + `","time_zone":"Asia/Shanghai","context_summary":"HTTP plan","items":[{"item_id":"` + itemID + `","revision":2}],"confirmed_unavailable_ids":["` + itemID + `"]}`
+	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans", planBody, session, http.StatusCreated)
+	if !strings.Contains(string(body), `"revision":1`) || !strings.Contains(string(body), `"name":"HTTP Blue Shirt"`) || strings.Contains(string(body), "owner_id") {
+		t.Fatal("actual outfit plan create lost its server snapshot or exposed owner")
+	}
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans", planBody, session, http.StatusCreated)
+	_, body = accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/outfit-plans?limit=1&local_date="+localDate, "", session, http.StatusOK)
+	if !strings.Contains(string(body), planID) {
+		t.Fatal("actual outfit plan list omitted the created plan")
+	}
+	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/outfit-plans/"+planID, "", session, http.StatusOK)
+	planUpdate := `{"expected_revision":1,"local_date":"` + localDate + `","time_zone":"Asia/Shanghai","context_summary":"Updated HTTP plan","items":[{"item_id":"` + itemID + `","revision":2}],"confirmed_unavailable_ids":["` + itemID + `"]}`
+	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/outfit-plans/"+planID, planUpdate, session, http.StatusOK)
+	if !strings.Contains(string(body), `"revision":2`) || !strings.Contains(string(body), `"context_summary":"Updated HTTP plan"`) {
+		t.Fatal("actual outfit plan update missed its revision or replacement content")
+	}
+	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/outfit-plans/"+planID, planUpdate, session, http.StatusConflict)
+	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans/"+planID+"/cancel", `{"expected_revision":2}`, session, http.StatusOK)
+	if !strings.Contains(string(body), `"revision":3`) || !strings.Contains(string(body), `"status":"cancelled"`) {
+		t.Fatal("actual outfit plan cancel missed status or revision")
+	}
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/outfit-plans/"+planID+"?expected_revision=2", "", session, http.StatusConflict)
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/outfit-plans/"+planID+"?expected_revision=3", "", session, http.StatusNoContent)
+	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/outfit-plans/"+planID, "", session, http.StatusNotFound)
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans", planBody, session, http.StatusConflict)
+
+	redactedPlanBody := `{"id":"` + redactedPlanID + `","local_date":"` + localDate + `","time_zone":"Asia/Shanghai","items":[{"item_id":"` + itemID + `","revision":2}],"confirmed_unavailable_ids":["` + itemID + `"]}`
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans", redactedPlanBody, session, http.StatusCreated)
+	_, impactBody := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/wardrobe/items/"+itemID+"/deletion-impact", "", session, http.StatusOK)
+	var impact struct {
+		Affected int    `json:"affected_plan_count"`
+		Expected string `json:"expected_impact"`
+	}
+	if json.Unmarshal(impactBody, &impact) != nil || impact.Affected != 1 || len(impact.Expected) != 64 {
+		t.Fatal("actual wardrobe deletion impact was invalid")
+	}
+	deletionQuery := "&history_policy=redact_snapshots&expected_impact=" + impact.Expected
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/wardrobe/items/"+itemID+"?expected_revision=1"+deletionQuery, "", session, http.StatusConflict)
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/wardrobe/items/"+itemID+"?expected_revision=2"+deletionQuery, "", session, http.StatusNoContent)
 	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/wardrobe/items/"+itemID, "", session, http.StatusNotFound)
+	_, body = accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/outfit-plans/"+redactedPlanID, "", session, http.StatusOK)
+	if !strings.Contains(string(body), `"revision":2`) || !strings.Contains(string(body), `"content":null`) || strings.Contains(string(body), "HTTP Blue Shirt") {
+		t.Fatal("actual wardrobe delete did not redact the referenced outfit snapshot")
+	}
 }
 
 func extractUserID(t *testing.T, data []byte) string {

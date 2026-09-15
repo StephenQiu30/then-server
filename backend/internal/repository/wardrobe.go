@@ -2,7 +2,11 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/StephenQiu30/then-server/backend/internal/model"
@@ -124,8 +128,30 @@ func (r *WardrobeRepository) UpdateWardrobeItem(ctx context.Context, ownerID, it
 	return wardrobeFromRecord(record), nil
 }
 
-func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, itemID string, expectedRevision int) error {
+func (r *WardrobeRepository) GetWardrobeDeletionImpact(ctx context.Context, ownerID, itemID string) (model.WardrobeDeletionImpact, error) {
+	var item wardrobeItemRecord
+	if err := r.database.WithContext(ctx).Select("owner_id", "id").Where("owner_id = ? AND id = ?", ownerID, itemID).First(&item).Error; err != nil {
+		return model.WardrobeDeletionImpact{}, wardrobeLookupError(err)
+	}
+	plans, err := wardrobeAffectedPlans(r.database.WithContext(ctx), ownerID, itemID)
+	if err != nil {
+		return model.WardrobeDeletionImpact{}, model.ErrWardrobeUnavailable
+	}
+	return model.WardrobeDeletionImpact{AffectedPlanCount: len(plans), ExpectedImpact: wardrobeImpactDigest(plans)}, nil
+}
+
+func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, itemID string, expectedRevision int, policy model.WardrobeHistoryPolicy, expectedImpact string, at time.Time) error {
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		initialPlans, err := wardrobeAffectedPlans(tx, ownerID, itemID)
+		if err != nil {
+			return err
+		}
+		for _, planID := range sortedPlanIDs(initialPlans) {
+			var locked outfitPlanRecord
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("owner_id", "id", "revision", "updated_at").Where("owner_id = ? AND id = ?", ownerID, planID).First(&locked).Error; err != nil {
+				return model.ErrWardrobeConflict
+			}
+		}
 		var record wardrobeItemRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("owner_id", "id", "revision").Where("owner_id = ? AND id = ?", ownerID, itemID).First(&record).Error; err != nil {
 			return err
@@ -133,9 +159,62 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 		if record.Revision != expectedRevision {
 			return model.ErrWardrobeConflict
 		}
+		plans, err := wardrobeAffectedPlans(tx, ownerID, itemID)
+		if err != nil {
+			return err
+		}
+		if wardrobeImpactDigest(plans) != expectedImpact {
+			return model.ErrWardrobeConflict
+		}
+		switch policy {
+		case model.WardrobeHistoryRedactSnapshots:
+			for _, plan := range plans {
+				if err := tx.Model(&outfitPlanItemRecord{}).Where("owner_id = ? AND plan_id = ? AND wardrobe_item_id = ?", ownerID, plan.ID, itemID).Updates(map[string]any{"wardrobe_item_id": nil, "item_revision": nil, "name": nil, "category": nil, "availability": nil, "formality_band": nil, "warmth_band": nil, "rain_use": nil, "walking_use": nil, "redacted": true}).Error; err != nil {
+					return err
+				}
+				updatedAt := at
+				if updatedAt.Before(plan.UpdatedAt) {
+					updatedAt = plan.UpdatedAt
+				}
+				if err := tx.Model(&outfitPlanRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, plan.ID, plan.Revision).Updates(map[string]any{"revision": plan.Revision + 1, "updated_at": updatedAt}).Error; err != nil {
+					return err
+				}
+			}
+		case model.WardrobeHistoryDeleteAffectedPlans:
+			for _, plan := range plans {
+				if err := createOutfitPlanTombstone(tx, ownerID, plan.ID, at); err != nil {
+					return err
+				}
+				if err := tx.Where("owner_id = ? AND id = ?", ownerID, plan.ID).Delete(&outfitPlanRecord{}).Error; err != nil {
+					return err
+				}
+			}
+		default:
+			return model.ErrInvalidWardrobeInput
+		}
 		return tx.Where("owner_id = ? AND id = ? AND revision = ?", ownerID, itemID, expectedRevision).Delete(&wardrobeItemRecord{}).Error
 	})
 	return wardrobeWriteError(err)
+}
+
+func wardrobeAffectedPlans(tx *gorm.DB, ownerID, itemID string) ([]outfitPlanRecord, error) {
+	var plans []outfitPlanRecord
+	err := tx.Distinct("outfit_plans.owner_id", "outfit_plans.id", "outfit_plans.revision", "outfit_plans.updated_at").
+		Table("outfit_plans").Joins("JOIN outfit_plan_items ON outfit_plan_items.owner_id = outfit_plans.owner_id AND outfit_plan_items.plan_id = outfit_plans.id").
+		Where("outfit_plans.owner_id = ? AND outfit_plan_items.wardrobe_item_id = ?", ownerID, itemID).Order("outfit_plans.id ASC").Scan(&plans).Error
+	return plans, err
+}
+
+func wardrobeImpactDigest(plans []outfitPlanRecord) string {
+	var canonical strings.Builder
+	for _, plan := range plans {
+		canonical.WriteString(plan.ID)
+		canonical.WriteByte(':')
+		canonical.WriteString(strconv.Itoa(plan.Revision))
+		canonical.WriteByte('\n')
+	}
+	digest := sha256.Sum256([]byte(canonical.String()))
+	return hex.EncodeToString(digest[:])
 }
 
 func wardrobeRecord(item model.WardrobeItem) wardrobeItemRecord {
@@ -186,6 +265,8 @@ func wardrobeWriteError(err error) error {
 		return nil
 	case errors.Is(err, model.ErrWardrobeConflict):
 		return model.ErrWardrobeConflict
+	case errors.Is(err, model.ErrInvalidWardrobeInput):
+		return model.ErrInvalidWardrobeInput
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return model.ErrWardrobeNotFound
 	default:

@@ -118,6 +118,10 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 	if err != nil {
 		return err
 	}
+	outfits, err := service.NewOutfitPlanService(accounts, repository.NewOutfitPlanRepository(pool.ORM()))
+	if err != nil {
+		return err
+	}
 	var mediaHandler *transport.MediaHandler
 	if objects != nil {
 		media, serviceErr := service.NewMediaService(accounts, repository.NewMediaRepository(pool.ORM()), objects)
@@ -127,7 +131,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		mediaHandler = transport.NewMediaHandler(media, cfg.SessionSecure)
 		probes = append(probes, objects)
 	}
-	router, err := transport.NewRouter(startup, cfg.DocsEnabled, probes, transport.NewAccountHandler(accounts, cfg.SessionSecure, limiter), transport.NewPrivacyHandler(privacy, cfg.SessionSecure), transport.NewWardrobeHandler(wardrobe, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler)
+	router, err := transport.NewRouter(startup, cfg.DocsEnabled, probes, transport.NewAccountHandler(accounts, cfg.SessionSecure, limiter), transport.NewPrivacyHandler(privacy, cfg.SessionSecure), transport.NewWardrobeHandler(wardrobe, cfg.SessionSecure), transport.NewOutfitPlanHandler(outfits, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler)
 	if err != nil {
 		return err
 	}

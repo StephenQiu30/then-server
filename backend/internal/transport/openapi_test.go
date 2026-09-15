@@ -66,6 +66,13 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"getWardrobeItem":              true,
 		"updateWardrobeItem":           true,
 		"deleteWardrobeItem":           true,
+		"getWardrobeDeletionImpact":    true,
+		"createOutfitPlan":             true,
+		"listOutfitPlans":              true,
+		"getOutfitPlan":                true,
+		"updateOutfitPlan":             true,
+		"cancelOutfitPlan":             true,
+		"deleteOutfitPlan":             true,
 	}
 	for _, path := range spec.Paths {
 		for method, operation := range path {
@@ -103,10 +110,10 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.9.0" || operations != 24 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.10.0" || operations != 31 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
-	for _, operationID := range []string{"createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "deleteWardrobeItem"} {
+	for _, operationID := range []string{"createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "deleteOutfitPlan"} {
 		if !identifiers[operationID] {
 			t.Fatalf("generated contract is missing %s", operationID)
 		}
@@ -130,6 +137,15 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		schema, exists := spec.Components.Schemas[schemaName]
 		if !exists || !slices.Contains(schema.Required, "attributes") {
 			t.Fatalf("generated %s does not require the attributes object", schemaName)
+		}
+	}
+	selection, exists := spec.Components.Schemas["OutfitSelectionRequest"]
+	if !exists || len(selection.Properties) != 2 || selection.Properties["item_id"].Enum != nil || selection.Properties["revision"].Enum != nil {
+		t.Fatal("generated outfit selection request does not expose only item_id and revision")
+	}
+	for _, forbidden := range []string{"name", "category", "availability", "attributes"} {
+		if _, exists := selection.Properties[forbidden]; exists {
+			t.Fatalf("generated outfit selection request accepts client snapshot field %s", forbidden)
 		}
 	}
 	confirmationConstraintFound := false

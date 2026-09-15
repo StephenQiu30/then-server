@@ -24,6 +24,8 @@ type wardrobeRepositoryStub struct {
 	updated  model.UpdateWardrobeItemInput
 	deleted  string
 	expected int
+	policy   model.WardrobeHistoryPolicy
+	impact   string
 	page     model.WardrobePage
 	err      error
 }
@@ -44,8 +46,12 @@ func (s *wardrobeRepositoryStub) UpdateWardrobeItem(_ context.Context, ownerID, 
 	s.ownerID, s.updated, s.expected = ownerID, input, expected
 	return model.WardrobeItem{ID: itemID, OwnerID: ownerID, Name: input.Name, Revision: expected + 1}, s.err
 }
-func (s *wardrobeRepositoryStub) DeleteWardrobeItem(_ context.Context, ownerID, itemID string, expected int) error {
-	s.ownerID, s.deleted, s.expected = ownerID, itemID, expected
+func (s *wardrobeRepositoryStub) GetWardrobeDeletionImpact(_ context.Context, ownerID, _ string) (model.WardrobeDeletionImpact, error) {
+	s.ownerID = ownerID
+	return model.WardrobeDeletionImpact{ExpectedImpact: emptyWardrobeImpact}, s.err
+}
+func (s *wardrobeRepositoryStub) DeleteWardrobeItem(_ context.Context, ownerID, itemID string, expected int, policy model.WardrobeHistoryPolicy, impact string, _ time.Time) error {
+	s.ownerID, s.deleted, s.expected, s.policy, s.impact = ownerID, itemID, expected, policy, impact
 	return s.err
 }
 
@@ -106,7 +112,7 @@ func TestWardrobeUpdateDeleteAndListValidateRevisionAndLimit(t *testing.T) {
 	if _, err := service.UpdateWardrobeItem(context.Background(), "session", id, 2, model.UpdateWardrobeItemInput{Name: "Jacket", Category: model.WardrobeOuterwear, Availability: model.WardrobePacked, Attributes: model.WardrobeAttributes{WarmthBand: wardrobeValue(model.WardrobeWarmthBand("boiling"))}}); !errors.Is(err, model.ErrInvalidWardrobeInput) {
 		t.Fatal("invalid update attribute was accepted")
 	}
-	if err := service.DeleteWardrobeItem(context.Background(), "session", id, 3); err != nil || repository.expected != 3 {
+	if err := service.DeleteWardrobeItem(context.Background(), "session", id, 3, model.WardrobeHistoryRedactSnapshots, emptyWardrobeImpact); err != nil || repository.expected != 3 || repository.policy != model.WardrobeHistoryRedactSnapshots {
 		t.Fatal("delete did not forward the expected revision")
 	}
 	for _, limit := range []int{0, 101} {
@@ -114,9 +120,14 @@ func TestWardrobeUpdateDeleteAndListValidateRevisionAndLimit(t *testing.T) {
 			t.Fatal("invalid list limit was accepted")
 		}
 	}
-	if err := service.DeleteWardrobeItem(context.Background(), "session", id, 0); !errors.Is(err, model.ErrInvalidWardrobeInput) {
+	if err := service.DeleteWardrobeItem(context.Background(), "session", id, 0, model.WardrobeHistoryRedactSnapshots, emptyWardrobeImpact); !errors.Is(err, model.ErrInvalidWardrobeInput) {
 		t.Fatal("invalid revision was accepted")
+	}
+	if err := service.DeleteWardrobeItem(context.Background(), "session", id, 1, "keep_everything", emptyWardrobeImpact); !errors.Is(err, model.ErrInvalidWardrobeInput) {
+		t.Fatal("invalid history policy was accepted")
 	}
 }
 
 func wardrobeValue[T any](value T) *T { return &value }
+
+const emptyWardrobeImpact = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

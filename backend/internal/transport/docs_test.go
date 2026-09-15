@@ -24,7 +24,7 @@ func TestDocumentationRoutesAndContractOwnership(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
 			router, err := NewRouter(context.Background(), enabled,
-				probeFunc(func(context.Context) error { return nil }), nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+				probeFunc(func(context.Context) error { return nil }), nil, nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -53,7 +53,7 @@ func TestDocumentationRoutesAndContractOwnership(t *testing.T) {
 						if err := json.Unmarshal(w.Body.Bytes(), &contract); err != nil {
 							t.Fatalf("generated JSON contract is invalid: %v", err)
 						}
-						if contract.OpenAPI != "3.1.2" || len(contract.Paths) != 16 {
+						if contract.OpenAPI != "3.1.2" || len(contract.Paths) != 20 {
 							t.Fatalf("generated JSON contract lost API content: version=%q paths=%d", contract.OpenAPI, len(contract.Paths))
 						}
 					}

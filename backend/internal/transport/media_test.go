@@ -46,7 +46,7 @@ func (s *mediaTransportStub) GetDeletionRequest(context.Context, string, string)
 func TestMediaStatusRequiresCookieAndHidesObjectReferences(t *testing.T) {
 	now := time.Date(2026, 9, 15, 8, 0, 0, 0, time.UTC)
 	service := &mediaTransportStub{media: model.MediaAsset{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a11", ConsentID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Purpose: model.MediaPurposeAvatarSourcePreparation, Category: model.MediaCategoryPersonPhoto, ContentType: model.MediaContentTypeJPEG, ByteSize: 1024, SHA256: strings.Repeat("a", 64), RawObjectKey: "synthetic-secret-key", ObjectVersionID: "synthetic-secret-version", Status: model.MediaReady, CreatedAt: now, UpdatedAt: now}}
-	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)), NewMediaHandler(service, true))
+	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)), NewMediaHandler(service, true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestMediaStatusRequiresCookieAndHidesObjectReferences(t *testing.T) {
 
 func TestMediaDeclaredSizeLimitReturns413(t *testing.T) {
 	service := &mediaTransportStub{err: model.ErrMediaTooLarge}
-	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)), NewMediaHandler(service, true))
+	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)), NewMediaHandler(service, true))
 	if err != nil {
 		t.Fatal(err)
 	}

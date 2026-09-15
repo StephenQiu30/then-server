@@ -36,7 +36,11 @@ func (s *wardrobeTransportStub) UpdateWardrobeItem(_ context.Context, token, _ s
 	s.token, s.updated = token, input
 	return wardrobeFixture(), s.err
 }
-func (s *wardrobeTransportStub) DeleteWardrobeItem(_ context.Context, token, _ string, _ int) error {
+func (s *wardrobeTransportStub) GetWardrobeDeletionImpact(_ context.Context, token, _ string) (model.WardrobeDeletionImpact, error) {
+	s.token = token
+	return model.WardrobeDeletionImpact{ExpectedImpact: emptyTransportImpact}, s.err
+}
+func (s *wardrobeTransportStub) DeleteWardrobeItem(_ context.Context, token, _ string, _ int, _ model.WardrobeHistoryPolicy, _ string) error {
 	s.token = token
 	return s.err
 }
@@ -47,7 +51,7 @@ func wardrobeFixture() model.WardrobeItem {
 
 func wardrobeRouter(t *testing.T, service WardrobeHTTPService) *Router {
 	t.Helper()
-	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, NewWardrobeHandler(service, true), time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, NewWardrobeHandler(service, true), nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +139,7 @@ func TestWardrobeListUpdateAndDeleteHTTPContract(t *testing.T) {
 	for _, request := range []*http.Request{
 		httptest.NewRequest(http.MethodGet, "/v1/wardrobe/items?limit=25", nil),
 		httptest.NewRequest(http.MethodPut, "/v1/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", strings.NewReader(`{"expected_revision":1,"name":"Updated Shirt","category":"top","availability":"laundry","attributes":{"warmth_band":"warm","rain_use":null}}`)),
-		httptest.NewRequest(http.MethodDelete, "/v1/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12?expected_revision=1", nil),
+		httptest.NewRequest(http.MethodDelete, "/v1/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12?expected_revision=1&history_policy=redact_snapshots&expected_impact="+emptyTransportImpact, nil),
 	} {
 		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 		if request.Method == http.MethodPut {
@@ -157,3 +161,5 @@ func TestWardrobeListUpdateAndDeleteHTTPContract(t *testing.T) {
 }
 
 func wardrobeTransportValue[T any](value T) *T { return &value }
+
+const emptyTransportImpact = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

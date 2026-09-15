@@ -116,10 +116,12 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 	if _, err := wardrobe.UpdateWardrobeItem(ctx, first.Token, private.ID, private.Revision, model.UpdateWardrobeItemInput{Name: "Stale", Category: model.WardrobeShoes, Availability: model.WardrobeLaundry}); !errors.Is(err, model.ErrWardrobeConflict) {
 		t.Fatal("stale wardrobe update was accepted")
 	}
-	if err := wardrobe.DeleteWardrobeItem(ctx, first.Token, private.ID, private.Revision); !errors.Is(err, model.ErrWardrobeConflict) {
+	impact, err := wardrobe.GetWardrobeDeletionImpact(ctx, first.Token, private.ID)
+	serviceOK(t, "read wardrobe deletion impact", err)
+	if err := wardrobe.DeleteWardrobeItem(ctx, first.Token, private.ID, private.Revision, model.WardrobeHistoryRedactSnapshots, impact.ExpectedImpact); !errors.Is(err, model.ErrWardrobeConflict) {
 		t.Fatal("stale wardrobe delete was accepted")
 	}
-	serviceOK(t, "delete current wardrobe revision", wardrobe.DeleteWardrobeItem(ctx, first.Token, private.ID, updated.Revision))
+	serviceOK(t, "delete current wardrobe revision", wardrobe.DeleteWardrobeItem(ctx, first.Token, private.ID, updated.Revision, model.WardrobeHistoryRedactSnapshots, impact.ExpectedImpact))
 	if _, err := wardrobe.GetWardrobeItem(ctx, first.Token, private.ID); !errors.Is(err, model.ErrWardrobeNotFound) {
 		t.Fatal("deleted wardrobe item remained readable")
 	}
