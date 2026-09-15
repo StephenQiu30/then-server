@@ -2,7 +2,7 @@
 
 研究日期：2026-09-15。用户指定 GitHub、Firecrawl、Context7，并在本轮回复中授权确定人物格式，允许评估付费授权资产（采购前确认预算），确认首版增加眨眼与轻微视线跟随。
 
-本文是技术证据与取舍记录；当前基线统一回写 [Design 01](01-技术选型.md#人物技术冻结与变更规则)。本轮没有安装新依赖、调用资产生成服务、购买资产或修改 App 运行代码。具体生产人物仍未验收。
+本文是技术证据与取舍记录；当前基线统一回写 [Design 01](01-技术选型.md#人物技术冻结与变更规则)。当前没有安装新运行依赖、调用资产生成服务、购买资产或修改 App 运行代码；仅在 `/tmp` 隔离目录读取供应商官方示例，并用本地 Three.js 页面核对眼部数据是否真实可见。示例未进入仓库，也不是生产人物。
 
 ## 结论与已确定的边界
 
@@ -28,7 +28,7 @@
 - **Firecrawl**：检索公开开源方案，并实时抓取 VRoid 官方功能/条款、Quaternius 官方资产说明；KayKit 记录为官方作者页面的搜索摘录，未冒充完整下载检查。
 - **Context7**：使用 `/mrdoob/three.js` 查询 glTF 骨骼/表情动画和 SkinnedMesh 绑定；使用 `/pixiv/three-vrm` 查询 expression、lookAt、humanoid 和 springbone。Three.js 返回的示例来自 `dev`，版本列表只显示 r110，因此另外读取 GitHub `r185` 对应实现核对，不把索引版本当本项目安装版本。
 
-逐项来源、提交、许可证边界和工具渠道见 `docs/design/evidence/threejs/sources.json`（原本地来源清单已移除；以研究正文中的一手链接核查）。Firecrawl 原始抓取保存在本地忽略目录 `.firecrawl/threejs-avatar-research.json`，可评审的结论与来源清单保留在 docs；不把抓取缓存作为运行资源。
+逐项来源、参考提交和许可证边界直接保存在本文的一手链接与候选实测表中。Firecrawl 原始搜索结果只保存在本地忽略目录，不作为可交付证据或运行资源；不再维护第二份易失效的来源清单。
 
 证据分级：官方说明/源码证明能力存在；本项目样本运行才证明适配；画风、所有换装组合与设备结果通过后才能证明产品交付。仓库有 star、声明 game-ready、提供 GLB、许可证标为 MIT，均不同时证明上述三层。
 
@@ -83,6 +83,19 @@
 VRoid 官方指南允许多种商业用途，但明确提到：生成或输出由 Studio 网格/纹理变形组合而成角色的应用需要另行许可。本项目具有角色组合和换装行为，适用范围须取得明确依据，不能自行认定“不导出模型就没限制”。three-vrm 的 MIT 许可与 VRoid 的内容许可是两件事；独立授权 VRM 也不自动受 VRoid 来源限制。
 
 “来源方使用了什么制作软件”不需要由我们的工程接管。项目要求的是交付包能在没有 Blender 的开发与构建环境中工作；需要团队手工改拓扑、绑骨或修衣服的交付不适配。授权必须覆盖 App 随包发布、用户组合/换装、结果图片分享，以及需要时的 MinIO 分发；普通商品页的“商用”标签不足以确认全部范围。
+
+## 当前代表候选实测与采购门槛
+
+以下检查只回答“供应商能否交付 Three.js 可读取的眼部输入”，不等于画风、衣物组合、授权或设备性能通过。官方示例只在 `/tmp` 运行，未复制到 App、MinIO 或公开仓库。
+
+| 候选 | 本地实测 | 官方能力与价格 | 当前决定 |
+| --- | --- | --- | --- |
+| [MetaPerson / Avatar SDK](https://avatarsdk.com/metaperson-creator/) | 官方 [Three.js loader 仓库](https://github.com/avatarsdk/metaperson-loader-threejs/tree/ba6eb2505ea3e4d05874bdf7c31a4e45003653d4) 的 `sample_avatar.glb` 为 10,662,760 bytes，SHA-256 `62fb69d6a9ebe720d9028af1c48aa222c7ccfabeccbd642b7f9d7758b64f4d82`；11 个 mesh，含 `eyeBlinkLeft/Right`、各方向 eye look morph 及左右眼球节点。本地 Three.js 页面能显示模型，强制 blink 权重后眼睑可见闭合。 | [人物说明](https://avatarsdk.com/avatars/)列出 realistic/cartoon、full body、blendshapes/bones 和服装；[Cartoonish 文档](https://docs.metaperson.avatarsdk.com/cartoonish/)说明可使用更大的卡通眼；[REST 文档](https://docs.metaperson.avatarsdk.com/rest_api/)列出完整 outfit 或 top/bottom/shoes。公开[价格](https://avatarsdk.com/pricing-cloud/)为 Pro USD 800/月、6000 avatars，Enterprise 报价制并提供自定义拓扑/形变、服装与条款。 | **首选代表包商务验证对象**。眼部技术输入已证明；现有示例偏写实、T-pose 且单文件超过当前 2 MB 单资产预算，不能通过 Woo 画风或性能门。需要供应商交付卡通、模块衣物代表包和书面许可后才编码眼部功能。 |
+| [Avaturn](https://avaturn.me/pricing) | 官方 [Three.js 示例](https://github.com/avaturn/avaturn-threejs-example/tree/07f646391a200be497d6bd453763b3ca07b32848) 的 `default_model.glb` 为 2,629,056 bytes，SHA-256 `4b84a158971a4f490ccffa8377502c39eb44a855975df4ecdc8ae390b76a8431`；5 个 mesh，但未发现 morph target 或独立眼球节点，当前样例无法作为 ACC-027 输入。官方另有 [iOS WKWebView 示例](https://github.com/avaturn/ios-example/tree/f2711c3f216a3186fff351fdf0616d1ba252a7a2)。 | 公开价格为 Pro USD 800/月、1000 avatars，包含 API/SDK、自有用户、品牌与自定义服装上传。 | **次选**。集成路径可参考，但必须先由供应商提供具有可验证眨眼/注视数据的实际 GLB、卡通画风、模块衣物和授权说明；仅有 SDK 页面不进入产品候选。 |
+
+MetaPerson loader 仓库根许可证标为 BSD-3-Clause，但其 `AvatarController.js` 文件头另含专有/保密使用限制。项目不复制供应商 loader 源码，继续使用现有 Three.js 与 GLTFLoader；将来只消费合同明确授权的标准 GLB。开源示例代码许可证也不自动覆盖示例人物、生成结果或商业服务条款。
+
+采购前必须取得书面交付清单，至少覆盖：iOS App 随包或私有下载分发、用户组合换装、截图/视频结果分享、必要的私有 MinIO 缓存、三套人物预设、独立上装/下装/鞋槽、无本人照片也可创建与使用、数据保留与删除、停止订阅后的既有版本连续使用，以及一次性/月度/超量总价。缺少任何一项时保持 `pending`，不以程序兼容层或项目内手工修模补救。
 
 ## 功能怎样由 Three.js 实现
 
@@ -164,12 +177,12 @@ GRDB → Look 配方与本地业务事实
 | 来源汇总、格式选择、无 Blender 边界 | 本轮完成研究；格式选择在用户授权内已定案 | AVATAR-BASELINE-01、REQ-036/037、ACC-026 文档子集 |
 | 呼吸/拖动/换装反馈 | 已有工程增量，剩余动态/设备验收继续 | 11-04、REQ-032～035、ACC-025 |
 | 眨眼与轻微视线跟随 | 用户批准的首版能力，尚未实现/验收 | REQ-038、ACC-027 |
-| 生产人物、衣服、授权与价格 | 未定；等待真实交付与采购前决定 | ACC-026 资产子集 |
+| 生产人物、衣服、授权与价格 | MetaPerson 眼部技术样例已通过输入检查；卡通画风、模块衣物、正式授权、体积优化与报价仍待代表包 | ACC-026 资产子集 |
 
 ### 仍需用户决定的事情
 
 - 代表人物是否达到已选 Woo 式画风：提供真实运行截图/录屏后决定，不再用风格名称代替视觉确认。
-- 具体付费来源、预算与许可范围：拿到报价和交付清单后决定；本轮“允许评估”不等于授权支付。
+- 具体付费来源、预算与许可范围：优先向 MetaPerson 核验 Enterprise 代表包与条款；联系供应商和支付均需用户明确授权，本轮“允许评估”不等于授权对外联络或支付。
 - 最低支持真机与可接受的性能/发热边界：提供样本测量结果后确认；开发阶段继续按用户要求使用模拟器。
 
 格式和实现机制已由本轮授权确定，不重复询问。若来源无法满足已确认需求，先给出缺失数据和候选比较；未经明确决定，不降低画风、取消换装、恢复 Blender 或改为纯图片产品。
