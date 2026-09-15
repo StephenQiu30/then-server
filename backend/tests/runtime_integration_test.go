@@ -218,7 +218,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 						Version string `json:"version"`
 					} `json:"info"`
 				}
-				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.8.0" || !strings.Contains(string(body), `"operationId":"createWardrobeItem"`) {
+				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.9.0" || !strings.Contains(string(body), `"operationId":"createWardrobeItem"`) {
 					t.Fatal("binary did not serve a valid JSON representation of its compiled contract")
 				}
 			}
@@ -414,9 +414,9 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 func exerciseWardrobeHTTPLifecycle(t *testing.T, ctx context.Context, client *http.Client, baseURL string, session *http.Cookie) {
 	t.Helper()
 	const itemID = "018f1f74-a2d0-7c6d-9c17-4a0ea2400c11"
-	createBody := `{"id":"` + itemID + `","name":"HTTP Shirt","category":"top","availability":"wearable","source":"quick_add"}`
+	createBody := `{"id":"` + itemID + `","name":"HTTP Shirt","category":"top","availability":"wearable","source":"quick_add","attributes":{"formality_band":"smart_casual","walking_use":"suitable"}}`
 	_, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/wardrobe/items", createBody, session, http.StatusCreated)
-	if !strings.Contains(string(body), `"revision":1`) || strings.Contains(string(body), "owner_id") {
+	if !strings.Contains(string(body), `"revision":1`) || !strings.Contains(string(body), `"source":"user_confirmed"`) || strings.Contains(string(body), "owner_id") {
 		t.Fatal("actual wardrobe create lost revision or exposed owner")
 	}
 	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/wardrobe/items", createBody, session, http.StatusCreated)
@@ -424,9 +424,9 @@ func exerciseWardrobeHTTPLifecycle(t *testing.T, ctx context.Context, client *ht
 	if !strings.Contains(string(body), itemID) {
 		t.Fatal("actual wardrobe list omitted the created item")
 	}
-	updateBody := `{"expected_revision":1,"name":"HTTP Blue Shirt","category":"top","availability":"laundry"}`
+	updateBody := `{"expected_revision":1,"name":"HTTP Blue Shirt","category":"top","availability":"laundry","attributes":{"warmth_band":"warm","rain_use":"unsuitable"}}`
 	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/wardrobe/items/"+itemID, updateBody, session, http.StatusOK)
-	if !strings.Contains(string(body), `"revision":2`) || !strings.Contains(string(body), `"source":"quick_add"`) {
+	if !strings.Contains(string(body), `"revision":2`) || !strings.Contains(string(body), `"source":"quick_add"`) || !strings.Contains(string(body), `"value":"warm"`) || strings.Contains(string(body), `"formality_band":{"value"`) {
 		t.Fatal("actual wardrobe update lost revision or immutable source")
 	}
 	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/wardrobe/items/"+itemID, updateBody, session, http.StatusConflict)

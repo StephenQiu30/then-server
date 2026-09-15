@@ -17,15 +17,19 @@ func NewWardrobeRepository(database *gorm.DB) *WardrobeRepository {
 }
 
 type wardrobeItemRecord struct {
-	OwnerID      string    `gorm:"column:owner_id;type:uuid;primaryKey;index:wardrobe_items_owner_order_idx,priority:1"`
-	ID           string    `gorm:"column:id;type:uuid;primaryKey"`
-	Name         string    `gorm:"column:name;type:text;not null;check:wardrobe_items_name_check,name = btrim(name) AND char_length(name) BETWEEN 1 AND 80"`
-	Category     string    `gorm:"column:category;type:text;not null;check:wardrobe_items_category_check,category IN ('top','bottom','one_piece','outerwear','shoes','bag','accessory')"`
-	Availability string    `gorm:"column:availability;type:text;not null;check:wardrobe_items_availability_check,availability IN ('wearable','laundry','lent_out','packed')"`
-	Source       string    `gorm:"column:source;type:text;not null;check:wardrobe_items_source_check,source IN ('wardrobe','quick_add')"`
-	Revision     int       `gorm:"column:revision;not null;check:wardrobe_items_revision_check,revision >= 1"`
-	CreatedAt    time.Time `gorm:"column:created_at;type:timestamptz;not null;index:wardrobe_items_owner_order_idx,priority:2,sort:desc"`
-	UpdatedAt    time.Time `gorm:"column:updated_at;type:timestamptz;not null;check:wardrobe_items_timestamps_check,updated_at >= created_at"`
+	OwnerID       string    `gorm:"column:owner_id;type:uuid;primaryKey;index:wardrobe_items_owner_order_idx,priority:1"`
+	ID            string    `gorm:"column:id;type:uuid;primaryKey"`
+	Name          string    `gorm:"column:name;type:text;not null;check:wardrobe_items_name_check,name = btrim(name) AND char_length(name) BETWEEN 1 AND 80"`
+	Category      string    `gorm:"column:category;type:text;not null;check:wardrobe_items_category_check,category IN ('top','bottom','one_piece','outerwear','shoes','bag','accessory')"`
+	Availability  string    `gorm:"column:availability;type:text;not null;check:wardrobe_items_availability_check,availability IN ('wearable','laundry','lent_out','packed')"`
+	Source        string    `gorm:"column:source;type:text;not null;check:wardrobe_items_source_check,source IN ('wardrobe','quick_add')"`
+	FormalityBand *string   `gorm:"column:formality_band;type:text;check:wardrobe_items_formality_band_check,formality_band IN ('casual','smart_casual','formal')"`
+	WarmthBand    *string   `gorm:"column:warmth_band;type:text;check:wardrobe_items_warmth_band_check,warmth_band IN ('light','medium','warm')"`
+	RainUse       *string   `gorm:"column:rain_use;type:text;check:wardrobe_items_rain_use_check,rain_use IN ('suitable','unsuitable')"`
+	WalkingUse    *string   `gorm:"column:walking_use;type:text;check:wardrobe_items_walking_use_check,walking_use IN ('suitable','unsuitable')"`
+	Revision      int       `gorm:"column:revision;not null;check:wardrobe_items_revision_check,revision >= 1"`
+	CreatedAt     time.Time `gorm:"column:created_at;type:timestamptz;not null;index:wardrobe_items_owner_order_idx,priority:2,sort:desc"`
+	UpdatedAt     time.Time `gorm:"column:updated_at;type:timestamptz;not null;check:wardrobe_items_timestamps_check,updated_at >= created_at"`
 }
 
 func (wardrobeItemRecord) TableName() string { return "wardrobe_items" }
@@ -44,7 +48,7 @@ func (r *WardrobeRepository) CreateWardrobeItem(ctx context.Context, item model.
 		if err := tx.Where("owner_id = ? AND id = ?", item.OwnerID, item.ID).First(&existing).Error; err != nil {
 			return err
 		}
-		if existing.Name != item.Name || existing.Category != string(item.Category) || existing.Availability != string(item.Availability) || existing.Source != string(item.Source) {
+		if existing.Name != item.Name || existing.Category != string(item.Category) || existing.Availability != string(item.Availability) || existing.Source != string(item.Source) || !wardrobeRecordAttributesEqual(existing, item.Attributes) {
 			return model.ErrWardrobeConflict
 		}
 		record = existing
@@ -99,6 +103,10 @@ func (r *WardrobeRepository) UpdateWardrobeItem(ctx context.Context, ownerID, it
 			return model.ErrWardrobeConflict
 		}
 		record.Name, record.Category, record.Availability = input.Name, string(input.Category), string(input.Availability)
+		record.FormalityBand = stringPointer(input.Attributes.FormalityBand)
+		record.WarmthBand = stringPointer(input.Attributes.WarmthBand)
+		record.RainUse = stringPointer(input.Attributes.RainUse)
+		record.WalkingUse = stringPointer(input.Attributes.WalkingUse)
 		record.Revision++
 		if at.Before(record.UpdatedAt) {
 			at = record.UpdatedAt
@@ -106,6 +114,7 @@ func (r *WardrobeRepository) UpdateWardrobeItem(ctx context.Context, ownerID, it
 		record.UpdatedAt = at
 		return tx.Model(&wardrobeItemRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, itemID, expectedRevision).Updates(map[string]any{
 			"name": record.Name, "category": record.Category, "availability": record.Availability,
+			"formality_band": record.FormalityBand, "warmth_band": record.WarmthBand, "rain_use": record.RainUse, "walking_use": record.WalkingUse,
 			"revision": record.Revision, "updated_at": record.UpdatedAt,
 		}).Error
 	})
@@ -130,11 +139,38 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 }
 
 func wardrobeRecord(item model.WardrobeItem) wardrobeItemRecord {
-	return wardrobeItemRecord{OwnerID: item.OwnerID, ID: item.ID, Name: item.Name, Category: string(item.Category), Availability: string(item.Availability), Source: string(item.Source), Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return wardrobeItemRecord{OwnerID: item.OwnerID, ID: item.ID, Name: item.Name, Category: string(item.Category), Availability: string(item.Availability), Source: string(item.Source), FormalityBand: stringPointer(item.Attributes.FormalityBand), WarmthBand: stringPointer(item.Attributes.WarmthBand), RainUse: stringPointer(item.Attributes.RainUse), WalkingUse: stringPointer(item.Attributes.WalkingUse), Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func wardrobeFromRecord(record wardrobeItemRecord) model.WardrobeItem {
-	return model.WardrobeItem{OwnerID: record.OwnerID, ID: record.ID, Name: record.Name, Category: model.WardrobeCategory(record.Category), Availability: model.WardrobeAvailability(record.Availability), Source: model.WardrobeSource(record.Source), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+	return model.WardrobeItem{OwnerID: record.OwnerID, ID: record.ID, Name: record.Name, Category: model.WardrobeCategory(record.Category), Availability: model.WardrobeAvailability(record.Availability), Source: model.WardrobeSource(record.Source), Attributes: model.WardrobeAttributes{FormalityBand: typedPointer[model.WardrobeFormalityBand](record.FormalityBand), WarmthBand: typedPointer[model.WardrobeWarmthBand](record.WarmthBand), RainUse: typedPointer[model.WardrobeUseSuitability](record.RainUse), WalkingUse: typedPointer[model.WardrobeUseSuitability](record.WalkingUse)}, Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+}
+
+func wardrobeRecordAttributesEqual(record wardrobeItemRecord, attributes model.WardrobeAttributes) bool {
+	return stringsEqual(record.FormalityBand, stringPointer(attributes.FormalityBand)) &&
+		stringsEqual(record.WarmthBand, stringPointer(attributes.WarmthBand)) &&
+		stringsEqual(record.RainUse, stringPointer(attributes.RainUse)) &&
+		stringsEqual(record.WalkingUse, stringPointer(attributes.WalkingUse))
+}
+
+func stringsEqual(left, right *string) bool {
+	return left == nil && right == nil || left != nil && right != nil && *left == *right
+}
+
+func stringPointer[T ~string](value *T) *string {
+	if value == nil {
+		return nil
+	}
+	result := string(*value)
+	return &result
+}
+
+func typedPointer[T ~string](value *string) *T {
+	if value == nil {
+		return nil
+	}
+	result := T(*value)
+	return &result
 }
 
 func wardrobeLookupError(err error) error {

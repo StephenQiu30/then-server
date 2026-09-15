@@ -42,7 +42,7 @@ func (s *wardrobeTransportStub) DeleteWardrobeItem(_ context.Context, token, _ s
 }
 
 func wardrobeFixture() model.WardrobeItem {
-	return model.WardrobeItem{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", OwnerID: fixtureUser().ID, Name: "Blue Shirt", Category: model.WardrobeTop, Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe, Revision: 1, CreatedAt: time.Date(2026, 9, 15, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 9, 15, 8, 0, 0, 0, time.UTC)}
+	return model.WardrobeItem{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", OwnerID: fixtureUser().ID, Name: "Blue Shirt", Category: model.WardrobeTop, Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe, Attributes: model.WardrobeAttributes{FormalityBand: wardrobeTransportValue(model.WardrobeFormalitySmartCasual), WalkingUse: wardrobeTransportValue(model.WardrobeUseSuitable)}, Revision: 1, CreatedAt: time.Date(2026, 9, 15, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 9, 15, 8, 0, 0, 0, time.UTC)}
 }
 
 func wardrobeRouter(t *testing.T, service WardrobeHTTPService) *Router {
@@ -57,14 +57,17 @@ func wardrobeRouter(t *testing.T, service WardrobeHTTPService) *Router {
 func TestWardrobeCreateUsesSessionAndRejectsOwnerField(t *testing.T) {
 	service := new(wardrobeTransportStub)
 	router := wardrobeRouter(t, service)
-	valid := `{"id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400a12","name":"Blue Shirt","category":"top","availability":"wearable","source":"wardrobe"}`
+	valid := `{"id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400a12","name":"Blue Shirt","category":"top","availability":"wearable","source":"wardrobe","attributes":{"formality_band":"smart_casual","walking_use":"suitable"}}`
 	request := httptest.NewRequest(http.MethodPost, "/v1/wardrobe/items", strings.NewReader(valid))
 	request.Header.Set("Content-Type", "application/json")
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusCreated || service.token == "" || strings.Contains(response.Body.String(), "owner") {
+	if response.Code != http.StatusCreated || service.token == "" || strings.Contains(response.Body.String(), "owner") || !strings.Contains(response.Body.String(), `"formality_band":{"value":"smart_casual","source":"user_confirmed"}`) {
 		t.Fatalf("valid wardrobe create failed: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if service.created.Attributes.FormalityBand == nil || *service.created.Attributes.FormalityBand != model.WardrobeFormalitySmartCasual {
+		t.Fatal("wardrobe create transport lost confirmed attributes")
 	}
 
 	request = httptest.NewRequest(http.MethodPost, "/v1/wardrobe/items", strings.NewReader(strings.TrimSuffix(valid, "}")+`,"owner_id":"other"}`))
@@ -74,6 +77,31 @@ func TestWardrobeCreateUsesSessionAndRejectsOwnerField(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("owner injection was accepted: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/v1/wardrobe/items", strings.NewReader(strings.Replace(valid, `"formality_band":"smart_casual"`, `"formality_band":"smart_casual","source":"user_confirmed"`, 1)))
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("attribute source injection was accepted: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	for name, body := range map[string]string{
+		"missing attributes": strings.Replace(valid, `,"attributes":{"formality_band":"smart_casual","walking_use":"suitable"}`, "", 1),
+		"invalid attribute":  strings.Replace(valid, `"smart_casual"`, `"business"`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/v1/wardrobe/items", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("invalid attribute contract was accepted: status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
 	}
 }
 
@@ -106,7 +134,7 @@ func TestWardrobeListUpdateAndDeleteHTTPContract(t *testing.T) {
 	router := wardrobeRouter(t, service)
 	for _, request := range []*http.Request{
 		httptest.NewRequest(http.MethodGet, "/v1/wardrobe/items?limit=25", nil),
-		httptest.NewRequest(http.MethodPut, "/v1/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", strings.NewReader(`{"expected_revision":1,"name":"Updated Shirt","category":"top","availability":"laundry"}`)),
+		httptest.NewRequest(http.MethodPut, "/v1/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", strings.NewReader(`{"expected_revision":1,"name":"Updated Shirt","category":"top","availability":"laundry","attributes":{"warmth_band":"warm","rain_use":null}}`)),
 		httptest.NewRequest(http.MethodDelete, "/v1/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12?expected_revision=1", nil),
 	} {
 		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
@@ -123,7 +151,9 @@ func TestWardrobeListUpdateAndDeleteHTTPContract(t *testing.T) {
 			t.Fatalf("%s status=%d body=%s", request.Method, response.Code, response.Body.String())
 		}
 	}
-	if service.updated.Name != "Updated Shirt" || service.updated.Availability != model.WardrobeLaundry {
+	if service.updated.Name != "Updated Shirt" || service.updated.Availability != model.WardrobeLaundry || service.updated.Attributes.WarmthBand == nil || *service.updated.Attributes.WarmthBand != model.WardrobeWarmthWarm || service.updated.Attributes.RainUse != nil {
 		t.Fatal("wardrobe update transport lost confirmed fields")
 	}
 }
+
+func wardrobeTransportValue[T any](value T) *T { return &value }

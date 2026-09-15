@@ -54,18 +54,24 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 	serviceOK(t, "construct wardrobe service", err)
 
 	sharedID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400b11"
-	input := model.CreateWardrobeItemInput{ID: sharedID, Name: "Blue Shirt", Category: model.WardrobeTop, Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe}
+	input := model.CreateWardrobeItemInput{ID: sharedID, Name: "Blue Shirt", Category: model.WardrobeTop, Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe, Attributes: model.WardrobeAttributes{FormalityBand: wardrobeTestValue(model.WardrobeFormalitySmartCasual), WarmthBand: wardrobeTestValue(model.WardrobeWarmthLight), RainUse: wardrobeTestValue(model.WardrobeUseSuitable)}}
 	created, err := wardrobe.CreateWardrobeItem(ctx, first.Token, input)
 	serviceOK(t, "create first wardrobe item", err)
+	if created.Attributes.FormalityBand == nil || *created.Attributes.FormalityBand != model.WardrobeFormalitySmartCasual || created.Attributes.WalkingUse != nil {
+		t.Fatal("created wardrobe attributes did not preserve known and unknown values")
+	}
 	repeated, err := wardrobe.CreateWardrobeItem(ctx, first.Token, input)
 	serviceOK(t, "repeat idempotent wardrobe create", err)
 	if repeated.Revision != created.Revision || !repeated.CreatedAt.Equal(created.CreatedAt) {
 		t.Fatal("idempotent create changed the stored wardrobe item")
 	}
 	conflict := input
-	conflict.Name = "Different Shirt"
+	conflict.Attributes.RainUse = wardrobeTestValue(model.WardrobeUseUnsuitable)
 	if _, err := wardrobe.CreateWardrobeItem(ctx, first.Token, conflict); !errors.Is(err, model.ErrWardrobeConflict) {
-		t.Fatal("same owner and ID accepted different create content")
+		t.Fatal("same owner and ID accepted different attribute content")
+	}
+	if err := database.WithContext(ctx).Exec("UPDATE wardrobe_items SET warmth_band = 'boiling' WHERE owner_id = ? AND id = ?", first.User.ID, sharedID).Error; err == nil {
+		t.Fatal("PostgreSQL accepted an attribute outside the CHECK constraint")
 	}
 	if _, err := wardrobe.CreateWardrobeItem(ctx, second.Token, input); err != nil {
 		t.Fatal("different owners could not reuse a client-generated item ID")
@@ -95,10 +101,17 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 		t.Fatal("cross-owner wardrobe cursor leaked a different result")
 	}
 
-	updated, err := wardrobe.UpdateWardrobeItem(ctx, first.Token, private.ID, private.Revision, model.UpdateWardrobeItemInput{Name: "Black Walking Shoes", Category: model.WardrobeShoes, Availability: model.WardrobeWearable})
+	updated, err := wardrobe.UpdateWardrobeItem(ctx, first.Token, private.ID, private.Revision, model.UpdateWardrobeItemInput{Name: "Black Walking Shoes", Category: model.WardrobeShoes, Availability: model.WardrobeWearable, Attributes: model.WardrobeAttributes{WarmthBand: wardrobeTestValue(model.WardrobeWarmthMedium), WalkingUse: wardrobeTestValue(model.WardrobeUseSuitable)}})
 	serviceOK(t, "update current wardrobe revision", err)
-	if updated.Revision != private.Revision+1 || updated.Source != model.WardrobeSourceQuickAdd || updated.Name != "Black Walking Shoes" {
+	if updated.Revision != private.Revision+1 || updated.Source != model.WardrobeSourceQuickAdd || updated.Name != "Black Walking Shoes" || updated.Attributes.FormalityBand != nil || updated.Attributes.WarmthBand == nil || *updated.Attributes.WarmthBand != model.WardrobeWarmthMedium {
 		t.Fatal("wardrobe update changed immutable facts or missed revision increment")
+	}
+	restarted, err := service.NewWardrobeService(accounts, repository.NewWardrobeRepository(database))
+	serviceOK(t, "reconstruct wardrobe service", err)
+	reloaded, err := restarted.GetWardrobeItem(ctx, first.Token, private.ID)
+	serviceOK(t, "read attributes after repository reconstruction", err)
+	if reloaded.Attributes.WalkingUse == nil || *reloaded.Attributes.WalkingUse != model.WardrobeUseSuitable || reloaded.Attributes.RainUse != nil {
+		t.Fatal("wardrobe attributes did not survive a fresh repository read")
 	}
 	if _, err := wardrobe.UpdateWardrobeItem(ctx, first.Token, private.ID, private.Revision, model.UpdateWardrobeItemInput{Name: "Stale", Category: model.WardrobeShoes, Availability: model.WardrobeLaundry}); !errors.Is(err, model.ErrWardrobeConflict) {
 		t.Fatal("stale wardrobe update was accepted")
@@ -119,3 +132,5 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 		t.Fatalf("account cascade crossed owners: first=%d second=%d", firstCount, secondCount)
 	}
 }
+
+func wardrobeTestValue[T any](value T) *T { return &value }

@@ -1,6 +1,6 @@
 # OOTD Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、无图结构化衣橱 CRUD，以及合成本人照片的私有上传/检查/删除 API 已经实现。
+这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、带用户确认属性的结构化衣橱 CRUD，以及合成本人照片的私有上传/检查/删除 API 已经实现。
 
 ## 本地运行
 
@@ -63,7 +63,7 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `PUT /v1/wardrobe/items/{item_id}`
 - `DELETE /v1/wardrobe/items/{item_id}`
 
-OpenAPI 0.8.0 的首个衣橱后端切片只保存无图最小结构：稳定 UUID、名称、类别、可用状态、创建来源、revision 和服务端时间。会话决定 owner；幂等创建、revision 冲突、owner 内分页和账号级联删除由 PostgreSQL 约束与测试覆盖。App 尚未接入主动同步，衣物图片、增量墓碑和多设备合并不在本切片。
+OpenAPI 0.9.0 在无图最小结构上增加正式度、保暖感受、雨天和步行适用四项 nullable 用户确认属性。POST/PUT 必须提交 `attributes` 对象；空项表示未知，非空响应携带 `user_confirmed`，请求不能提交来源。会话决定 owner；属性参与幂等比较和完整 revision 更新。App 尚未接入主动同步，衣物图片、增量墓碑和多设备合并不在本切片。
 
 ## 合成本人照片开发闭环
 

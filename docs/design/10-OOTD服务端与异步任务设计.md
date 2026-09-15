@@ -2,7 +2,7 @@
 
 ## 当前实现与设计边界
 
-当前已实现健康、数据库就绪、注册/会话、本人账户 CRUD、[17-18](../plan/17-18-本人成年声明API执行计划.md) 本人成年声明、17-19 合成本人照片开发闭环和 [17-20](../plan/17-20-结构化衣橱账户API执行计划.md) 无图结构化衣橱 CRUD。当前业务依赖 PostgreSQL，Redis 只用于认证限流；MinIO 与 RabbitMQ 只在合成媒体开发开关开启时使用。目录/SOP 见 [Design 02](02-后端架构.md)，精确技术栈见 [Design 01](01-技术选型.md)。GORM record + 集中 AutoMigrate 管理开发 schema。
+当前已实现健康、数据库就绪、注册/会话、本人账户 CRUD、[17-18](../plan/17-18-本人成年声明API执行计划.md) 本人成年声明、17-19 合成本人照片开发闭环、[17-20](../plan/17-20-结构化衣橱账户API执行计划.md) 结构化衣橱 CRUD 及 [17-21](../plan/17-21-衣橱确认属性API执行计划.md) 四项用户确认属性。当前业务依赖 PostgreSQL，Redis 只用于认证限流；MinIO 与 RabbitMQ 只在合成媒体开发开关开启时使用。目录/SOP 见 [Design 02](02-后端架构.md)，精确技术栈见 [Design 01](01-技术选型.md)。GORM record + 集中 AutoMigrate 管理开发 schema。
 
 下文为未实施云生成能力的任务、对象生命周期与故障契约；不能视为已存在的 API、表或 worker。按获批任务逐项引入 RabbitMQ/MinIO/Redis，默认连接本机服务，不提前建设分布式平台。
 
