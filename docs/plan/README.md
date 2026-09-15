@@ -30,7 +30,7 @@
 - [本人照片私有上传与删除闭环执行计划](17-19-本人照片私有上传与删除闭环执行计划.md)（approved/completed；合成数据开发范围）
 - [结构化衣橱账户 API 执行计划](17-20-结构化衣橱账户API执行计划.md)（approved/completed；后端开发范围）
 - [衣橱确认属性 API 执行计划](17-21-衣橱确认属性API执行计划.md)（approved/completed；后端开发范围）
-- [账号穿搭计划 API 执行计划](17-22-账号穿搭计划API执行计划.md)（approved/in_progress）
+- [账号穿搭计划 API 执行计划](17-22-账号穿搭计划API执行计划.md)（approved/completed；后端开发范围）
 
 ## 单切片要求
 
