@@ -38,10 +38,10 @@
 | --- | --- | --- | --- |
 | `11-04-DOC-01` | 对齐 Design、PRD、Plan 与 Acceptance 的 Three.js 单一路线 | `completed` | 已补齐此前漏改的 Design 01、18、目录入口；AVATAR-BASELINE-01、REQ-036/037、ACC-026 固定禁用 Blender 和变更规则 |
 | `11-04-IOS-01` | 实现人物层、待机微动、拖动反馈和换装确认 | `completed` | `avatar.js` diff 与模拟器可见行为 |
-| `11-04-IOS-02` | 贯通 Reduce Motion、后台暂停和销毁释放 | `pending` | 已有 Swift payload 和 JS visibility/pagehide；缺少原生场景/舞台可见性桥接及真实恢复证据，原 completed 收回 |
+| `11-04-IOS-02` | 贯通 Reduce Motion、后台暂停和销毁释放 | `completed` | Swift 将 scene、舞台和覆盖页状态桥接到 renderer；JS 使用仅活动时递增的时钟，暂停时清理 pointer/lean/pulse，context lost 停帧，退出释放加载中及已挂载资源；模拟器完成覆盖页、后台 30 秒和 WebContent 重建 |
 | `11-04-TEST-01` | 增加 Reduce Motion 配置回归测试 | `completed` | `AvatarStudioModelTests` 新用例 |
-| `11-04-TEST-02` | Debug 构建与相关测试通过 | `completed` | iPhone 17 / iOS 26.5：模型测试 4 passed；Woo 首页→衣橱→换装 UI 回归 1 passed；均 0 failed/0 skipped，独立 xcresult 已复核 |
-| `11-04-ACC-01` | 模拟器录屏核对正常/Reduce Motion/拖动/换装 | `in_progress` | 默认待机三时刻证据已保存；Reduce Motion、拖动与换装动态录屏待补 |
+| `11-04-TEST-02` | Debug 构建与相关测试通过 | `completed` | iPhone 17 / iOS 26.5：模型与舞台策略 5 passed；覆盖页关闭→后台 30 秒→恢复 1 passed；真实画布拖动→换装→renderer ready 1 passed；均 0 failed/0 skipped，独立 xcresult 已复核 |
+| `11-04-ACC-01` | 模拟器录屏核对正常/Reduce Motion/拖动/换装 | `in_progress` | 生命周期与拖动/换装自动回归通过；Reduce Motion 开启后的 2 秒角色区域像素差为 0，关闭后 YAVG=2.30296/YMAX=191；WebContent PID 替换后角色重新显示；动态录屏待补 |
 | `11-04-ACC-02` | 最低支持真机核对帧率、内存、发热与 WebContent 恢复 | `pending` | 真机 trace 与录屏 |
 
 ## 退出条件
@@ -63,6 +63,6 @@
 
 ## 生命周期修复的可执行要求
 
-源码审查 5aabe58：仅 document.visibilitychange/pagehide，不能证明 SwiftUI 遮挡或原生后台一定传达；微动相位直接使用 RAF 绝对 time，恢复后可能跳相位，delta 上限本身不证明“暂停期间不推进”。IOS-02 需原生 scene/舞台可见性驱动停止/恢复，使用仅可见时递增的活动时间，离开时清理 pointer/lean/pulse，context lost 后不继续循环提交到失效上下文。
+源码审查 5aabe58 发现仅有 document.visibilitychange/pagehide、RAF 绝对相位与 context lost 后未硬停止。本轮已由原生 scene/舞台/覆盖页状态驱动停止和恢复，改用仅活动时递增的时间，离开时清理 pointer/lean/pulse，context lost 后停止循环，异步加载失败或提前销毁也会释放模型资源。
 
-验收必须实际覆盖后台 30 秒恢复、展示覆盖页再返回、拖动中取消、Reduce Motion 前后切换与 WebContent 终止重建；观察活动时钟/动画帧停止、姿态连续、没有旧手势或旧人物动画。后端运行与模型配置测试不能抵扣。上述是本轮发现的未完成实现项，本次只修正计划和状态，不修改渲染代码。
+模拟器已覆盖后台 30 秒恢复、展示覆盖页再返回、Reduce Motion 前后切换与 WebContent 终止重建；自动化和双帧证据均未出现 fallback。拖动中取消及换装动态仍需录屏，最低支持真机性能仍为 ACC-02，因此本计划继续保持 `in_progress`。
