@@ -198,7 +198,7 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 	serviceOK(t, "create deletion-policy outfit plan", err)
 	bagImpact, err := wardrobe.GetWardrobeDeletionImpact(ctx, owner.Token, bag.ID)
 	serviceOK(t, "read deletion-policy wardrobe impact", err)
-	serviceOK(t, "delete wardrobe item and affected plans", wardrobe.DeleteWardrobeItem(ctx, owner.Token, bag.ID, bag.Revision, model.WardrobeHistoryDeleteAffectedPlans, bagImpact.ExpectedImpact))
+	serviceOK(t, "delete wardrobe item and affected history", wardrobe.DeleteWardrobeItem(ctx, owner.Token, bag.ID, bag.Revision, model.WardrobeHistoryDeleteAffectedHistory, bagImpact.ExpectedImpact))
 	if _, err := outfits.GetOutfitPlan(ctx, owner.Token, fourthPlanID); !errors.Is(err, model.ErrOutfitPlanNotFound) {
 		t.Fatal("delete-affected-plans policy left an affected plan readable")
 	}

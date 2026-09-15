@@ -17,6 +17,8 @@ type OutfitPlanRepository interface {
 	GetOutfitPlan(context.Context, string, string) (model.OutfitPlan, error)
 	UpdateOutfitPlan(context.Context, string, string, int, model.OutfitPlanInput, time.Time) (model.OutfitPlan, error)
 	CancelOutfitPlan(context.Context, string, string, int, time.Time) (model.OutfitPlan, error)
+	MarkOutfitPlanNotWorn(context.Context, string, string, int, time.Time) (model.OutfitPlan, error)
+	RestoreOutfitPlan(context.Context, string, string, int, time.Time) (model.OutfitPlan, error)
 	DeleteOutfitPlan(context.Context, string, string, int, time.Time) error
 }
 
@@ -97,6 +99,28 @@ func (s *OutfitPlanService) CancelOutfitPlan(ctx context.Context, token, planID 
 		return model.OutfitPlan{}, model.ErrInvalidOutfitPlanInput
 	}
 	return s.repository.CancelOutfitPlan(ctx, user.ID, planID, expectedRevision, s.now().UTC())
+}
+
+func (s *OutfitPlanService) MarkOutfitPlanNotWorn(ctx context.Context, token, planID string, expectedRevision int) (model.OutfitPlan, error) {
+	user, err := s.authenticator.CurrentUser(ctx, token)
+	if err != nil {
+		return model.OutfitPlan{}, err
+	}
+	if !validUUID(planID) || expectedRevision < 1 {
+		return model.OutfitPlan{}, model.ErrInvalidOutfitPlanInput
+	}
+	return s.repository.MarkOutfitPlanNotWorn(ctx, user.ID, planID, expectedRevision, s.now().UTC())
+}
+
+func (s *OutfitPlanService) RestoreOutfitPlan(ctx context.Context, token, planID string, expectedRevision int) (model.OutfitPlan, error) {
+	user, err := s.authenticator.CurrentUser(ctx, token)
+	if err != nil {
+		return model.OutfitPlan{}, err
+	}
+	if !validUUID(planID) || expectedRevision < 1 {
+		return model.OutfitPlan{}, model.ErrInvalidOutfitPlanInput
+	}
+	return s.repository.RestoreOutfitPlan(ctx, user.ID, planID, expectedRevision, s.now().UTC())
 }
 
 func (s *OutfitPlanService) DeleteOutfitPlan(ctx context.Context, token, planID string, expectedRevision int) error {

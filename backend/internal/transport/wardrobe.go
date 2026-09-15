@@ -92,8 +92,9 @@ type WardrobePageResponse struct {
 }
 
 type WardrobeDeletionImpactResponse struct {
-	AffectedPlanCount int    `json:"affected_plan_count" minimum:"0"`
-	ExpectedImpact    string `json:"expected_impact" minLength:"64" maxLength:"64" pattern:"^[0-9a-f]{64}$" doc:"确认删除影响所需的不透明摘要"`
+	AffectedPlanCount      int    `json:"affected_plan_count" minimum:"0"`
+	AffectedWearEventCount int    `json:"affected_wear_event_count" minimum:"0"`
+	ExpectedImpact         string `json:"expected_impact" minLength:"64" maxLength:"64" pattern:"^[0-9a-f]{64}$" doc:"确认删除影响所需的不透明摘要"`
 }
 
 type createWardrobeItemInput struct {
@@ -118,7 +119,7 @@ type deleteWardrobeItemInput struct {
 	Session          string                      `cookie:"then_session" hidden:"true"`
 	ID               string                      `path:"item_id" format:"uuid"`
 	ExpectedRevision int                         `query:"expected_revision" minimum:"1"`
-	HistoryPolicy    model.WardrobeHistoryPolicy `query:"history_policy" enum:"redact_snapshots,delete_affected_plans"`
+	HistoryPolicy    model.WardrobeHistoryPolicy `query:"history_policy" enum:"redact_snapshots,delete_affected_history"`
 	ExpectedImpact   string                      `query:"expected_impact" minLength:"64" maxLength:"64" pattern:"^[0-9a-f]{64}$"`
 }
 
@@ -232,7 +233,7 @@ func (h *WardrobeHandler) deletionImpact(ctx context.Context, input *wardrobeIte
 	if err != nil {
 		return nil, h.error(ctx, err)
 	}
-	return &wardrobeDeletionImpactOutput{RequestID: requestID(ctx), Body: WardrobeDeletionImpactResponse{AffectedPlanCount: impact.AffectedPlanCount, ExpectedImpact: impact.ExpectedImpact}}, nil
+	return &wardrobeDeletionImpactOutput{RequestID: requestID(ctx), Body: WardrobeDeletionImpactResponse{AffectedPlanCount: impact.AffectedPlanCount, AffectedWearEventCount: impact.AffectedWearEventCount, ExpectedImpact: impact.ExpectedImpact}}, nil
 }
 
 func (h *WardrobeHandler) error(ctx context.Context, err error) error {

@@ -23,7 +23,7 @@ type outfitPlanRecord struct {
 	LocalDate      time.Time              `gorm:"column:local_date;type:date;not null;index:outfit_plans_owner_order_idx,priority:2,sort:desc"`
 	TimeZone       string                 `gorm:"column:time_zone;type:text;not null;check:outfit_plans_time_zone_check,char_length(time_zone) BETWEEN 1 AND 255"`
 	ContextSummary *string                `gorm:"column:context_summary;type:text;check:outfit_plans_context_summary_check,context_summary IS NULL OR (context_summary = btrim(context_summary) AND char_length(context_summary) BETWEEN 1 AND 120)"`
-	Status         string                 `gorm:"column:status;type:text;not null;check:outfit_plans_status_check,status IN ('active','cancelled')"`
+	Status         string                 `gorm:"column:status;type:text;not null;check:outfit_plans_status_check,status IN ('active','completed','not_worn','cancelled')"`
 	Revision       int                    `gorm:"column:revision;not null;check:outfit_plans_revision_check,revision >= 1"`
 	CreatedAt      time.Time              `gorm:"column:created_at;type:timestamptz;not null;index:outfit_plans_owner_order_idx,priority:3,sort:desc"`
 	UpdatedAt      time.Time              `gorm:"column:updated_at;type:timestamptz;not null;check:outfit_plans_timestamps_check,updated_at >= created_at"`
@@ -236,6 +236,55 @@ func (r *OutfitPlanRepository) CancelOutfitPlan(ctx context.Context, ownerID, pl
 	return result, nil
 }
 
+func (r *OutfitPlanRepository) MarkOutfitPlanNotWorn(ctx context.Context, ownerID, planID string, expectedRevision int, at time.Time) (model.OutfitPlan, error) {
+	return r.transitionOutfitPlan(ctx, ownerID, planID, expectedRevision, model.OutfitPlanActive, model.OutfitPlanNotWorn, at)
+}
+
+func (r *OutfitPlanRepository) RestoreOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, at time.Time) (model.OutfitPlan, error) {
+	return r.transitionOutfitPlan(ctx, ownerID, planID, expectedRevision, model.OutfitPlanNotWorn, model.OutfitPlanActive, at)
+}
+
+func (r *OutfitPlanRepository) transitionOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, from, to model.OutfitPlanStatus, at time.Time) (model.OutfitPlan, error) {
+	var result model.OutfitPlan
+	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record outfitPlanRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, planID).First(&record).Error; err != nil {
+			return err
+		}
+		if record.Revision != expectedRevision || record.Status != string(from) {
+			return model.ErrOutfitPlanConflict
+		}
+		var linked int64
+		if err := tx.Model(&wearEventRecord{}).Where("owner_id = ? AND source_plan_id = ?", ownerID, planID).Count(&linked).Error; err != nil {
+			return err
+		}
+		if linked != 0 {
+			return model.ErrOutfitPlanConflict
+		}
+		if at.Before(record.UpdatedAt) {
+			at = record.UpdatedAt
+		}
+		record.Status, record.Revision, record.UpdatedAt = string(to), record.Revision+1, at
+		updated := tx.Model(&outfitPlanRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, planID, expectedRevision).Updates(map[string]any{"status": record.Status, "revision": record.Revision, "updated_at": record.UpdatedAt})
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return model.ErrOutfitPlanConflict
+		}
+		items, err := readOutfitItemsForPlans(tx, ownerID, []outfitPlanRecord{record})
+		if err != nil {
+			return err
+		}
+		result = outfitFromRecord(record, items[planID])
+		return nil
+	})
+	if err != nil {
+		return model.OutfitPlan{}, outfitPlanWriteError(err)
+	}
+	return result, nil
+}
+
 func (r *OutfitPlanRepository) DeleteOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, at time.Time) error {
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var record outfitPlanRecord
@@ -248,9 +297,29 @@ func (r *OutfitPlanRepository) DeleteOutfitPlan(ctx context.Context, ownerID, pl
 		if err := createOutfitPlanTombstone(tx, ownerID, planID, at); err != nil {
 			return err
 		}
+		if err := unlinkWearEventsFromPlan(tx, ownerID, planID, at); err != nil {
+			return err
+		}
 		return tx.Where("owner_id = ? AND id = ?", ownerID, planID).Delete(&outfitPlanRecord{}).Error
 	})
 	return outfitPlanWriteError(err)
+}
+
+func unlinkWearEventsFromPlan(tx *gorm.DB, ownerID, planID string, at time.Time) error {
+	var events []wearEventRecord
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND source_plan_id = ?", ownerID, planID).Find(&events).Error; err != nil {
+		return err
+	}
+	for _, event := range events {
+		updatedAt := at
+		if updatedAt.Before(event.UpdatedAt) {
+			updatedAt = event.UpdatedAt
+		}
+		if err := tx.Model(&wearEventRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, event.ID, event.Revision).Updates(map[string]any{"source_plan_id": nil, "source_plan_revision": nil, "source_kind": string(model.WearEventUnplanned), "revision": event.Revision + 1, "updated_at": updatedAt}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func snapshotOutfitItems(tx *gorm.DB, ownerID, planID string, input model.OutfitPlanInput) ([]outfitPlanItemRecord, error) {
