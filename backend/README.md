@@ -1,6 +1,6 @@
 # OOTD Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明以及合成本人照片的私有上传/检查/删除 API 已经实现。
+这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、无图结构化衣橱 CRUD，以及合成本人照片的私有上传/检查/删除 API 已经实现。
 
 ## 本地运行
 
@@ -55,9 +55,19 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 
 该 API 只记录当前账号对 `self-adult-v1` 的确认或撤回，不收集出生日期或证件。它不是第三方 AI 逐次同意。
 
+## 结构化衣橱 API
+
+- `POST /v1/wardrobe/items`
+- `GET /v1/wardrobe/items`
+- `GET /v1/wardrobe/items/{item_id}`
+- `PUT /v1/wardrobe/items/{item_id}`
+- `DELETE /v1/wardrobe/items/{item_id}`
+
+OpenAPI 0.8.0 的首个衣橱后端切片只保存无图最小结构：稳定 UUID、名称、类别、可用状态、创建来源、revision 和服务端时间。会话决定 owner；幂等创建、revision 冲突、owner 内分页和账号级联删除由 PostgreSQL 约束与测试覆盖。App 尚未接入主动同步，衣物图片、增量墓碑和多设备合并不在本切片。
+
 ## 合成本人照片开发闭环
 
-运行时 OpenAPI 0.7.0 包含 8 个私有媒体 operation：同意创建/查询/撤回、上传意图、finalize、媒体状态、删除和删除状态。开发入口必须显式设置 `MEDIA_DEVELOPMENT_ENABLED=true`，并只接受回环 HTTP、MinIO 与 RabbitMQ；因此真实用户照片和生产流量无法通过这组配置误开启。
+运行时 OpenAPI 包含 8 个私有媒体 operation：同意创建/查询/撤回、上传意图、finalize、媒体状态、删除和删除状态。开发入口必须显式设置 `MEDIA_DEVELOPMENT_ENABLED=true`，并只接受回环 HTTP、MinIO 与 RabbitMQ；因此真实用户照片和生产流量无法通过这组配置误开启。
 
 MinIO 使用 `raw-private` 与 `derived-private` 私有版本桶；RabbitMQ worker 从 PostgreSQL Outbox 取得事件，以 Inbox 和条件状态更新保证重复投递不产生第二份业务效果。输入只接受 12 MiB/24 MP 以内的单帧 JPEG，worker 固定对象 version ID、复算 SHA-256、解码后重编码并记录派生关系。删除先在事务内 tombstone，再删除原始对象全部版本和派生对象。
 

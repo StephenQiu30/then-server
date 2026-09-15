@@ -10,6 +10,7 @@ import (
 func Migrate(ctx context.Context, database *gorm.DB) error {
 	return database.WithContext(ctx).AutoMigrate(
 		&userRecord{},
+		&wardrobeItemRecord{},
 		&credentialRecord{},
 		&sessionRecord{},
 		&selfAdultDeclarationRecord{},

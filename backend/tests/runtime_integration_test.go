@@ -214,8 +214,11 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 			if path == "/openapi.json" {
 				var contract struct {
 					OpenAPI string `json:"openapi"`
+					Info    struct {
+						Version string `json:"version"`
+					} `json:"info"`
 				}
-				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" {
+				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.8.0" || !strings.Contains(string(body), `"operationId":"createWardrobeItem"`) {
 					t.Fatal("binary did not serve a valid JSON representation of its compiled contract")
 				}
 			}
@@ -286,7 +289,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	router, err := transport.NewRouter(ctx, false, pool, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := transport.NewRouter(ctx, false, pool, nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,6 +366,7 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 		t.Fatal("actual API process did not withdraw the declaration")
 	}
 	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/privacy/self-adult-declaration", `{"policy_version":"self-adult-v1","confirms_self_and_adult":true}`, firstSession, http.StatusOK)
+	exerciseWardrobeHTTPLifecycle(t, ctx, client, baseURL, firstSession)
 
 	logout, _ := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/auth/session", "", firstSession, http.StatusNoContent)
 	assertExpiredSessionCookie(t, logout)
@@ -404,7 +408,31 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 	if err := pool.ORM().WithContext(ctx).Raw("SELECT count(*) FROM self_adult_declarations WHERE user_id = ?", registeredUserID).Scan(&remaining).Error; err != nil || remaining != 0 {
 		t.Fatal("deleted HTTP account still has a declaration")
 	}
-	t.Log("actual API process: account lifecycle, declaration confirm/withdraw/reconfirm, session revocation, cascade deletion and login rate-limit 429 verified")
+	t.Log("actual API process: account, declaration, wardrobe CRUD, session revocation, cascade deletion and login rate-limit 429 verified")
+}
+
+func exerciseWardrobeHTTPLifecycle(t *testing.T, ctx context.Context, client *http.Client, baseURL string, session *http.Cookie) {
+	t.Helper()
+	const itemID = "018f1f74-a2d0-7c6d-9c17-4a0ea2400c11"
+	createBody := `{"id":"` + itemID + `","name":"HTTP Shirt","category":"top","availability":"wearable","source":"quick_add"}`
+	_, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/wardrobe/items", createBody, session, http.StatusCreated)
+	if !strings.Contains(string(body), `"revision":1`) || strings.Contains(string(body), "owner_id") {
+		t.Fatal("actual wardrobe create lost revision or exposed owner")
+	}
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/wardrobe/items", createBody, session, http.StatusCreated)
+	_, body = accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/wardrobe/items?limit=1", "", session, http.StatusOK)
+	if !strings.Contains(string(body), itemID) {
+		t.Fatal("actual wardrobe list omitted the created item")
+	}
+	updateBody := `{"expected_revision":1,"name":"HTTP Blue Shirt","category":"top","availability":"laundry"}`
+	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/wardrobe/items/"+itemID, updateBody, session, http.StatusOK)
+	if !strings.Contains(string(body), `"revision":2`) || !strings.Contains(string(body), `"source":"quick_add"`) {
+		t.Fatal("actual wardrobe update lost revision or immutable source")
+	}
+	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/wardrobe/items/"+itemID, updateBody, session, http.StatusConflict)
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/wardrobe/items/"+itemID+"?expected_revision=1", "", session, http.StatusConflict)
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/wardrobe/items/"+itemID+"?expected_revision=2", "", session, http.StatusNoContent)
+	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/wardrobe/items/"+itemID, "", session, http.StatusNotFound)
 }
 
 func extractUserID(t *testing.T, data []byte) string {

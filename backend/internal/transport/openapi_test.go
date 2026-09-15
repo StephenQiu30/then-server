@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"testing"
@@ -58,6 +59,11 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"getMedia":                     true,
 		"deleteMedia":                  true,
 		"getDeletionRequest":           true,
+		"createWardrobeItem":           true,
+		"listWardrobeItems":            true,
+		"getWardrobeItem":              true,
+		"updateWardrobeItem":           true,
+		"deleteWardrobeItem":           true,
 	}
 	for _, path := range spec.Paths {
 		for method, operation := range path {
@@ -95,13 +101,16 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.7.0" || operations != 19 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.8.0" || operations != 24 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
-	for _, operationID := range []string{"createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest"} {
+	for _, operationID := range []string{"createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "deleteWardrobeItem"} {
 		if !identifiers[operationID] {
 			t.Fatalf("generated contract is missing %s", operationID)
 		}
+	}
+	if bytes.Contains(jsonDocument, []byte(`"owner_id"`)) {
+		t.Fatal("generated client contract exposed a wardrobe owner field")
 	}
 	confirmationConstraintFound := false
 	for _, schema := range spec.Components.Schemas {
