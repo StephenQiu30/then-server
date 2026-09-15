@@ -41,7 +41,7 @@
 | `11-04-IOS-02` | 贯通 Reduce Motion、后台暂停和销毁释放 | `completed` | Swift 将 scene、舞台和覆盖页状态桥接到 renderer；JS 使用仅活动时递增的时钟，暂停时清理 pointer/lean/pulse，context lost 停帧，退出释放加载中及已挂载资源；模拟器完成覆盖页、后台 30 秒和 WebContent 重建 |
 | `11-04-TEST-01` | 增加 Reduce Motion 配置回归测试 | `completed` | `AvatarStudioModelTests` 新用例 |
 | `11-04-TEST-02` | Debug 构建与相关测试通过 | `completed` | iPhone 17 / iOS 26.5：模型与舞台策略 5 passed；覆盖页关闭→后台 30 秒→恢复 1 passed；真实画布拖动→换装→renderer ready 1 passed；均 0 failed/0 skipped，独立 xcresult 已复核 |
-| `11-04-ACC-01` | 模拟器录屏核对正常/Reduce Motion/拖动/换装 | `in_progress` | 生命周期与拖动/换装自动回归通过；Reduce Motion 开启后的 2 秒角色区域像素差为 0，关闭后 YAVG=2.30296/YMAX=191；WebContent PID 替换后角色重新显示；动态录屏待补 |
+| `11-04-ACC-01` | 模拟器录屏核对正常/Reduce Motion/拖动/换装 | `completed` | 34.46 秒 H.264 录屏覆盖待机、真实画布拖动、衣橱选择和换装完成；9.19 秒 Reduce Motion 录屏的两帧角色区域 YAVG=0/YMAX=0；WebContent PID 替换后角色重新显示；五秒拖动期间打开系统设置，返回后 renderer ready，专项 UI 验收 1 passed |
 | `11-04-ACC-02` | 最低支持真机核对帧率、内存、发热与 WebContent 恢复 | `pending` | 真机 trace 与录屏 |
 
 ## 退出条件
@@ -65,4 +65,4 @@
 
 源码审查 5aabe58 发现仅有 document.visibilitychange/pagehide、RAF 绝对相位与 context lost 后未硬停止。本轮已由原生 scene/舞台/覆盖页状态驱动停止和恢复，改用仅活动时递增的时间，离开时清理 pointer/lean/pulse，context lost 后停止循环，异步加载失败或提前销毁也会释放模型资源。
 
-模拟器已覆盖后台 30 秒恢复、展示覆盖页再返回、Reduce Motion 前后切换与 WebContent 终止重建；自动化和双帧证据均未出现 fallback。拖动中取消及换装动态仍需录屏，最低支持真机性能仍为 ACC-02，因此本计划继续保持 `in_progress`。
+模拟器已覆盖后台 30 秒恢复、展示覆盖页再返回、Reduce Motion 前后切换、真实画布拖动、拖动中断、换装和 WebContent 终止重建；自动化、双帧和动态录屏均未出现 fallback。拖动中断的精确调度记录与验收结果分别位于 `/tmp/ThenAvatarInterruptedDrag-20260915-6.interrupt.log` 和 `/tmp/ThenAvatarInterruptedDrag-20260915-6.xcresult`。最低支持真机的帧率、内存、发热和恢复仍为 ACC-02，因此本计划继续保持 `in_progress`。
