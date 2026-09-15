@@ -24,6 +24,7 @@
 | [17-12 账号 API](17-12-账号认证与本人账户API执行计划.md)、[17-16 会话撤销](17-16-账号HTTP会话撤销闭环执行计划.md) | approved / completed | 注册、Cookie、本人 CRUD、退出/删除后旧会话拒绝；PG/HTTP 回归 | App 接入、公开注册所需邮件/TLS、跨设备同步 |
 | [17-17 认证限流](17-17-账号认证Redis限流执行计划.md) | approved / completed | Redis 原子固定窗口、429/503/OpenAPI、真实服务/进程/受限 OCI 验收 | 可信代理/边缘防护和生产流量验收另行完成 |
 | [17-18 本人成年声明](17-18-本人成年声明API执行计划.md) | approved / completed | 当前版本查询、确认/撤回、并发幂等、PostgreSQL/HTTP/OpenAPI 与远程 CI 通过 | Provider 逐次同意、上传与删除编排另立切片 |
+| [17-19 本人照片私有上传与删除](17-19-本人照片私有上传与删除闭环执行计划.md) | draft / pending | 逐次存储同意、MinIO 版本化直传、RabbitMQ 检查/删除和 8 个 API 的完整 spec/checklist | 用户批准用途/地域/格式/期限合同后编码；真实流量仍受生产门禁 |
 | [17-14 仓库与 CI](17-14-客户端服务端仓库拆分与CI执行计划.md)、[17-15 OpenAPI/GORM](17-15-OpenAPI文档门户与Umi生成执行计划.md) | approved / completed | 独立仓库/CI、运行时契约与 AutoMigrate | Web SDK 正式接入不在本片 |
 | [17-13 frontend](17-13-Web账户管理执行计划.md) | draft / pending，按用户要求暂停 | 设计与合同草案 | 不创建页面、目录或空网络层 |
 
