@@ -108,16 +108,17 @@ func TestHealthContractAndFailureIsolation(t *testing.T) {
 
 func TestOnlyExplicitHealthRequestsAreAccepted(t *testing.T) {
 	tests := []struct {
-		method, path, body string
-		status             int
+		method, path, body, allow string
+		status                    int
 	}{
-		{"GET", "/v1/health/live?token=synthetic-secret", "", 400},
-		{"GET", "/v1/health/live", "synthetic-secret", 400},
-		{"POST", "/v1/health/live", "", 405},
-		{"GET", "/v1/v1/health/live", "", 404},
-		{"GET", "/v1/health/live/", "", 404},
-		{"GET", "/synthetic-secret", "", 404},
-		{"POST", "/v1/jobs", "", 404},
+		{"GET", "/v1/health/live?token=synthetic-secret", "", "", 400},
+		{"GET", "/v1/health/live", "synthetic-secret", "", 400},
+		{"POST", "/v1/health/live", "", "GET", 405},
+		{"GET", "/v1/auth/registrations", "", "POST", 405},
+		{"GET", "/v1/v1/health/live", "", "", 404},
+		{"GET", "/v1/health/live/", "", "", 404},
+		{"GET", "/synthetic-secret", "", "", 404},
+		{"POST", "/v1/jobs", "", "", 404},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+tt.path, func(t *testing.T) {
@@ -126,6 +127,9 @@ func TestOnlyExplicitHealthRequestsAreAccepted(t *testing.T) {
 			r.ServeHTTP(w, httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body)))
 			if w.Code != tt.status {
 				t.Fatalf("status=%d expected=%d", w.Code, tt.status)
+			}
+			if got := w.Header().Get("Allow"); got != tt.allow {
+				t.Fatalf("Allow=%q expected=%q", got, tt.allow)
 			}
 			if strings.Contains(logs.String(), "synthetic-secret") {
 				t.Fatal("raw URL/body leaked into log")

@@ -82,7 +82,6 @@ func NewRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, acc
 	}
 	engine.NoRoute(func(c *gin.Context) { respondError(c, http.StatusNotFound, "NOT_FOUND", "Resource not found.", false) })
 	engine.NoMethod(func(c *gin.Context) {
-		c.Header("Allow", "GET")
 		respondError(c, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed.", false)
 	})
 	return router, nil
@@ -168,7 +167,7 @@ func registerHealthOperations(api huma.API, router *Router, probe DependencyProb
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getReadiness", Method: http.MethodGet, Path: "/v1/health/ready", Tags: []string{"Health"},
-		Summary: "检查 API 接纳就绪状态", Description: "有界探测 PostgreSQL；退出或依赖故障时返回 503，不输出连接详情。", Errors: []int{http.StatusBadRequest, http.StatusServiceUnavailable, http.StatusInternalServerError},
+		Summary: "检查 API 接纳就绪状态", Description: "在同一有界上下文中探测 PostgreSQL 与认证 Redis；退出或任一依赖故障时返回 503，不输出连接详情。", Errors: []int{http.StatusBadRequest, http.StatusServiceUnavailable, http.StatusInternalServerError},
 	}, func(ctx context.Context, _ *struct{}) (*readinessOutput, error) {
 		if err := rejectHealthPayload(ctx); err != nil {
 			return nil, err
