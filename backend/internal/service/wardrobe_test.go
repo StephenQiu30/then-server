@@ -65,11 +65,12 @@ func TestWardrobeCreateNormalizesAndUsesAuthenticatedOwner(t *testing.T) {
 	item, err := service.CreateWardrobeItem(context.Background(), "session", model.CreateWardrobeItemInput{
 		ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Name: "  蓝色衬衫  ", Category: model.WardrobeTop,
 		Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe,
+		Attributes: model.WardrobeAttributes{FormalityBand: wardrobeValue(model.WardrobeFormalitySmartCasual), WarmthBand: wardrobeValue(model.WardrobeWarmthLight), RainUse: wardrobeValue(model.WardrobeUseSuitable)},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repository.ownerID == "" || item.Name != "蓝色衬衫" || item.Revision != 1 || item.CreatedAt.IsZero() || !item.CreatedAt.Equal(item.UpdatedAt) {
+	if repository.ownerID == "" || item.Name != "蓝色衬衫" || item.Revision != 1 || item.CreatedAt.IsZero() || !item.CreatedAt.Equal(item.UpdatedAt) || item.Attributes.FormalityBand == nil || *item.Attributes.FormalityBand != model.WardrobeFormalitySmartCasual {
 		t.Fatal("create did not normalize or establish server-owned fields")
 	}
 }
@@ -79,6 +80,10 @@ func TestWardrobeRejectsInvalidInputBeforeRepository(t *testing.T) {
 		{ID: "not-a-uuid", Name: "Coat", Category: model.WardrobeOuterwear, Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe},
 		{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Name: "\u0000", Category: model.WardrobeTop, Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe},
 		{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Name: "Coat", Category: "unknown", Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe},
+		{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Name: "Coat", Category: model.WardrobeOuterwear, Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe, Attributes: model.WardrobeAttributes{FormalityBand: wardrobeValue(model.WardrobeFormalityBand("guessed"))}},
+		{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Name: "Coat", Category: model.WardrobeOuterwear, Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe, Attributes: model.WardrobeAttributes{WarmthBand: wardrobeValue(model.WardrobeWarmthBand("hot"))}},
+		{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Name: "Coat", Category: model.WardrobeOuterwear, Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe, Attributes: model.WardrobeAttributes{RainUse: wardrobeValue(model.WardrobeUseSuitability("maybe"))}},
+		{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Name: "Coat", Category: model.WardrobeOuterwear, Availability: model.WardrobeWearable, Source: model.WardrobeSourceWardrobe, Attributes: model.WardrobeAttributes{WalkingUse: wardrobeValue(model.WardrobeUseSuitability("sometimes"))}},
 	}
 	for _, input := range invalid {
 		repository := new(wardrobeRepositoryStub)
@@ -92,11 +97,14 @@ func TestWardrobeUpdateDeleteAndListValidateRevisionAndLimit(t *testing.T) {
 	repository := new(wardrobeRepositoryStub)
 	service := newWardrobeServiceForTest(t, repository)
 	id := "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12"
-	if _, err := service.UpdateWardrobeItem(context.Background(), "session", id, 2, model.UpdateWardrobeItemInput{Name: " Jacket ", Category: model.WardrobeOuterwear, Availability: model.WardrobePacked}); err != nil {
+	if _, err := service.UpdateWardrobeItem(context.Background(), "session", id, 2, model.UpdateWardrobeItemInput{Name: " Jacket ", Category: model.WardrobeOuterwear, Availability: model.WardrobePacked, Attributes: model.WardrobeAttributes{WalkingUse: wardrobeValue(model.WardrobeUseUnsuitable)}}); err != nil {
 		t.Fatal(err)
 	}
-	if repository.updated.Name != "Jacket" || repository.expected != 2 {
+	if repository.updated.Name != "Jacket" || repository.expected != 2 || repository.updated.Attributes.WalkingUse == nil || *repository.updated.Attributes.WalkingUse != model.WardrobeUseUnsuitable {
 		t.Fatal("update did not normalize and forward the expected revision")
+	}
+	if _, err := service.UpdateWardrobeItem(context.Background(), "session", id, 2, model.UpdateWardrobeItemInput{Name: "Jacket", Category: model.WardrobeOuterwear, Availability: model.WardrobePacked, Attributes: model.WardrobeAttributes{WarmthBand: wardrobeValue(model.WardrobeWarmthBand("boiling"))}}); !errors.Is(err, model.ErrInvalidWardrobeInput) {
+		t.Fatal("invalid update attribute was accepted")
 	}
 	if err := service.DeleteWardrobeItem(context.Background(), "session", id, 3); err != nil || repository.expected != 3 {
 		t.Fatal("delete did not forward the expected revision")
@@ -110,3 +118,5 @@ func TestWardrobeUpdateDeleteAndListValidateRevisionAndLimit(t *testing.T) {
 		t.Fatal("invalid revision was accepted")
 	}
 }
+
+func wardrobeValue[T any](value T) *T { return &value }

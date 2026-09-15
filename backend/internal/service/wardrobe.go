@@ -38,13 +38,13 @@ func (s *WardrobeService) CreateWardrobeItem(ctx context.Context, token string, 
 		return model.WardrobeItem{}, err
 	}
 	name, ok := validWardrobeFields(input.ID, input.Name, input.Category, input.Availability)
-	if !ok || !validWardrobeSource(input.Source) {
+	if !ok || !validWardrobeSource(input.Source) || !validWardrobeAttributes(input.Attributes) {
 		return model.WardrobeItem{}, model.ErrInvalidWardrobeInput
 	}
 	now := s.now().UTC()
 	return s.repository.CreateWardrobeItem(ctx, model.WardrobeItem{
 		ID: input.ID, OwnerID: user.ID, Name: name, Category: input.Category,
-		Availability: input.Availability, Source: input.Source, Revision: 1, CreatedAt: now, UpdatedAt: now,
+		Availability: input.Availability, Source: input.Source, Attributes: input.Attributes, Revision: 1, CreatedAt: now, UpdatedAt: now,
 	})
 }
 
@@ -76,7 +76,7 @@ func (s *WardrobeService) UpdateWardrobeItem(ctx context.Context, token, itemID 
 		return model.WardrobeItem{}, err
 	}
 	name, ok := validWardrobeFields(itemID, input.Name, input.Category, input.Availability)
-	if !ok || expectedRevision < 1 {
+	if !ok || expectedRevision < 1 || !validWardrobeAttributes(input.Attributes) {
 		return model.WardrobeItem{}, model.ErrInvalidWardrobeInput
 	}
 	input.Name = name
@@ -132,4 +132,27 @@ func validWardrobeAvailability(value model.WardrobeAvailability) bool {
 
 func validWardrobeSource(value model.WardrobeSource) bool {
 	return value == model.WardrobeSourceWardrobe || value == model.WardrobeSourceQuickAdd
+}
+
+func validWardrobeAttributes(value model.WardrobeAttributes) bool {
+	if value.FormalityBand != nil {
+		switch *value.FormalityBand {
+		case model.WardrobeFormalityCasual, model.WardrobeFormalitySmartCasual, model.WardrobeFormalityFormal:
+		default:
+			return false
+		}
+	}
+	if value.WarmthBand != nil {
+		switch *value.WarmthBand {
+		case model.WardrobeWarmthLight, model.WardrobeWarmthMedium, model.WardrobeWarmthWarm:
+		default:
+			return false
+		}
+	}
+	for _, suitability := range []*model.WardrobeUseSuitability{value.RainUse, value.WalkingUse} {
+		if suitability != nil && *suitability != model.WardrobeUseSuitable && *suitability != model.WardrobeUseUnsuitable {
+			return false
+		}
+	}
+	return true
 }

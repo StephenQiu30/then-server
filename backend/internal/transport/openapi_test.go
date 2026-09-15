@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 )
 
@@ -22,6 +23,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		} `json:"info"`
 		Components struct {
 			Schemas map[string]struct {
+				Required   []string `json:"required"`
 				Properties map[string]struct {
 					Enum []any `json:"enum"`
 				} `json:"properties"`
@@ -101,7 +103,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.8.0" || operations != 24 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.9.0" || operations != 24 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
 	for _, operationID := range []string{"createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "deleteWardrobeItem"} {
@@ -111,6 +113,24 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 	}
 	if bytes.Contains(jsonDocument, []byte(`"owner_id"`)) {
 		t.Fatal("generated client contract exposed a wardrobe owner field")
+	}
+	for _, expected := range [][]byte{[]byte(`"smart_casual"`), []byte(`"user_confirmed"`), []byte(`"formality_band"`), []byte(`"walking_use"`)} {
+		if !bytes.Contains(jsonDocument, expected) {
+			t.Fatalf("generated client contract is missing wardrobe attribute constraint %s", expected)
+		}
+	}
+	requestAttributes, exists := spec.Components.Schemas["WardrobeAttributesRequest"]
+	if !exists {
+		t.Fatal("generated client contract is missing WardrobeAttributesRequest")
+	}
+	if _, acceptsSource := requestAttributes.Properties["source"]; acceptsSource {
+		t.Fatal("generated wardrobe attribute request accepts a client-provided source")
+	}
+	for _, schemaName := range []string{"CreateWardrobeItemRequest", "UpdateWardrobeItemRequest"} {
+		schema, exists := spec.Components.Schemas[schemaName]
+		if !exists || !slices.Contains(schema.Required, "attributes") {
+			t.Fatalf("generated %s does not require the attributes object", schemaName)
+		}
 	}
 	confirmationConstraintFound := false
 	for _, schema := range spec.Components.Schemas {
