@@ -47,7 +47,7 @@ Go 官方建议将服务器内部包放入 `internal`，并通过 `_test.go` 与
 
 1. Design 固定用例、所有权、失败和最小架构；PRD 确认用户行为与非目标。
 2. 只为近期切片创建一个 approved 的 `17-SS` 计划；同一时间最多一个任务 `in_progress`。
-3. API 变更先改唯一 OpenAPI 并编译 Swift Client；数据变更先评审 migration、约束和恢复。
+3. API 变更在 Huma operation/Go tag 与 Handler 同一切片完成，并验证运行时 OpenAPI；只有实际消费者存在时才执行 Umi/App Client 生成与编译。数据变更先评审 GORM record、约束和恢复。
 4. Red：先写能复现业务规则或隔离缺口的失败测试；Green：完成最小代码；Refactor：只消除已出现的重复或越界。
 5. 依次执行格式、unit、vet、race，再运行受影响的 services/integration/container；各层证据不能互相替代。
 6. acceptance 记录实际 SHA、命令、环境、结果和限制；本地通过不冒充 CI 或生产发布。
@@ -56,8 +56,8 @@ Go 官方建议将服务器内部包放入 `internal`，并通过 `_test.go` 与
 
 - 测试配置非法或指向远程主机时，在建立连接前失败，错误只包含配置名和安全原因。
 - 测试创建的资源必须带 `then-test-` 随机前缀或使用会话级临时对象；清理失败使测试失败。
-- 不使用生产数据、真实照片、生产凭据或共享业务表；测试不执行 schema DDL，除非未来 migration 切片使用独占测试数据库。
-- 当前调整仅移动测试辅助职责并增加约束。回滚删除 test environment helper、恢复调用即可，不涉及 API、数据库 schema、用户数据或生产进程。
+- 不使用生产数据、真实照片、生产凭据或共享业务表；需要验证 GORM AutoMigrate 时只对测试拥有的独占/临时数据库执行 schema DDL。
+- 测试辅助代码只管理测试拥有的资源与稳定错误；回滚必须清理自有临时资源，不涉及共享数据库、用户数据或生产进程。
 
 ## 重新评估条件
 
