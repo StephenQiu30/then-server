@@ -40,7 +40,7 @@ type ReadinessResponse struct {
 
 type ErrorResponse struct {
 	status    int
-	Code      string `json:"code" enum:"BAD_REQUEST,EMAIL_CONFLICT,AUTHENTICATION_FAILED,NOT_READY,NOT_FOUND,METHOD_NOT_ALLOWED,INTERNAL_ERROR" example:"AUTHENTICATION_FAILED"`
+	Code      string `json:"code" enum:"BAD_REQUEST,EMAIL_CONFLICT,AUTHENTICATION_FAILED,RATE_LIMITED,NOT_READY,NOT_FOUND,METHOD_NOT_ALLOWED,INTERNAL_ERROR" example:"AUTHENTICATION_FAILED"`
 	Message   string `json:"message" minLength:"1" maxLength:"160" example:"Sign-in information is invalid."`
 	RequestID string `json:"request_id" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" example:"TESTREQUESTIDENTIFIER00000003"`
 	Retryable bool   `json:"retryable" example:"false"`
@@ -62,7 +62,7 @@ type readinessOutput struct {
 var configureHumaErrors sync.Once
 
 func NewRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, timeout time.Duration, log *slog.Logger) (*Router, error) {
-	if probe == nil || log == nil || timeout <= 0 || timeout > 5*time.Second || (accounts != nil && accounts.service == nil) {
+	if probe == nil || log == nil || timeout <= 0 || timeout > 5*time.Second || (accounts != nil && (accounts.service == nil || accounts.limiter == nil)) {
 		return nil, errors.New("invalid router dependencies")
 	}
 	engine, err := newEngine(log)
@@ -134,7 +134,7 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 			return newErrorResponse(status, requestID(ctx.Context()))
 		}
 	})
-	config := huma.DefaultConfig("于是 OOTD API", "0.4.0")
+	config := huma.DefaultConfig("于是 OOTD API", "0.5.0")
 	config.OpenAPI.OpenAPI = "3.1.2"
 	config.Info.Description = "“于是”OOTD 产品后端接口。OpenAPI 由 Go operation 与类型字段标签生成。"
 	config.OpenAPIPath = ""
@@ -214,6 +214,12 @@ func normalizeGeneratedOpenAPI(spec *huma.OpenAPI) {
 				if status == "401" && usesCookieAuthentication(operation) {
 					response.Headers["Set-Cookie"] = clearSessionHeader
 				}
+				if status == "429" {
+					response.Headers["Retry-After"] = &huma.Header{Schema: &huma.Schema{Type: huma.TypeString, Pattern: "^[1-9][0-9]*$"}}
+				}
+				if status == "503" {
+					response.Headers["Retry-After"] = &huma.Header{Schema: &huma.Schema{Type: huma.TypeString, Pattern: "^[1-9][0-9]*$"}}
+				}
 			}
 		}
 	}
@@ -261,6 +267,8 @@ func newErrorResponse(status int, id string) *ErrorResponse {
 		response.Code, response.Message = "AUTHENTICATION_FAILED", "Sign-in information is invalid."
 	case http.StatusConflict:
 		response.Code, response.Message = "EMAIL_CONFLICT", "This email cannot be used."
+	case http.StatusTooManyRequests:
+		response.Code, response.Message, response.Retryable = "RATE_LIMITED", "Too many authentication attempts.", true
 	case http.StatusServiceUnavailable:
 		response.Code, response.Message, response.Retryable = "NOT_READY", "Service is not ready.", true
 	case http.StatusNotFound:

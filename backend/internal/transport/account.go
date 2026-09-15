@@ -3,8 +3,11 @@ package transport
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
+	"net/netip"
 	"reflect"
+	"strconv"
 	"time"
 
 	"github.com/StephenQiu30/then-server/backend/internal/model"
@@ -12,6 +15,13 @@ import (
 )
 
 const sessionCookieName = "then_session"
+
+const (
+	registrationRateLimit  = 5
+	registrationRateWindow = time.Hour
+	loginRateLimit         = 10
+	loginRateWindow        = 15 * time.Minute
+)
 
 type AccountService interface {
 	Register(context.Context, model.RegisterAccountInput) (model.AuthenticatedUser, error)
@@ -22,13 +32,18 @@ type AccountService interface {
 	DeleteCurrentUser(context.Context, string) error
 }
 
+type AuthenticationRateLimiter interface {
+	Allow(context.Context, string, string, int, time.Duration) (bool, time.Duration, error)
+}
+
 type AccountHandler struct {
 	service      AccountService
+	limiter      AuthenticationRateLimiter
 	secureCookie bool
 }
 
-func NewAccountHandler(service AccountService, secureCookie bool) *AccountHandler {
-	return &AccountHandler{service: service, secureCookie: secureCookie}
+func NewAccountHandler(service AccountService, secureCookie bool, limiter AuthenticationRateLimiter) *AccountHandler {
+	return &AccountHandler{service: service, limiter: limiter, secureCookie: secureCookie}
 }
 
 type RegisterAccountRequest struct {
@@ -95,12 +110,12 @@ func registerAccountOperations(api huma.API, handler *AccountHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "registerAccount", Method: http.MethodPost, Path: "/v1/auth/registrations", Tags: []string{"Authentication"},
 		Summary: "注册账户并建立会话", DefaultStatus: http.StatusCreated, MaxBodyBytes: 8 * 1024,
-		Errors: []int{http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError},
+		Errors: []int{http.StatusBadRequest, http.StatusConflict, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusInternalServerError},
 	}, handler.register)
 	huma.Register(api, huma.Operation{
 		OperationID: "createSession", Method: http.MethodPost, Path: "/v1/auth/sessions", Tags: []string{"Authentication"},
 		Summary: "使用邮箱密码登录", MaxBodyBytes: 8 * 1024,
-		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusInternalServerError},
+		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusInternalServerError},
 	}, handler.login)
 	huma.Register(api, authenticatedOperation(huma.Operation{
 		OperationID: "deleteSession", Method: http.MethodDelete, Path: "/v1/auth/session", Tags: []string{"Authentication"},
@@ -127,8 +142,11 @@ func authenticatedOperation(operation huma.Operation) huma.Operation {
 }
 
 func (h *AccountHandler) register(ctx context.Context, input *registerAccountInput) (*authenticatedUserOutput, error) {
-	if h == nil || h.service == nil {
+	if h == nil || h.service == nil || h.limiter == nil {
 		return nil, newErrorResponse(http.StatusInternalServerError, requestID(ctx))
+	}
+	if err := h.enforceAuthenticationRateLimit(ctx, "registration", registrationRateLimit, registrationRateWindow); err != nil {
+		return nil, err
 	}
 	result, err := h.service.Register(ctx, model.RegisterAccountInput{Email: input.Body.Email, DisplayName: input.Body.DisplayName, Password: input.Body.Password})
 	if err != nil {
@@ -138,14 +156,52 @@ func (h *AccountHandler) register(ctx context.Context, input *registerAccountInp
 }
 
 func (h *AccountHandler) login(ctx context.Context, input *createSessionInput) (*authenticatedUserOutput, error) {
-	if h == nil || h.service == nil {
+	if h == nil || h.service == nil || h.limiter == nil {
 		return nil, newErrorResponse(http.StatusInternalServerError, requestID(ctx))
+	}
+	if err := h.enforceAuthenticationRateLimit(ctx, "login", loginRateLimit, loginRateWindow); err != nil {
+		return nil, err
 	}
 	result, err := h.service.Login(ctx, model.CreateSessionInput{Email: input.Body.Email, Password: input.Body.Password})
 	if err != nil {
 		return nil, accountError(ctx, err)
 	}
 	return &authenticatedUserOutput{RequestID: requestID(ctx), SetCookie: h.sessionCookie(result.Token, result.ExpiresAt), Body: AuthenticatedUserResponse{User: newUserResponse(result.User)}}, nil
+}
+
+func (h *AccountHandler) enforceAuthenticationRateLimit(ctx context.Context, scope string, limit int, window time.Duration) error {
+	subject, err := directSourceIP(ctx)
+	if err != nil {
+		return notReadyError(ctx)
+	}
+	allowed, retryAfter, err := h.limiter.Allow(ctx, scope, subject, limit, window)
+	if err != nil {
+		return notReadyError(ctx)
+	}
+	if allowed {
+		return nil
+	}
+	seconds := int64((retryAfter + time.Second - 1) / time.Second)
+	if seconds < 1 {
+		seconds = 1
+	}
+	return huma.ErrorWithHeaders(newErrorResponse(http.StatusTooManyRequests, requestID(ctx)), http.Header{"Retry-After": []string{strconv.FormatInt(seconds, 10)}})
+}
+
+func directSourceIP(ctx context.Context) (string, error) {
+	request, ok := ctx.Value(httpRequestContextKey{}).(*http.Request)
+	if !ok || request == nil {
+		return "", errors.New("request unavailable")
+	}
+	host, _, err := net.SplitHostPort(request.RemoteAddr)
+	if err != nil {
+		return "", errors.New("source address unavailable")
+	}
+	address, err := netip.ParseAddr(host)
+	if err != nil {
+		return "", errors.New("source address unavailable")
+	}
+	return address.Unmap().String(), nil
 }
 
 func (h *AccountHandler) current(ctx context.Context, input *authenticatedInput) (*userOutput, error) {

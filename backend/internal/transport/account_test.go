@@ -2,11 +2,13 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,16 +25,40 @@ type accountServiceStub struct {
 	user       model.User
 	token      string
 	err        error
+	registers  int
+	logins     int
 }
 
 func (s *accountServiceStub) Register(_ context.Context, input model.RegisterAccountInput) (model.AuthenticatedUser, error) {
 	s.registered = input
+	s.registers++
 	return model.AuthenticatedUser{User: s.user, Token: s.token, ExpiresAt: time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)}, s.err
 }
 
 func (s *accountServiceStub) Login(_ context.Context, input model.CreateSessionInput) (model.AuthenticatedUser, error) {
 	s.loggedIn = input
+	s.logins++
 	return model.AuthenticatedUser{User: s.user, Token: s.token, ExpiresAt: time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)}, s.err
+}
+
+type authRateLimiterStub struct {
+	mu     sync.Mutex
+	counts map[string]int
+	err    error
+}
+
+func (s *authRateLimiterStub) Allow(_ context.Context, scope, subject string, limit int, window time.Duration) (bool, time.Duration, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return false, 0, s.err
+	}
+	if s.counts == nil {
+		s.counts = make(map[string]int)
+	}
+	key := scope + ":" + subject
+	s.counts[key]++
+	return s.counts[key] <= limit, window, nil
 }
 
 func (s *accountServiceStub) CurrentUser(_ context.Context, token string) (model.User, error) {
@@ -57,11 +83,23 @@ func (s *accountServiceStub) DeleteCurrentUser(_ context.Context, token string) 
 
 func accountRouter(t *testing.T, service AccountService, secure bool) *Router {
 	t.Helper()
-	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), NewAccountHandler(service, secure), time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	return accountRouterWithLimiter(t, service, secure, &authRateLimiterStub{})
+}
+
+func accountRouterWithLimiter(t *testing.T, service AccountService, secure bool, limiter AuthenticationRateLimiter) *Router {
+	t.Helper()
+	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), NewAccountHandler(service, secure, limiter), time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return router
+}
+
+func authRequest(method, path, body, remoteAddr string) *http.Request {
+	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.RemoteAddr = remoteAddr
+	return request
 }
 
 func fixtureUser() model.User {
@@ -141,6 +179,96 @@ func TestFailedLoginDoesNotClearExistingSessionCookie(t *testing.T) {
 	}
 	if len(response.Result().Cookies()) != 0 {
 		t.Fatal("failed login unexpectedly changed the existing browser session")
+	}
+}
+
+func TestRegistrationRateLimitStopsBeforeAccountService(t *testing.T) {
+	service := &accountServiceStub{user: fixtureUser(), token: strings.Repeat("a", 43)}
+	router := accountRouterWithLimiter(t, service, false, &authRateLimiterStub{})
+	body := `{"email":"person@example.test","display_name":"示例用户","password":"correct-password"}`
+	for attempt := 1; attempt <= 6; attempt++ {
+		response := httptest.NewRecorder()
+		request := authRequest(http.MethodPost, "/v1/auth/registrations", body, "192.0.2.10:4321")
+		router.ServeHTTP(response, request)
+		if attempt <= 5 && response.Code != http.StatusCreated {
+			t.Fatalf("attempt %d status=%d body=%s", attempt, response.Code, response.Body.String())
+		}
+		if attempt == 6 {
+			if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") != "3600" || !strings.Contains(response.Body.String(), `"code":"RATE_LIMITED"`) || !strings.Contains(response.Body.String(), `"retryable":true`) {
+				t.Fatalf("rate limit response differs: status=%d headers=%v body=%s", response.Code, response.Header(), response.Body.String())
+			}
+			document, _, err := GeneratedOpenAPI(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			spec, err := openapi3.NewLoader().LoadFromData(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			contract, err := gorillamux.NewRouter(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			route, params, err := contract.FindRoute(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := &openapi3filter.RequestValidationInput{Request: request, Route: route, PathParams: params}
+			output := &openapi3filter.ResponseValidationInput{RequestValidationInput: input, Status: response.Code, Header: response.Header()}
+			if err := openapi3filter.ValidateResponse(request.Context(), output.SetBodyBytes(response.Body.Bytes())); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if service.registers != 5 {
+		t.Fatalf("registration service calls=%d expected=5", service.registers)
+	}
+}
+
+func TestLoginRateLimitIsolatedByDirectSourceIP(t *testing.T) {
+	service := &accountServiceStub{user: fixtureUser(), token: strings.Repeat("a", 43)}
+	router := accountRouterWithLimiter(t, service, false, &authRateLimiterStub{})
+	body := `{"email":"person@example.test","password":"correct-password"}`
+	for attempt := 1; attempt <= 11; attempt++ {
+		response := httptest.NewRecorder()
+		request := authRequest(http.MethodPost, "/v1/auth/sessions", body, "192.0.2.20:4321")
+		request.Header.Set("X-Forwarded-For", "198.51.100.77")
+		router.ServeHTTP(response, request)
+		expected := http.StatusOK
+		if attempt == 11 {
+			expected = http.StatusTooManyRequests
+		}
+		if response.Code != expected {
+			t.Fatalf("attempt %d status=%d expected=%d body=%s", attempt, response.Code, expected, response.Body.String())
+		}
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, authRequest(http.MethodPost, "/v1/auth/sessions", body, "198.51.100.77:4321"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("different direct IP shared a rate-limit bucket: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if service.logins != 11 {
+		t.Fatalf("login service calls=%d expected=11", service.logins)
+	}
+}
+
+func TestAuthenticationRateLimiterFailureStopsBeforeAccountService(t *testing.T) {
+	service := &accountServiceStub{user: fixtureUser(), token: strings.Repeat("a", 43)}
+	router := accountRouterWithLimiter(t, service, false, &authRateLimiterStub{err: errors.New("synthetic-secret")})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, authRequest(http.MethodPost, "/v1/auth/sessions", `{"email":"person@example.test","password":"correct-password"}`, "192.0.2.30:4321"))
+	if response.Code != http.StatusServiceUnavailable || response.Header().Get("Retry-After") != "1" || !strings.Contains(response.Body.String(), `"code":"NOT_READY"`) || service.logins != 0 {
+		t.Fatalf("limiter failure did not fail closed: status=%d headers=%v body=%s calls=%d", response.Code, response.Header(), response.Body.String(), service.logins)
+	}
+}
+
+func TestAuthenticationWithInvalidDirectSourceFailsClosed(t *testing.T) {
+	service := &accountServiceStub{user: fixtureUser(), token: strings.Repeat("a", 43)}
+	router := accountRouterWithLimiter(t, service, false, &authRateLimiterStub{})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, authRequest(http.MethodPost, "/v1/auth/sessions", `{"email":"person@example.test","password":"correct-password"}`, "not-an-address"))
+	if response.Code != http.StatusServiceUnavailable || service.logins != 0 {
+		t.Fatalf("invalid direct source did not fail closed: status=%d calls=%d", response.Code, service.logins)
 	}
 }
 

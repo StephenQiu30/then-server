@@ -1,15 +1,18 @@
 # OOTD Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL 和进程生命周期；账号注册、登录、退出及本人账户查询/修改/删除已经实现。
+这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis 认证限流和进程生命周期；账号注册、登录、退出及本人账户查询/修改/删除已经实现。
 
 ## 本地运行
 
-普通开发使用本机 PostgreSQL 18，不要求 Docker，也不会自动读取 `.env`：
+普通开发使用本机 PostgreSQL 18 与 Redis，不要求 Docker，也不会自动读取 `.env`：
 
 ```sh
 brew services start postgresql@18
+brew services start redis
 cd backend
-DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' go run .
+DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' \
+REDIS_URL='redis://127.0.0.1:6379/0' \
+go run .
 ```
 
 进程连接数据库后会在监听端口前执行 GORM `AutoMigrate`。当前处于无历史数据的开发阶段，数据库结构由 [`internal/repository`](internal/repository) 的 GORM record 统一声明；项目不维护 Atlas 配置或 SQL migration。需要破坏性调整时更新 record 并重建本地开发库。
@@ -19,6 +22,7 @@ DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' go run .
 ```sh
 API_DOCS_ENABLED=true \
 DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' \
+REDIS_URL='redis://127.0.0.1:6379/0' \
 go run .
 ```
 
@@ -41,11 +45,11 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `PATCH /v1/users/me`
 - `DELETE /v1/users/me`
 
-浏览器会话使用 HttpOnly、SameSite=Strict Cookie。本机回环开发可设置 `SESSION_COOKIE_SECURE=false`；非回环监听必须使用安全 Cookie。邮件验证、找回密码、登录限流和生产审计尚未完成，因此当前端点只用于开发 MVP。
+浏览器会话使用 HttpOnly、SameSite=Strict Cookie。本机回环开发可设置 `SESSION_COOKIE_SECURE=false`；非回环监听必须使用安全 Cookie。注册按直连源 IP 每小时 5 次、登录每 15 分钟 10 次，Redis 原子计数超限返回 429 与 `Retry-After`；Redis 不可用时认证失败关闭且 readiness 返回 503。邮件验证、找回密码、可信代理/边缘防护和生产审计尚未完成，因此当前端点只用于开发 MVP。
 
 ## 本机中间件验证
 
-Redis、RabbitMQ 和 MinIO 当前只用于开发协议测试，API 运行时尚未调用它们。默认测试连接本机 loopback；需要时用 `THEN_TEST_*` 环境变量覆盖本机端口和账号。
+Redis 已进入 API 运行时，只保存认证限流的短期计数；账户与会话事实仍在 PostgreSQL。RabbitMQ 和 MinIO 当前只用于开发协议测试。默认测试连接本机 loopback；需要时用 `THEN_TEST_*` 环境变量覆盖本机端口和账号。
 
 ```sh
 brew services start minio
@@ -85,4 +89,4 @@ go test -race -tags=services ./tests -count=1 -v
 go test -race -tags=integration ./tests -count=1 -v
 ```
 
-`services` 使用已经启动的本机 PostgreSQL/MinIO/Redis/RabbitMQ；`integration` 使用 Testcontainers 创建隔离 PostgreSQL 18，并验证实际二进制从空库迁移、启动、健康探测、断连恢复和 SIGTERM 退出。镜像验证另见 [17-07](../docs/plan/17-07-后端容器构建与运行验证执行计划.md)。
+`services` 使用已经启动的本机 PostgreSQL/MinIO/Redis/RabbitMQ；`integration` 使用 Testcontainers 创建隔离 PostgreSQL 18 与 Redis，并验证实际二进制从空库迁移、启动、认证限流、两项依赖断连恢复和 SIGTERM 退出。镜像验证另见 [17-07](../docs/plan/17-07-后端容器构建与运行验证执行计划.md)。
