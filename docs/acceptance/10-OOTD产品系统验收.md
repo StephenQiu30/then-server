@@ -1,8 +1,12 @@
 # OOTD 产品系统验收
 
+## 2026-09-15 完整产品判定修正
+
+多视角主路径通过只代表 P1 可交付，不代表完整产品完成。完整产品判定必须覆盖 [Design 20](../design/20-OOTD完整产品能力与阶段架构设计.md) 定义的真实衣橱决策闭环、本人 AI 试穿、Create 360°、RealityKit/USDZ 真 3D、账号同步、导出与删除；图片、视频和真 3D 分别取证，不能互相抵扣。
+
 ## 2026-09-15 多视角路线验收变更
 
-当前系统验收以 [Design 18](../design/18-Woo立体数字衣橱技术路线研究与决策.md)、[PRD 10 当前主路径](../prd/10-OOTD产品需求.md#2026-09-15当前批准主路径)、[11-03](../plan/11-03-Woo多视角形象与内置穿搭执行计划.md) 和 `AVATAR-ACC-019`～`024` 为准。旧 11-02 已 no-go；GLB/Three.js/Blender/连续 mesh 证据不再是发布条件。系统仍需交付三套人物、六件内置衣物、24 套 Look、72 张三视图、默认离线包、原子缓存、保存/历史和 Woo 页面；Create 360°、本人照片、下载/分享继续分别验收。
+P1 系统验收以 [Design 18](../design/18-Woo立体数字衣橱技术路线研究与决策.md)、[PRD 10 当前主路径](../prd/10-OOTD产品需求.md#2026-09-15当前批准主路径)、[11-03](../plan/11-03-Woo多视角形象与内置穿搭执行计划.md) 和 `AVATAR-ACC-019`～`024` 为准。旧 11-02 已 no-go；其 GLB/Three.js/Blender 证据不再是 P1 发布条件。系统仍需交付三套人物、六件内置衣物、24 套 Look、72 张三视图、默认离线包、原子缓存、保存/历史和 Woo 页面；Create 360°、本人照片、下载/分享和 Design 20 的 RealityKit/USDZ 真 3D 继续分别验收。
 
 ## 2026-09-14需求正文一致性复核
 
@@ -141,7 +145,7 @@ error: main actor-isolated conformance of 'Components.Schemas.Liveness' to 'Deco
 
 ## 2026-09-08 方向确认与研究边界
 
-首版本地 3D 范围已确认；新增 OOTD-SYS-ACC-012/013 承接角色换装完整旅程与云关闭边界，结果均为 pending。资产/性能提案依据见 [`../design/13-三维虚拟形象与服装系统研究.md`](../design/13-三维虚拟形象与服装系统研究.md)；原系统结果不自动覆盖新增能力，照片/历史数据切片不变。
+该段原“首版本地 3D”已由 P1 多视角修正；OOTD-SYS-ACC-012/013 承接 P1 角色/Look 旅程与云关闭边界，结果均为 pending。完整产品真 3D 由 OOTD-SYS-ACC-015 独立验收；原系统结果不自动覆盖新增能力，照片/历史数据切片不变。
 
 ## iOS 26 与液态玻璃新增验收提案
 
@@ -170,9 +174,10 @@ error: main actor-isolated conformance of 'Components.Schemas.Liveness' to 'Deco
 
 | 发布层级 | 必须通过的系统场景 | 可保持关闭的能力 |
 | --- | --- | --- |
-| 本地 3D 核心 GA | `OOTD-SYS-ACC-001`～`003`、`005`、`009`～`013` | 本人 OOTD 照建档、静态试穿、AI 2.5D 动态预览、云同步、分析和生成媒体分享/导出 |
+| P1 多视角与本地核心 | `OOTD-SYS-ACC-001`～`003`、`005`、`009`～`013` | 本人 OOTD 照建档、静态试穿、Create 360°、真 3D、云同步、分析和生成媒体分享/导出 |
 | 静态试穿受控发布 | 本地核心全部 + `OOTD-SYS-ACC-006`、`008` | 动态预览 |
 | 动态预览实验/灰度 | 静态试穿对应场景 + `OOTD-SYS-ACC-007` | 非目标账号、地域和版本继续关闭 |
+| 完整产品 | P1–P6 单功能验收 + `OOTD-SYS-ACC-014`～`016` | 社交、商城、广告和开放资产市场可保持关闭 |
 
 未进入目标发布层级的条件能力可保持 `pending` 或 `blocked`，但必须有生产开关、入口和网络不可达的反向证据。
 
@@ -230,13 +235,13 @@ error: main actor-isolated conformance of 'Components.Schemas.Liveness' to 'Deco
 
 ## 系统验收场景
 
-### OOTD-SYS-ACC-001 技术基线、SwiftUI 唯一架构与局部 renderer 边界
+### OOTD-SYS-ACC-001 技术基线、SwiftUI 唯一架构与原生媒体/3D 边界
 
 - 适用层级：全部。
 - 前置条件：干净克隆，依赖锁定；如目标包含动态预览，renderer 决策已批准。
-- 操作步骤：运行工具链、iOS 架构、契约和依赖检查，执行 clean build/Archive；盘点 UIKit/WebKit/Three.js 引用。
-- 期望结果：产品页面使用 SwiftUI + Observation，GRDB/OpenAPI/Go 基线唯一；UIKit/WebKit 只位于明确 adapter；Three.js 仅在对照 POC 通过并锁版后可作局部 renderer，不是 H5 Feature。
-- 边界情况：未启用动态能力时包内不应存在占位 Three.js runtime；禁止未批准同类框架和远程可执行代码。
+- 操作步骤：运行工具链、iOS 架构、契约和依赖检查，执行 clean build/Archive；盘点 UIKit/WebKit/Three.js、视频和 RealityKit 引用。
+- 期望结果：产品页面使用 SwiftUI + Observation，GRDB/OpenAPI/Go 基线唯一；360° 使用原生视频能力，真 3D 只使用 RealityKit/USDZ；产品包内没有 Three.js/Web renderer 或远程可执行代码。
+- 边界情况：未启用真 3D 时包内不应存在占位 USDZ 运行资产；启用后也不增加 GLB/Web 兼容路径。
 - 验收证据：脚本/build/Archive 日志、依赖/许可证/SBOM 和 adapter 引用清单。
 - 结果：`pending`
 
@@ -290,14 +295,14 @@ error: main actor-isolated conformance of 'Components.Schemas.Liveness' to 'Deco
 - 验收证据：端到端 trace、队列/幂等/配额记录、供应商/删除证据和真机录屏。
 - 结果：`blocked`
 
-### OOTD-SYS-ACC-007 动态预览条件启用、renderer 回退与静态隔离
+### OOTD-SYS-ACC-007 Create 360° 条件启用、原生播放与静态隔离
 
 - 适用层级：动态预览实验/灰度必选。
 - 前置条件：静态试穿已在目标地区稳定生产；15、17、18 号相关验收通过；动态独立开关只对测试账号开启。
-- 操作步骤：从用户主动保留的合格静态结果派生动态资产，拖动/原生按钮查看，切换 Reduce Motion/VoiceOver/离线/内存压力，注入 renderer 故障，关闭动态开关并删除来源。
-- 期望结果：静态先显示；动态明确是 2.5D AI 推测；Reduce Motion 不运行连续动画；renderer 失败降级静态；关闭开关不影响静态/推荐/保存；来源删除级联所有帧、manifest 和缓存。
-- 边界情况：如使用 Three.js，必须是本地锁版 bundle、CSP/零外联、按 App + WebContent + GPU 总资源验收，context lost/WebContent 终止最多重建一次后静态降级；原生帧 renderer 更合适时不强行引入 Three.js。
-- 验收证据：renderer POC Go/No-Go、真机性能/能耗/热状态、零外联/供应链、故障回退/删除和开关记录。
+- 操作步骤：从用户主动保留的合格静态结果派生 360° MP4，播放/暂停并切换 Reduce Motion/VoiceOver/离线/内存压力，注入视频加载故障，关闭动态开关并删除来源。
+- 期望结果：静态先显示；视频明确是 AI 生成动态结果；Reduce Motion 不自动播放；播放器失败降级静态；关闭开关不影响静态/推荐/保存；来源删除级联视频、manifest 和缓存。
+- 边界情况：客户端只使用原生视频播放，不引入 Three.js、逐帧拖拽或 Web renderer；MP4 不得标记为可交互真 3D。
+- 验收证据：Provider/视频 POC、真机播放性能/能耗/热状态、故障回退/删除和开关记录。
 - 结果：`blocked`
 
 ### OOTD-SYS-ACC-008 跨账号 API、资产与任务隔离
@@ -350,7 +355,7 @@ error: main actor-isolated conformance of 'Components.Schemas.Liveness' to 'Deco
 
 ### OOTD-SYS-ACC-013 云能力按目的启用与本地独立
 
-- 适用层级：本地 3D 核心 GA 必选。
+- 适用层级：P1 多视角与本地核心必选。
 - 前置条件：Release 候选，能记录网络请求；后端未运行；设备分别处于有网和断网。
 - 操作步骤：完成角色、衣橱、推荐、保存、删除；查看登录/生成/同步/下载入口与运行配置。
 - 期望结果：未认证/未逐次同意时无照片上传或生成；已批准云能力仅接纳用户主动且经过授权的最小输入。没有隐含匿名账号、完整衣橱/角色/记录同步或远程脚本；离线仍可用本地衣橱和记录，未开放能力不能接纳任务。
@@ -369,6 +374,20 @@ error: main actor-isolated conformance of 'Components.Schemas.Liveness' to 'Deco
 - 证据：真实请求/数据库/队列与删除断言、Provider 测试报告、资产 hash、设备屏幕旅程、离线与辅助功能。不得上传真实用户数据作为测试夹具。
 - 结果：`pending`；只有静态流程或只有本地模板均不能判定完整目标已交付。
 
+### OOTD-SYS-ACC-015 可交互真 3D 独立交付
+
+- 前置条件：P5 对应 PRD/design 与 `FF-SS` 契约获批；人物、服装、动作和 USDZ manifest 已通过权利与资产检查。
+- 操作步骤：在最低支持真机进入 3D 工作室，异步加载人物，连续旋转/缩放，依次替换上装、下装和鞋，触发一次展示动作；再注入弱网、坏 hash、低存储、内存压力和缺失动作。
+- 期望结果：正常路径保持可交互帧率与固定人物/衣物语义，动作结束回到站姿；失败保留上一有效场景，首次失败可回到关联多视角 Look；VoiceOver、减少动态效果和相机复位可用；MP4 或三视图不能作为通过证据。
+- 结果：`pending`。
+
+### OOTD-SYS-ACC-016 完整产品端到端交付
+
+- 前置条件：P1–P6 对应单功能验收均通过，生产配置、供应商、隐私、许可证和数据生命周期获准。
+- 操作步骤：以零数据新用户完成无上传穿搭；建立真实衣橱并完成推荐—计划—实际—反馈；用本人授权照片完成试穿和 360°；完成真 3D 换装；在第二台设备恢复允许同步的数据；最后导出并删除账户数据。
+- 期望结果：每一步产生真实、可恢复、可删除的产品状态；三类视觉结果标识正确；跨账号隔离成立；删除覆盖数据库、本地缓存、MinIO、队列任务和供应商副本；Release、无障碍、安全和恢复门禁均有证据。
+- 结果：`pending`。
+
 ## 证据记录规则
 
 每份证据必须记录：唯一 `evidence_id`、commit/build、设备与 OS、环境/地域、夹具/策略/模型版本、命令或人工步骤、持久 artifact 地址、时间、执行人、复核人、结果和已知限制。不得保存真实用户素材、生产凭据、敏感正文或依赖临时路径。
@@ -379,6 +398,6 @@ error: main actor-isolated conformance of 'Components.Schemas.Liveness' to 'Deco
 
 - 用户已确认旧开发数据无需保留，19-02 验收通过；旧生活管理迁移不适用。未来 OOTD 首份 schema 及后续升级/恢复仍按 12-01 等切片验证。
 - 生产 Provider、地域、配额、保留、删除、质量和容量数值未批准，云端场景当前为 `blocked`。
-- 动态预览尚未通过增量价值、供应商、renderer 与最低设备 POC，`OOTD-SYS-ACC-007` 当前为 `blocked`。
+- Create 360° 尚未通过增量价值、供应商、原生视频播放与最低设备 POC，`OOTD-SYS-ACC-007` 当前为 `blocked`。
 
 只有目标发布层级的所有必选系统场景和对应单功能验收均为 `passed`，且不存在未接受的隐私、安全、迁移、删除、无障碍或回滚阻断项时，才能判定该层级发布通过。
