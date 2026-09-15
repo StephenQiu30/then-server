@@ -38,7 +38,7 @@
 | --- | --- | --- | --- |
 | `11-04-DOC-01` | 对齐 Design、PRD、Plan 与 Acceptance 的 Three.js 单一路线 | `completed` | 已补齐此前漏改的 Design 01、18、目录入口；AVATAR-BASELINE-01、REQ-036/037、ACC-026 固定禁用 Blender 和变更规则 |
 | `11-04-IOS-01` | 实现人物层、待机微动、拖动反馈和换装确认 | `completed` | `avatar.js` diff 与模拟器可见行为 |
-| `11-04-IOS-02` | 贯通 Reduce Motion、后台暂停和销毁释放 | `completed` | Swift payload、visibility/pagehide 处理 |
+| `11-04-IOS-02` | 贯通 Reduce Motion、后台暂停和销毁释放 | `pending` | 已有 Swift payload 和 JS visibility/pagehide；缺少原生场景/舞台可见性桥接及真实恢复证据，原 completed 收回 |
 | `11-04-TEST-01` | 增加 Reduce Motion 配置回归测试 | `completed` | `AvatarStudioModelTests` 新用例 |
 | `11-04-TEST-02` | Debug 构建与相关测试通过 | `completed` | iPhone 17 / iOS 26.5：模型测试 4 passed；Woo 首页→衣橱→换装 UI 回归 1 passed；均 0 failed/0 skipped，独立 xcresult 已复核 |
 | `11-04-ACC-01` | 模拟器录屏核对正常/Reduce Motion/拖动/换装 | `in_progress` | 默认待机三时刻证据已保存；Reduce Motion、拖动与换装动态录屏待补 |
@@ -60,3 +60,9 @@
 | 11-04-EYES-03 | pending | 正式代表包视觉与最低真机性能/恢复通过，ACC-027 有实际证据 |
 
 相关资产字段与下一阶段步骤以 [人物研究规格](../design/threejs-avatar-research.md#下一阶段的可验收输入与步骤) 为准；这里仅维护任务完成状态。
+
+## 生命周期修复的可执行要求
+
+源码审查 5aabe58：仅 document.visibilitychange/pagehide，不能证明 SwiftUI 遮挡或原生后台一定传达；微动相位直接使用 RAF 绝对 time，恢复后可能跳相位，delta 上限本身不证明“暂停期间不推进”。IOS-02 需原生 scene/舞台可见性驱动停止/恢复，使用仅可见时递增的活动时间，离开时清理 pointer/lean/pulse，context lost 后不继续循环提交到失效上下文。
+
+验收必须实际覆盖后台 30 秒恢复、展示覆盖页再返回、拖动中取消、Reduce Motion 前后切换与 WebContent 终止重建；观察活动时钟/动画帧停止、姿态连续、没有旧手势或旧人物动画。后端运行与模型配置测试不能抵扣。上述是本轮发现的未完成实现项，本次只修正计划和状态，不修改渲染代码。

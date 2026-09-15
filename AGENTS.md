@@ -45,3 +45,5 @@ then-server/
 ## 文档维护
 
 原地更新有效 Design/PRD/Plan/Acceptance；删除已被替代的方案、旧业务迁移和重复实验日志，同步所有索引与交叉链接。保留尚未完成的需求、阻断及必要可复核证据。README 只给入口与当前边界，具体状态归单切片 checklist，测试结果归 Acceptance；不得把开发完成等同于发布完成。
+
+编号是稳定追踪身份，不为删除后的空号全量重排。PRD/Acceptance 同领域对应，Plan 使用 FF-SS；新切片继续递增、不复用退役编号，阅读次序维护在索引。完整规则见 [执行计划编号规范](docs/plan/README.md#编号与阅读顺序)。

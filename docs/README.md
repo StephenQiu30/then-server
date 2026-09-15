@@ -11,7 +11,7 @@
 | 当前技术栈与变更规则 | [Design 01](design/01-技术选型.md) |
 | 后端目录、规范与 SOP | [Design 02](design/02-后端架构.md)、[后端规范](../backend/AGENTS.md) |
 | Woo 页面与研究 | [UI 设计](design/17-Woo页面与三维穿搭UI设计.md)、[Woo 证据](design/18-Woo立体数字衣橱技术路线研究与决策.md)、[市场研究](design/19-数字衣橱与虚拟试穿竞品研究.md) |
-| Three.js / GLB 与资产交付 | [当前研究与选型](design/threejs-avatar-research.md)、[灵动计划](plan/11-04-Threejs角色灵动反馈执行计划.md) |
+| Three.js / GLB 与资产交付 | [当前研究与选型](design/threejs-avatar-research.md)、[灵动计划](plan/11-04-Threejs角色灵动反馈执行计划.md)、[三维闭环规格](plan/11-05-三维人物与造型闭环执行计划.md) |
 | 已测结果与发布缺口 | [系统验收](acceptance/10-OOTD产品系统验收.md) |
 | 启动服务 / Swagger | [后端 README](../backend/README.md) |
 
