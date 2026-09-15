@@ -16,7 +16,10 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 	}
 	var spec struct {
 		OpenAPI string `json:"openapi"`
-		Paths   map[string]map[string]struct {
+		Info    struct {
+			Version string `json:"version"`
+		} `json:"info"`
+		Paths map[string]map[string]struct {
 			OperationID string `json:"operationId"`
 			Responses   map[string]struct {
 				Headers map[string]json.RawMessage `json:"headers"`
@@ -57,6 +60,16 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 					t.Fatalf("protected operation %s does not document stale session cleanup", operation.OperationID)
 				}
 			}
+			if operation.OperationID == "registerAccount" || operation.OperationID == "createSession" {
+				limited, exists := operation.Responses["429"]
+				if !exists || limited.Headers["Retry-After"] == nil {
+					t.Fatalf("authentication operation %s does not document rate-limit recovery", operation.OperationID)
+				}
+				unavailable, exists := operation.Responses["503"]
+				if !exists || unavailable.Headers["Retry-After"] == nil {
+					t.Fatalf("authentication operation %s does not document limiter unavailability", operation.OperationID)
+				}
+			}
 			for _, parameter := range operation.Parameters {
 				if parameter.In == "cookie" && parameter.Name == sessionCookieName {
 					t.Fatal("generated client contract exposed the HttpOnly session cookie as a request parameter")
@@ -64,7 +77,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || operations != 8 {
-		t.Fatalf("unexpected generated contract: version=%s operations=%d", spec.OpenAPI, operations)
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.5.0" || operations != 8 {
+		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
 }

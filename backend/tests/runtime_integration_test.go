@@ -52,6 +52,25 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := url.URL{Scheme: "postgres", User: url.UserPassword("then_test", password), Host: net.JoinHostPort(host, port.Port()), Path: "/then_test", RawQuery: "sslmode=disable"}
+	redisContainer, err := createTestContainer(t, ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        "redis:8.10.0@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366",
+			ExposedPorts: []string{"6379/tcp"},
+			WaitingFor:   wait.ForLog("Ready to accept connections").WithStartupTimeout(time.Minute),
+		}, Started: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	redisHost, err := redisContainer.Host(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redisPort, err := redisContainer.MappedPort(ctx, "6379/tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	redisURL := "redis://" + net.JoinHostPort(redisHost, redisPort.Port()) + "/0"
 	cfg, err := config.Load(func(key string) (string, bool) {
 		if key == "DATABASE_URL" {
 			return u.String(), true
@@ -116,13 +135,21 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		{"unsupported all", []string{"APP_ROLE=all"}, "APP_ROLE"},
 		{"invalid credentials", []string{"DATABASE_URL=" + wrongPassword.String()}, "database unavailable"},
 		{"schema migration", []string{"DATABASE_URL=" + readOnlySchema.String()}, "database schema migration failed"},
+		{"redis unavailable", []string{"DATABASE_URL=" + u.String(), "REDIS_URL=redis://127.0.0.1:1/0"}, "rate limiter unavailable"},
 		{"occupied listener", []string{"DATABASE_URL=" + u.String(), "HTTP_ADDR=" + occupied.Addr().String()}, "HTTP listen failed"},
 	} {
 		t.Run(failure.name, func(t *testing.T) {
 			attempt, stop := context.WithTimeout(ctx, 10*time.Second)
 			defer stop()
 			command := exec.CommandContext(attempt, binary)
-			command.Env = failure.env
+			command.Env = append([]string{}, failure.env...)
+			hasRedisURL := false
+			for _, variable := range command.Env {
+				hasRedisURL = hasRedisURL || strings.HasPrefix(variable, "REDIS_URL=")
+			}
+			if !hasRedisURL {
+				command.Env = append(command.Env, "REDIS_URL="+redisURL)
+			}
 			output, err := command.CombinedOutput()
 			if attempt.Err() != nil {
 				t.Fatal("startup failure did not exit within deadline")
@@ -142,7 +169,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		})
 	}
 	process := exec.CommandContext(ctx, binary)
-	process.Env = []string{"DATABASE_URL=" + u.String(), "HTTP_ADDR=127.0.0.1:0", "APP_ROLE=api", "API_DOCS_ENABLED=true"}
+	process.Env = []string{"DATABASE_URL=" + u.String(), "REDIS_URL=" + redisURL, "HTTP_ADDR=127.0.0.1:0", "APP_ROLE=api", "API_DOCS_ENABLED=true"}
 	stdout, err := process.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -194,6 +221,49 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 			}
 		}
 		exerciseAccountHTTPLifecycle(t, ctx, client, "http://"+address, admin)
+		docker, err := testcontainers.NewDockerClient()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer docker.Close()
+		if _, err := docker.ContainerPause(ctx, redisContainer.GetContainerID(), dockerclient.ContainerPauseOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		redisPaused := true
+		defer func() {
+			if !redisPaused {
+				return
+			}
+			cleanup, done := context.WithTimeout(context.Background(), 10*time.Second)
+			defer done()
+			_, _ = docker.ContainerUnpause(cleanup, redisContainer.GetContainerID(), dockerclient.ContainerUnpauseOptions{})
+		}()
+		status := func(path string) int {
+			t.Helper()
+			response, err := client.Get("http://" + address + path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			return response.StatusCode
+		}
+		if got := status("/v1/health/ready"); got != http.StatusServiceUnavailable {
+			t.Fatalf("Redis-disconnected readiness %d", got)
+		}
+		if got := status("/v1/health/live"); got != http.StatusOK {
+			t.Fatalf("Redis-disconnected liveness %d", got)
+		}
+		if _, err := docker.ContainerUnpause(ctx, redisContainer.GetContainerID(), dockerclient.ContainerUnpauseOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		redisPaused = false
+		deadline := time.Now().Add(30 * time.Second)
+		for status("/v1/health/ready") != http.StatusOK {
+			if time.Now().After(deadline) {
+				t.Fatal("readiness did not recover after Redis resumed")
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 	case <-ctx.Done():
 		t.Fatal("startup timeout")
 	}
@@ -301,12 +371,19 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 	if len(failedLogin.Cookies()) != 0 {
 		t.Fatal("invalid credentials unexpectedly changed browser cookies")
 	}
+	for range 8 {
+		accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusUnauthorized)
+	}
+	limited, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusTooManyRequests)
+	if limited.Header.Get("Retry-After") == "" || !strings.Contains(string(body), `"code":"RATE_LIMITED"`) {
+		t.Fatal("actual API process did not expose the authentication rate-limit recovery contract")
+	}
 
 	var remaining int64
 	if err := pool.ORM().WithContext(ctx).Raw("SELECT count(*) FROM user_credentials WHERE email = ?", email).Scan(&remaining).Error; err != nil || remaining != 0 {
 		t.Fatal("deleted HTTP account still has persisted credentials")
 	}
-	t.Log("actual API process: register -> logout/replay 401 -> login -> account delete/replay 401; credentials removed")
+	t.Log("actual API process: account lifecycle, session revocation, deletion and login rate-limit 429 verified; credentials removed")
 }
 
 func accountRequest(t *testing.T, ctx context.Context, client *http.Client, method, endpoint, body string, cookie *http.Cookie, expectedStatus int) (*http.Response, []byte) {

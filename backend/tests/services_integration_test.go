@@ -10,9 +10,14 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/StephenQiu30/then-server/backend/internal/platform/ratelimit"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -138,6 +143,77 @@ func TestServicesRedisTTL(t *testing.T) {
 		if err := unauth.Ping(ctx).Err(); err == nil {
 			t.Fatal("Redis allowed unauthenticated access")
 		}
+	}
+}
+
+func TestServicesRedisAuthenticationRateLimitIsAtomicAndPrivate(t *testing.T) {
+	environment := loadServiceEnvironment(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	connection := url.URL{Scheme: "redis", Host: environment.redisAddr, Path: "/" + strconv.Itoa(environment.redisDB)}
+	if environment.redisPassword != "" {
+		connection.User = url.UserPassword("", environment.redisPassword)
+	}
+	limiter, err := ratelimit.Open(ctx, connection.String())
+	serviceOK(t, "open authentication rate limiter", err)
+	defer limiter.Close()
+	scope := serviceID(t)
+	prefix := "then:auth-rate:" + scope + ":"
+	inspector := redis.NewClient(&redis.Options{Addr: environment.redisAddr, Password: environment.redisPassword, DB: environment.redisDB, DialTimeout: 2 * time.Second})
+	t.Cleanup(func() {
+		defer inspector.Close()
+		cleanup, done := context.WithTimeout(context.Background(), 2*time.Second)
+		defer done()
+		keys, _, err := inspector.Scan(cleanup, 0, prefix+"*", 100).Result()
+		if err != nil {
+			t.Error("rate-limit key scan cleanup failed")
+			return
+		}
+		if len(keys) > 0 && inspector.Del(cleanup, keys...).Err() != nil {
+			t.Error("rate-limit key cleanup failed")
+		}
+	})
+	const subject = "192.0.2.55"
+	const attempts = 32
+	const limit = 10
+	results := make(chan bool, attempts)
+	errorsFound := make(chan error, attempts)
+	var group sync.WaitGroup
+	for range attempts {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			allowed, retryAfter, err := limiter.Allow(ctx, scope, subject, limit, time.Minute)
+			if err != nil {
+				errorsFound <- err
+				return
+			}
+			if retryAfter <= 0 || retryAfter > time.Minute {
+				errorsFound <- errors.New("rate-limit TTL is outside the configured window")
+				return
+			}
+			results <- allowed
+		}()
+	}
+	group.Wait()
+	close(results)
+	close(errorsFound)
+	if len(errorsFound) != 0 {
+		t.Fatal("concurrent rate-limit operation failed")
+	}
+	allowed := 0
+	for result := range results {
+		if result {
+			allowed++
+		}
+	}
+	if allowed != limit {
+		t.Fatalf("allowed attempts=%d expected=%d", allowed, limit)
+	}
+	keys, _, err := inspector.Scan(ctx, 0, prefix+"*", 100).Result()
+	serviceOK(t, "inspect authentication rate-limit key", err)
+	if len(keys) != 1 || strings.Contains(keys[0], subject) {
+		t.Fatal("rate-limit state did not use exactly one non-identifying key")
 	}
 }
 

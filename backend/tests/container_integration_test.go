@@ -71,6 +71,18 @@ func TestContainerRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = createTestContainer(t, ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:      "redis:8.10.0@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366",
+			WaitingFor: wait.ForLog("Ready to accept connections").WithStartupTimeout(time.Minute),
+			HostConfigModifier: func(h *dockercontainer.HostConfig) {
+				h.NetworkMode = dockercontainer.NetworkMode("container:" + db.GetContainerID())
+			},
+		}, Started: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	host, err := db.Host(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +95,7 @@ func TestContainerRuntime(t *testing.T) {
 	api, err := createTestContainer(t, ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: image,
-			Env:   map[string]string{"DATABASE_URL": dsn.String(), "HTTP_ADDR": "0.0.0.0:8080", "APP_ROLE": "api", "SESSION_COOKIE_SECURE": "true"},
+			Env:   map[string]string{"DATABASE_URL": dsn.String(), "REDIS_URL": "redis://127.0.0.1:6379/0", "HTTP_ADDR": "0.0.0.0:8080", "APP_ROLE": "api", "SESSION_COOKIE_SECURE": "true"},
 			HostConfigModifier: func(h *dockercontainer.HostConfig) {
 				h.NetworkMode = dockercontainer.NetworkMode("container:" + db.GetContainerID())
 				h.ReadonlyRootfs = true

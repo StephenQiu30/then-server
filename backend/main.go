@@ -12,11 +12,23 @@ import (
 	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
 	"github.com/StephenQiu30/then-server/backend/internal/platform/database"
 	"github.com/StephenQiu30/then-server/backend/internal/platform/httpserver"
+	"github.com/StephenQiu30/then-server/backend/internal/platform/ratelimit"
 	"github.com/StephenQiu30/then-server/backend/internal/repository"
 	"github.com/StephenQiu30/then-server/backend/internal/service"
 	"github.com/StephenQiu30/then-server/backend/internal/transport"
 	"github.com/gin-gonic/gin"
 )
+
+type dependencyProbes []transport.DependencyProbe
+
+func (probes dependencyProbes) Probe(ctx context.Context) error {
+	for _, probe := range probes {
+		if probe == nil || probe.Probe(ctx) != nil {
+			return errors.New("runtime dependency unavailable")
+		}
+	}
+	return nil
+}
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -43,12 +55,17 @@ func run(log *slog.Logger) error {
 	if err := repository.Migrate(startup, pool.ORM()); err != nil {
 		return errors.New("database schema migration failed")
 	}
+	limiter, err := ratelimit.Open(startup, cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer limiter.Close()
 	accounts, err := service.NewAccountService(repository.NewAccountRepository(pool.ORM()))
 	if err != nil {
 		return err
 	}
 	gin.SetMode(gin.ReleaseMode)
-	router, err := transport.NewRouter(startup, cfg.DocsEnabled, pool, transport.NewAccountHandler(accounts, cfg.SessionSecure), cfg.HealthTimeout, log)
+	router, err := transport.NewRouter(startup, cfg.DocsEnabled, dependencyProbes{pool, limiter}, transport.NewAccountHandler(accounts, cfg.SessionSecure, limiter), cfg.HealthTimeout, log)
 	if err != nil {
 		return err
 	}

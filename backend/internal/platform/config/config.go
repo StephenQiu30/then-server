@@ -16,6 +16,7 @@ type Config struct {
 	DocsEnabled     bool
 	SessionSecure   bool
 	DatabaseURL     string
+	RedisURL        string
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
@@ -32,7 +33,12 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		}
 		return fallback
 	}
-	c := Config{Role: get("APP_ROLE", "api"), HTTPAddr: get("HTTP_ADDR", "127.0.0.1:8080"), DatabaseURL: get("DATABASE_URL", "")}
+	c := Config{
+		Role:        get("APP_ROLE", "api"),
+		HTTPAddr:    get("HTTP_ADDR", "127.0.0.1:8080"),
+		DatabaseURL: get("DATABASE_URL", ""),
+		RedisURL:    get("REDIS_URL", "redis://127.0.0.1:6379/0"),
+	}
 	if c.Role != "api" {
 		return Config{}, fmt.Errorf("APP_ROLE: only api is implemented in this release")
 	}
@@ -85,6 +91,9 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	if mode != "verify-full" && !(mode == "disable" && local) {
 		return Config{}, fmt.Errorf("DATABASE_URL: require sslmode=verify-full; disable is only allowed on loopback")
 	}
+	if err := validateRedisURL(c.RedisURL); err != nil {
+		return Config{}, err
+	}
 	integers := []struct {
 		key, fallback string
 		min, max      int
@@ -121,4 +130,33 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		*field.dest = v
 	}
 	return c, nil
+}
+
+func validateRedisURL(value string) error {
+	u, err := url.Parse(value)
+	if err != nil || u == nil || (u.Scheme != "redis" && u.Scheme != "rediss") || u.Hostname() == "" || u.Port() == "" || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("REDIS_URL: expected redis URL with host, port and database")
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("REDIS_URL: invalid port")
+	}
+	database, err := strconv.Atoi(strings.TrimPrefix(u.EscapedPath(), "/"))
+	if err != nil || u.EscapedPath() != "/"+strconv.Itoa(database) || database < 0 || database > 15 {
+		return fmt.Errorf("REDIS_URL: database must be an integer from 0 through 15")
+	}
+	ip := net.ParseIP(u.Hostname())
+	local := u.Hostname() == "localhost" || (ip != nil && ip.IsLoopback())
+	if u.Scheme == "redis" && !local {
+		return fmt.Errorf("REDIS_URL: plaintext is only allowed on loopback")
+	}
+	if !local {
+		if u.User == nil {
+			return fmt.Errorf("REDIS_URL: remote TLS connection requires authentication")
+		}
+		if password, ok := u.User.Password(); !ok || password == "" {
+			return fmt.Errorf("REDIS_URL: remote TLS connection requires authentication")
+		}
+	}
+	return nil
 }

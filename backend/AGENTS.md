@@ -25,7 +25,8 @@ backend/
 │   └── platform/
 │       ├── config/                 # 类型化配置
 │       ├── database/               # PostgreSQL/GORM 连接与探测
-│       └── httpserver/             # HTTP 生命周期
+│       ├── httpserver/             # HTTP 生命周期
+│       └── ratelimit/              # Redis 认证限流、探测与连接生命周期
 ├── tests/                          # 真实依赖、进程和镜像测试
 ├── Dockerfile / .dockerignore
 └── .env.example
@@ -76,8 +77,8 @@ repository -> model
 - API、Service、Repository I/O 传递 `context.Context`；构造函数拒绝无效依赖，资源由创建者逆序有界关闭。
 - 包内 `_test.go` 验证纯逻辑和 HTTP 契约；`tests/` 只放真实 PostgreSQL、本机中间件、实际进程和镜像测试，它不是 test 微服务。
 - 最小检查：`gofmt -l .`、`go mod verify`、`go vet ./...`、`go test ./... -count=1`、`go test -race ./... -count=1`。
-- 涉及 GORM schema 或 PostgreSQL 时增加 `go test -race -tags=services ./tests -count=1` 和 `go test -race -tags=integration ./tests -count=1`；涉及镜像时再运行 container 测试。
+- 涉及 GORM/PostgreSQL 或 Redis 运行时依赖时增加 `go test -race -tags=services ./tests -count=1` 和 `go test -race -tags=integration ./tests -count=1`；涉及镜像时再运行 container 测试。
 
 ## 完成条件
 
-代码、Design、PRD、单切片 Plan 和 Acceptance 必须表达同一实现；依赖方向、运行时 OpenAPI、GORM schema、真实数据库行为及相关 CI 检查均通过。验证范围要明确区分本地单测、真实服务、容器、远程 CI 和生产验收。
+代码、Design、PRD、单切片 Plan 和 Acceptance 必须表达同一实现；依赖方向、运行时 OpenAPI、GORM schema、真实数据库行为、Redis 原子限流及相关 CI 检查均通过。验证范围要明确区分本地单测、真实服务、容器、远程 CI 和生产验收。
