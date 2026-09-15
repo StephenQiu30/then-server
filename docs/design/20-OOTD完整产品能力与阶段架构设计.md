@@ -284,7 +284,7 @@ API 能力按产品域提供，Huma operation 和 Go struct tag 在运行时生�
 | P5 可交互真 3D | Three.js 舞台、GLB 人物/服装、连续观察、换装和动作 | 资产 POC、最低真机、性能、视觉和无障碍通过 |
 | P6 账号同步与产品收口 | 注册/登录、本人 CRUD、跨设备恢复、导出、账户删除与全旅程回归 | 完整产品系统验收全部通过 |
 
-阶段编号表达产品累积能力，不替换现有 `FF-SS` 执行计划编号。每个阶段开工前仍按 Design → PRD → 单切片 Plan/Checklist → Implementation → Acceptance 执行。
+阶段编号表达产品累积能力，不替换现有 `FF-SS` 执行计划编号，也不是强制串行依赖。真 3D 完整造型由 [11-05](../plan/11-05-三维人物与造型闭环执行计划.md) 的 draft 承接，11-04 只负责受控微动/眼部；多视角 Provider 未通过不阻断已获准的本地三维修复。每个阶段开工前仍按 Design → PRD → 单切片 Plan/Checklist → Implementation → Acceptance 执行。
 
 ## 完整产品验收定义
 
