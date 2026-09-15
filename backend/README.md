@@ -1,6 +1,6 @@
 # OOTD Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划，以及合成本人照片的私有上传/检查/删除 API 已经实现。
+这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着，以及合成本人照片的私有上传/检查/删除 API 已经实现。
 
 ## 本地运行
 
@@ -64,7 +64,7 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `PUT /v1/wardrobe/items/{item_id}`
 - `DELETE /v1/wardrobe/items/{item_id}`
 
-OpenAPI 0.10.0 在无图最小结构上提供正式度、保暖感受、雨天和步行适用四项 nullable 用户确认属性。POST/PUT 必须提交 `attributes` 对象；空项表示未知，非空响应携带 `user_confirmed`，请求不能提交来源。会话决定 owner；属性参与幂等比较和完整 revision 更新。删除前读取影响摘要，删除时明确选择清空历史快照或同时删除受影响计划。
+OpenAPI 0.11.0 在无图最小结构上提供正式度、保暖感受、雨天和步行适用四项 nullable 用户确认属性。POST/PUT 必须提交 `attributes` 对象；空项表示未知，非空响应携带 `user_confirmed`，请求不能提交来源。会话决定 owner；属性参与幂等比较和完整 revision 更新。删除前读取计划与实际事件的共同影响摘要，删除时明确选择清空全部历史快照或删除受影响历史。
 
 ## 账号穿搭计划 API
 
@@ -75,7 +75,19 @@ OpenAPI 0.10.0 在无图最小结构上提供正式度、保暖感受、雨天�
 - `POST /v1/outfit-plans/{plan_id}/cancel`
 - `DELETE /v1/outfit-plans/{plan_id}`
 
-请求只提交计划日期、IANA 时区、可选摘要及有序的衣物 ID/revision；名称、类别、可用状态和确认属性由服务端在同一 PostgreSQL 事务中生成快照。创建按客户端 UUID 幂等，更新/取消/删除使用 revision，永久删除写入 tombstone 防止迟到请求复活。计划不等于实际穿着；App 主动同步、WearEvent、反馈、推荐与提醒仍未启用。
+请求只提交计划日期、IANA 时区、可选摘要及有序的衣物 ID/revision；名称、类别、可用状态和确认属性由服务端在同一 PostgreSQL 事务中生成快照。创建按客户端 UUID 幂等，更新/状态/删除使用 revision，永久删除写入 tombstone 防止迟到请求复活。计划保存不会自行创建实际穿着；App 主动同步、反馈、推荐与提醒仍未启用。
+
+## 账号实际穿着 API
+
+- `POST /v1/wear-events`
+- `GET /v1/wear-events`
+- `GET /v1/wear-events/{wear_event_id}`
+- `PUT /v1/wear-events/{wear_event_id}`
+- `DELETE /v1/wear-events/{wear_event_id}`
+- `POST /v1/outfit-plans/{plan_id}/not-worn`
+- `POST /v1/outfit-plans/{plan_id}/restore`
+
+实际事件只接受衣物 ID/revision 和用户明确确认，服务端生成快照。同日高度相似记录返回当前候选供再次确认；保存与待洗状态、计划 completed 状态在同一 PostgreSQL 事务完成。纠正/删除使用 revision，永久删除写 tombstone；删除最后一条关联事件后计划恢复 active。
 
 ## 合成本人照片开发闭环
 

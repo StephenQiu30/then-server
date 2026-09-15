@@ -16,6 +16,8 @@ type OutfitPlanHTTPService interface {
 	GetOutfitPlan(context.Context, string, string) (model.OutfitPlan, error)
 	UpdateOutfitPlan(context.Context, string, string, int, model.OutfitPlanInput) (model.OutfitPlan, error)
 	CancelOutfitPlan(context.Context, string, string, int) (model.OutfitPlan, error)
+	MarkOutfitPlanNotWorn(context.Context, string, string, int) (model.OutfitPlan, error)
+	RestoreOutfitPlan(context.Context, string, string, int) (model.OutfitPlan, error)
 	DeleteOutfitPlan(context.Context, string, string, int) error
 }
 
@@ -55,6 +57,10 @@ type CancelOutfitPlanRequest struct {
 	ExpectedRevision int `json:"expected_revision" minimum:"1"`
 }
 
+type TransitionOutfitPlanRequest struct {
+	ExpectedRevision int `json:"expected_revision" minimum:"1"`
+}
+
 type OutfitPlanItemContentResponse struct {
 	ItemID       string                     `json:"item_id" format:"uuid"`
 	ItemRevision int                        `json:"item_revision" minimum:"1"`
@@ -74,7 +80,7 @@ type OutfitPlanResponse struct {
 	LocalDate      string                   `json:"local_date" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
 	TimeZone       string                   `json:"time_zone" minLength:"1" maxLength:"255"`
 	ContextSummary *string                  `json:"context_summary,omitempty" maxLength:"120"`
-	Status         model.OutfitPlanStatus   `json:"status" enum:"active,cancelled"`
+	Status         model.OutfitPlanStatus   `json:"status" enum:"active,completed,not_worn,cancelled"`
 	Revision       int                      `json:"revision" minimum:"1"`
 	CreatedAt      time.Time                `json:"created_at" format:"date-time"`
 	UpdatedAt      time.Time                `json:"updated_at" format:"date-time"`
@@ -110,6 +116,16 @@ type cancelOutfitPlanInput struct {
 	ID      string `path:"plan_id" format:"uuid"`
 	Body    CancelOutfitPlanRequest
 }
+type markOutfitPlanNotWornInput struct {
+	Session string `cookie:"then_session" hidden:"true"`
+	ID      string `path:"plan_id" format:"uuid"`
+	Body    TransitionOutfitPlanRequest
+}
+type restoreOutfitPlanInput struct {
+	Session string `cookie:"then_session" hidden:"true"`
+	ID      string `path:"plan_id" format:"uuid"`
+	Body    TransitionOutfitPlanRequest
+}
 type deleteOutfitPlanInput struct {
 	Session          string `cookie:"then_session" hidden:"true"`
 	ID               string `path:"plan_id" format:"uuid"`
@@ -135,6 +151,8 @@ func registerOutfitPlanOperations(api huma.API, handler *OutfitPlanHandler) {
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "getOutfitPlan", Method: http.MethodGet, Path: "/v1/outfit-plans/{plan_id}", Tags: []string{"Outfit Plans"}, Summary: "读取本人穿搭计划与服务端快照", Errors: errorsWithNotFound}), handler.get)
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "updateOutfitPlan", Method: http.MethodPut, Path: "/v1/outfit-plans/{plan_id}", Tags: []string{"Outfit Plans"}, Summary: "按 revision 完整更新 active 计划", MaxBodyBytes: 16 * 1024, Errors: outfitPlanErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusConflict)}), handler.update)
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "cancelOutfitPlan", Method: http.MethodPost, Path: "/v1/outfit-plans/{plan_id}/cancel", Tags: []string{"Outfit Plans"}, Summary: "取消计划且不创建实际穿着", MaxBodyBytes: 1024, Errors: outfitPlanErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusConflict)}), handler.cancel)
+	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "markOutfitPlanNotWorn", Method: http.MethodPost, Path: "/v1/outfit-plans/{plan_id}/not-worn", Tags: []string{"Outfit Plans"}, Summary: "确认计划最终未穿", MaxBodyBytes: 1024, Errors: outfitPlanErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusConflict)}), handler.markNotWorn)
+	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "restoreOutfitPlan", Method: http.MethodPost, Path: "/v1/outfit-plans/{plan_id}/restore", Tags: []string{"Outfit Plans"}, Summary: "把未穿计划恢复为待确认", MaxBodyBytes: 1024, Errors: outfitPlanErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusConflict)}), handler.restore)
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "deleteOutfitPlan", Method: http.MethodDelete, Path: "/v1/outfit-plans/{plan_id}", Tags: []string{"Outfit Plans"}, Summary: "永久删除计划并阻止迟到复活", DefaultStatus: http.StatusNoContent, Errors: outfitPlanErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusConflict)}), handler.delete)
 }
 
@@ -212,6 +230,28 @@ func (h *OutfitPlanHandler) cancel(ctx context.Context, input *cancelOutfitPlanI
 		return nil, err
 	}
 	plan, err := h.service.CancelOutfitPlan(ctx, input.Session, input.ID, input.Body.ExpectedRevision)
+	if err != nil {
+		return nil, h.error(ctx, err)
+	}
+	return &outfitPlanOutput{RequestID: requestID(ctx), Body: outfitPlanResponse(plan)}, nil
+}
+
+func (h *OutfitPlanHandler) markNotWorn(ctx context.Context, input *markOutfitPlanNotWornInput) (*outfitPlanOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	plan, err := h.service.MarkOutfitPlanNotWorn(ctx, input.Session, input.ID, input.Body.ExpectedRevision)
+	if err != nil {
+		return nil, h.error(ctx, err)
+	}
+	return &outfitPlanOutput{RequestID: requestID(ctx), Body: outfitPlanResponse(plan)}, nil
+}
+
+func (h *OutfitPlanHandler) restore(ctx context.Context, input *restoreOutfitPlanInput) (*outfitPlanOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	plan, err := h.service.RestoreOutfitPlan(ctx, input.Session, input.ID, input.Body.ExpectedRevision)
 	if err != nil {
 		return nil, h.error(ctx, err)
 	}

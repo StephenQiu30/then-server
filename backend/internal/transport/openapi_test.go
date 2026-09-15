@@ -72,7 +72,14 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"getOutfitPlan":                true,
 		"updateOutfitPlan":             true,
 		"cancelOutfitPlan":             true,
+		"markOutfitPlanNotWorn":        true,
+		"restoreOutfitPlan":            true,
 		"deleteOutfitPlan":             true,
+		"createWearEvent":              true,
+		"listWearEvents":               true,
+		"getWearEvent":                 true,
+		"updateWearEvent":              true,
+		"deleteWearEvent":              true,
 	}
 	for _, path := range spec.Paths {
 		for method, operation := range path {
@@ -110,10 +117,10 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.10.0" || operations != 31 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.11.0" || operations != 38 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
-	for _, operationID := range []string{"createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "deleteOutfitPlan"} {
+	for _, operationID := range []string{"createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent"} {
 		if !identifiers[operationID] {
 			t.Fatalf("generated contract is missing %s", operationID)
 		}

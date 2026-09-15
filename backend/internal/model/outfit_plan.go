@@ -17,6 +17,8 @@ type OutfitPlanStatus string
 
 const (
 	OutfitPlanActive    OutfitPlanStatus = "active"
+	OutfitPlanCompleted OutfitPlanStatus = "completed"
+	OutfitPlanNotWorn   OutfitPlanStatus = "not_worn"
 	OutfitPlanCancelled OutfitPlanStatus = "cancelled"
 )
 
@@ -68,11 +70,12 @@ type OutfitPlanPage struct {
 type WardrobeHistoryPolicy string
 
 const (
-	WardrobeHistoryRedactSnapshots     WardrobeHistoryPolicy = "redact_snapshots"
-	WardrobeHistoryDeleteAffectedPlans WardrobeHistoryPolicy = "delete_affected_plans"
+	WardrobeHistoryRedactSnapshots       WardrobeHistoryPolicy = "redact_snapshots"
+	WardrobeHistoryDeleteAffectedHistory WardrobeHistoryPolicy = "delete_affected_history"
 )
 
 type WardrobeDeletionImpact struct {
-	AffectedPlanCount int
-	ExpectedImpact    string
+	AffectedPlanCount      int
+	AffectedWearEventCount int
+	ExpectedImpact         string
 }

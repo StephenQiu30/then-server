@@ -39,6 +39,14 @@ func (s *outfitPlanRepositoryStub) CancelOutfitPlan(_ context.Context, ownerID, 
 	s.ownerID, s.planID, s.expected = ownerID, planID, expected
 	return model.OutfitPlan{ID: planID, OwnerID: ownerID, Revision: expected + 1, Status: model.OutfitPlanCancelled}, s.err
 }
+func (s *outfitPlanRepositoryStub) MarkOutfitPlanNotWorn(_ context.Context, ownerID, planID string, expected int, _ time.Time) (model.OutfitPlan, error) {
+	s.ownerID, s.planID, s.expected = ownerID, planID, expected
+	return model.OutfitPlan{ID: planID, OwnerID: ownerID, Revision: expected + 1, Status: model.OutfitPlanNotWorn}, s.err
+}
+func (s *outfitPlanRepositoryStub) RestoreOutfitPlan(_ context.Context, ownerID, planID string, expected int, _ time.Time) (model.OutfitPlan, error) {
+	s.ownerID, s.planID, s.expected = ownerID, planID, expected
+	return model.OutfitPlan{ID: planID, OwnerID: ownerID, Revision: expected + 1, Status: model.OutfitPlanActive}, s.err
+}
 func (s *outfitPlanRepositoryStub) DeleteOutfitPlan(_ context.Context, ownerID, planID string, expected int, _ time.Time) error {
 	s.ownerID, s.planID, s.expected = ownerID, planID, expected
 	return s.err
@@ -121,7 +129,13 @@ func TestOutfitPlanCommandsAndListValidation(t *testing.T) {
 	if _, err := service.CancelOutfitPlan(context.Background(), "session", planID, 3); err != nil || repository.expected != 3 {
 		t.Fatal("valid cancellation did not reach repository")
 	}
-	if err := service.DeleteOutfitPlan(context.Background(), "session", planID, 4); err != nil || repository.expected != 4 {
+	if _, err := service.MarkOutfitPlanNotWorn(context.Background(), "session", planID, 4); err != nil || repository.expected != 4 {
+		t.Fatal("valid not-worn transition did not reach repository")
+	}
+	if _, err := service.RestoreOutfitPlan(context.Background(), "session", planID, 5); err != nil || repository.expected != 5 {
+		t.Fatal("valid restore transition did not reach repository")
+	}
+	if err := service.DeleteOutfitPlan(context.Background(), "session", planID, 6); err != nil || repository.expected != 6 {
 		t.Fatal("valid deletion did not reach repository")
 	}
 	for _, limit := range []int{0, 51} {

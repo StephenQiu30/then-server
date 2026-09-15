@@ -44,6 +44,18 @@ func (s *outfitPlanTransportStub) CancelOutfitPlan(_ context.Context, token, pla
 	plan.Status, plan.Revision = model.OutfitPlanCancelled, expected+1
 	return plan, s.err
 }
+func (s *outfitPlanTransportStub) MarkOutfitPlanNotWorn(_ context.Context, token, planID string, expected int) (model.OutfitPlan, error) {
+	s.token, s.planID, s.expected = token, planID, expected
+	plan := outfitPlanFixture()
+	plan.Status, plan.Revision = model.OutfitPlanNotWorn, expected+1
+	return plan, s.err
+}
+func (s *outfitPlanTransportStub) RestoreOutfitPlan(_ context.Context, token, planID string, expected int) (model.OutfitPlan, error) {
+	s.token, s.planID, s.expected = token, planID, expected
+	plan := outfitPlanFixture()
+	plan.Status, plan.Revision = model.OutfitPlanActive, expected+1
+	return plan, s.err
+}
 func (s *outfitPlanTransportStub) DeleteOutfitPlan(_ context.Context, token, planID string, expected int) error {
 	s.token, s.planID, s.expected = token, planID, expected
 	return s.err
@@ -55,7 +67,7 @@ func outfitPlanFixture() model.OutfitPlan {
 
 func outfitPlanRouter(t *testing.T, service OutfitPlanHTTPService) *Router {
 	t.Helper()
-	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, nil, NewOutfitPlanHandler(service, true), time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, nil, NewOutfitPlanHandler(service, true), nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +114,9 @@ func TestOutfitPlanListUpdateCancelDeleteHTTPContract(t *testing.T) {
 		httptest.NewRequest(http.MethodGet, "/v1/outfit-plans?limit=20&local_date=2026-09-17", nil),
 		httptest.NewRequest(http.MethodPut, "/v1/outfit-plans/"+planID, strings.NewReader(`{"expected_revision":1,"local_date":"2026-09-18","time_zone":"Asia/Shanghai","context_summary":null,"items":[{"item_id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400a12","revision":2}],"confirmed_unavailable_ids":[]}`)),
 		httptest.NewRequest(http.MethodPost, "/v1/outfit-plans/"+planID+"/cancel", strings.NewReader(`{"expected_revision":2}`)),
-		httptest.NewRequest(http.MethodDelete, "/v1/outfit-plans/"+planID+"?expected_revision=3", nil),
+		httptest.NewRequest(http.MethodPost, "/v1/outfit-plans/"+planID+"/not-worn", strings.NewReader(`{"expected_revision":3}`)),
+		httptest.NewRequest(http.MethodPost, "/v1/outfit-plans/"+planID+"/restore", strings.NewReader(`{"expected_revision":4}`)),
+		httptest.NewRequest(http.MethodDelete, "/v1/outfit-plans/"+planID+"?expected_revision=5", nil),
 	}
 	for _, request := range requests {
 		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
@@ -119,7 +133,7 @@ func TestOutfitPlanListUpdateCancelDeleteHTTPContract(t *testing.T) {
 			t.Fatalf("%s %s status=%d body=%s", request.Method, request.URL.Path, response.Code, response.Body.String())
 		}
 	}
-	if service.updated.LocalDate != "2026-09-18" || service.expected != 3 {
+	if service.updated.LocalDate != "2026-09-18" || service.expected != 5 {
 		t.Fatal("plan HTTP commands lost fields or expected revision")
 	}
 }

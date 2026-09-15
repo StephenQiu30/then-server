@@ -149,7 +149,7 @@ func validWardrobeSource(value model.WardrobeSource) bool {
 }
 
 func validWardrobeHistoryPolicy(value model.WardrobeHistoryPolicy) bool {
-	return value == model.WardrobeHistoryRedactSnapshots || value == model.WardrobeHistoryDeleteAffectedPlans
+	return value == model.WardrobeHistoryRedactSnapshots || value == model.WardrobeHistoryDeleteAffectedHistory
 }
 
 func validWardrobeAttributes(value model.WardrobeAttributes) bool {

@@ -51,7 +51,7 @@ func wardrobeFixture() model.WardrobeItem {
 
 func wardrobeRouter(t *testing.T, service WardrobeHTTPService) *Router {
 	t.Helper()
-	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, NewWardrobeHandler(service, true), nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, NewWardrobeHandler(service, true), nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
