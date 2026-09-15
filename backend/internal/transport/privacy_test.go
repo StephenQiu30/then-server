@@ -75,7 +75,7 @@ func TestPrivacyDeclarationRequiresSessionAndRejectsFalseConfirmation(t *testing
 
 func privacyRouter(t *testing.T, service PrivacyService) *Router {
 	t.Helper()
-	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, NewPrivacyHandler(service, true), time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, NewPrivacyHandler(service, true), nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

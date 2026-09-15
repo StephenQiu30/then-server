@@ -29,6 +29,7 @@ type userRecord struct {
 	Consents     []consentRecord              `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 	Media        []mediaAssetRecord           `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 	Deletions    []deletionRequestRecord      `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Wardrobe     []wardrobeItemRecord         `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 }
 
 func (userRecord) TableName() string { return "users" }

@@ -25,6 +25,7 @@
 | [17-17 认证限流](17-17-账号认证Redis限流执行计划.md) | approved / completed | Redis 原子固定窗口、429/503/OpenAPI、真实服务/进程/受限 OCI 验收 | 可信代理/边缘防护和生产流量验收另行完成 |
 | [17-18 本人成年声明](17-18-本人成年声明API执行计划.md) | approved / completed | 当前版本查询、确认/撤回、并发幂等、PostgreSQL/HTTP/OpenAPI 与远程 CI 通过 | Provider 逐次同意、上传与删除编排另立切片 |
 | [17-19 本人照片私有上传与删除](17-19-本人照片私有上传与删除闭环执行计划.md) | approved / completed（合成数据开发范围） | 8 个 API、MinIO 固定版本、RabbitMQ/Outbox/Inbox 检查删除、三运行角色、合成数据纵向验收与远程 CI 完成 | 真实照片、生产地域、TLS/KMS/备份和 Provider 仍关闭 |
+| [17-20 结构化衣橱账户 API](17-20-结构化衣橱账户API执行计划.md) | approved / in_progress | 本轮固定无图最小字段、账号 owner、幂等创建、revision 冲突、分页和硬删除合同 | App 主动同步、墓碑/合并、衣物图片与第二设备恢复不在本片 |
 | [17-14 仓库与 CI](17-14-客户端服务端仓库拆分与CI执行计划.md)、[17-15 OpenAPI/GORM](17-15-OpenAPI文档门户与Umi生成执行计划.md) | approved / completed | 独立仓库/CI、运行时契约与 AutoMigrate | Web SDK 正式接入不在本片 |
 | [17-13 frontend](17-13-Web账户管理执行计划.md) | draft / pending，按用户要求暂停 | 设计与合同草案 | 不创建页面、目录或空网络层 |
 
