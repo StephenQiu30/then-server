@@ -10,6 +10,8 @@
 
 本决定取代 [Design 13](13-三维虚拟形象与服装系统研究.md) 中 Blender → GLB → Three.js 的生产定案，并由 [PRD 11](../prd/11-数字形象与照片采集需求.md) 与 [11-03 执行计划](../plan/11-03-Woo多视角形象与内置穿搭执行计划.md) 承接。
 
+2026-09-15 的扩展市场复核进一步比较了 Whering、Acloset、Indyx、Stylebook、Alta、Doppl、Doji、DRESSX、Veesual、ZEPETO、Avaturn 及更多开源方案。结论未改变：数字衣橱、图片试穿和真实 3D 是三种不同产品/工程问题；于是先用零上传多视角 Look 提供即时价值，再连接真实衣橱和照片增强。完整矩阵与竞品研究 SOP 见 [Design 19](19-数字衣橱与虚拟试穿竞品研究.md)。
+
 ## 研究问题与证据规则
 
 本轮先回答三个问题，再选框架：
