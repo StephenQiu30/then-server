@@ -88,7 +88,7 @@ func accountRouter(t *testing.T, service AccountService, secure bool) *Router {
 
 func accountRouterWithLimiter(t *testing.T, service AccountService, secure bool, limiter AuthenticationRateLimiter) *Router {
 	t.Helper()
-	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), NewAccountHandler(service, secure, limiter), nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), NewAccountHandler(service, secure, limiter), nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

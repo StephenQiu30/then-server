@@ -15,7 +15,8 @@ type WardrobeHTTPService interface {
 	ListWardrobeItems(context.Context, string, int, *string) (model.WardrobePage, error)
 	GetWardrobeItem(context.Context, string, string) (model.WardrobeItem, error)
 	UpdateWardrobeItem(context.Context, string, string, int, model.UpdateWardrobeItemInput) (model.WardrobeItem, error)
-	DeleteWardrobeItem(context.Context, string, string, int) error
+	GetWardrobeDeletionImpact(context.Context, string, string) (model.WardrobeDeletionImpact, error)
+	DeleteWardrobeItem(context.Context, string, string, int, model.WardrobeHistoryPolicy, string) error
 }
 
 type WardrobeHandler struct {
@@ -90,6 +91,11 @@ type WardrobePageResponse struct {
 	NextAfterID *string                `json:"next_after_id,omitempty" format:"uuid"`
 }
 
+type WardrobeDeletionImpactResponse struct {
+	AffectedPlanCount int    `json:"affected_plan_count" minimum:"0"`
+	ExpectedImpact    string `json:"expected_impact" minLength:"64" maxLength:"64" pattern:"^[0-9a-f]{64}$" doc:"确认删除影响所需的不透明摘要"`
+}
+
 type createWardrobeItemInput struct {
 	Session string `cookie:"then_session" hidden:"true"`
 	Body    CreateWardrobeItemRequest
@@ -109,9 +115,11 @@ type updateWardrobeItemInput struct {
 	Body    UpdateWardrobeItemRequest
 }
 type deleteWardrobeItemInput struct {
-	Session          string `cookie:"then_session" hidden:"true"`
-	ID               string `path:"item_id" format:"uuid"`
-	ExpectedRevision int    `query:"expected_revision" minimum:"1"`
+	Session          string                      `cookie:"then_session" hidden:"true"`
+	ID               string                      `path:"item_id" format:"uuid"`
+	ExpectedRevision int                         `query:"expected_revision" minimum:"1"`
+	HistoryPolicy    model.WardrobeHistoryPolicy `query:"history_policy" enum:"redact_snapshots,delete_affected_plans"`
+	ExpectedImpact   string                      `query:"expected_impact" minLength:"64" maxLength:"64" pattern:"^[0-9a-f]{64}$"`
 }
 
 type wardrobeItemOutput struct {
@@ -125,12 +133,17 @@ type wardrobePageOutput struct {
 type deleteWardrobeItemOutput struct {
 	RequestID string `header:"X-Request-ID"`
 }
+type wardrobeDeletionImpactOutput struct {
+	RequestID string                         `header:"X-Request-ID"`
+	Body      WardrobeDeletionImpactResponse `json:"body"`
+}
 
 func registerWardrobeOperations(api huma.API, handler *WardrobeHandler) {
 	errorsWithNotFound := wardrobeErrors(http.StatusNotFound)
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "createWardrobeItem", Method: http.MethodPost, Path: "/v1/wardrobe/items", Tags: []string{"Wardrobe"}, Summary: "创建本人结构化衣物与确认属性", DefaultStatus: http.StatusCreated, MaxBodyBytes: 8 * 1024, Errors: wardrobeErrors(http.StatusBadRequest, http.StatusConflict)}), handler.create)
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "listWardrobeItems", Method: http.MethodGet, Path: "/v1/wardrobe/items", Tags: []string{"Wardrobe"}, Summary: "分页列出本人结构化衣物", Errors: errorsWithNotFound}), handler.list)
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "getWardrobeItem", Method: http.MethodGet, Path: "/v1/wardrobe/items/{item_id}", Tags: []string{"Wardrobe"}, Summary: "读取本人结构化衣物", Errors: errorsWithNotFound}), handler.get)
+	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "getWardrobeDeletionImpact", Method: http.MethodGet, Path: "/v1/wardrobe/items/{item_id}/deletion-impact", Tags: []string{"Wardrobe"}, Summary: "读取衣物删除对计划的当前影响", Errors: errorsWithNotFound}), handler.deletionImpact)
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "updateWardrobeItem", Method: http.MethodPut, Path: "/v1/wardrobe/items/{item_id}", Tags: []string{"Wardrobe"}, Summary: "按 revision 修改本人结构化衣物", MaxBodyBytes: 8 * 1024, Errors: wardrobeErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusConflict)}), handler.update)
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "deleteWardrobeItem", Method: http.MethodDelete, Path: "/v1/wardrobe/items/{item_id}", Tags: []string{"Wardrobe"}, Summary: "按 revision 删除本人结构化衣物", DefaultStatus: http.StatusNoContent, Errors: wardrobeErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusConflict)}), handler.delete)
 }
@@ -205,10 +218,21 @@ func (h *WardrobeHandler) delete(ctx context.Context, input *deleteWardrobeItemI
 	if err := h.available(ctx, input.Session); err != nil {
 		return nil, err
 	}
-	if err := h.service.DeleteWardrobeItem(ctx, input.Session, input.ID, input.ExpectedRevision); err != nil {
+	if err := h.service.DeleteWardrobeItem(ctx, input.Session, input.ID, input.ExpectedRevision, input.HistoryPolicy, input.ExpectedImpact); err != nil {
 		return nil, h.error(ctx, err)
 	}
 	return &deleteWardrobeItemOutput{RequestID: requestID(ctx)}, nil
+}
+
+func (h *WardrobeHandler) deletionImpact(ctx context.Context, input *wardrobeItemInput) (*wardrobeDeletionImpactOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	impact, err := h.service.GetWardrobeDeletionImpact(ctx, input.Session, input.ID)
+	if err != nil {
+		return nil, h.error(ctx, err)
+	}
+	return &wardrobeDeletionImpactOutput{RequestID: requestID(ctx), Body: WardrobeDeletionImpactResponse{AffectedPlanCount: impact.AffectedPlanCount, ExpectedImpact: impact.ExpectedImpact}}, nil
 }
 
 func (h *WardrobeHandler) error(ctx context.Context, err error) error {
