@@ -8,16 +8,16 @@
 
 ## MVP功能分期
 
-当前产品主路径是离线、无上传的内置三维换装，因此后端 MVP 只交付能支撑当前开发和后续云切片的最小运行底座。没有真实云端用户动作时，不创建账号、衣橱同步、对象上传或空 worker。
+当前产品主路径仍包含离线、无上传的内置三维换装。17-19 已批准合成照片的开发闭环，因此后端只增加该闭环实际需要的对象上传和 worker；真实用户照片及第三方生成仍关闭。
 
 | 阶段 | 交付范围 | 当前状态 | 进入下一阶段的门槛 |
 | --- | --- | --- | --- |
 | B0 运行底座 | 单 Go module/binary、严格配置、PostgreSQL 连接、live/ready、内嵌 OpenAPI/Swagger、有界退出、分层测试 | 已实现；17-11 补齐测试边界 | 普通构建不包含测试 SDK；本机与隔离测试均可独立执行 |
-| B1 云入口基础 | 内部用户身份、目的同意、撤回与删除接纳、对应 GORM schema | 待云功能进入近期计划 | 用户行为、数据字段、保留/删除和认证方式在独立切片获批 |
-| B2 单次生成闭环 | 上传意图/finalize、任务创建/查询/取消、MinIO 私有资产、PG Outbox/Inbox、RabbitMQ worker | 分期，未授权开发 | B1 完成；供应商、地域、成本、质量、迟到结果及删除 POC 通过 |
+| B1 云入口基础 | 内部用户身份、目的同意、撤回与删除接纳、对应 GORM schema | 账号与 17-19 照片目的已完成合成数据验收 | 真实地域、公开承诺和发布负责人另行批准 |
+| B2 单次生成闭环 | 上传意图/finalize、任务创建/查询/取消、MinIO 私有资产、PG Outbox/Inbox、RabbitMQ worker | 照片准备与删除已完成；第三方生成任务未实现 | Provider、地域、成本、质量、迟到结果及删除 POC 通过 |
 | B3 同步与远程目录 | 衣橱/搭配/穿着增量同步、远程资产目录 | 后续 | 冲突、墓碑、版本、离线恢复与多设备产品契约获批 |
 
-B0 不伪造业务 API。B1–B3 只保留路线图，不预建目录、表、DTO、消费者或配置项。
+B0 不伪造业务 API。B1/B2 只实现 17-19 已批准的本人照片准备子集；B3 仍只保留路线图。
 
 ## Go代码与依赖边界
 
@@ -36,8 +36,8 @@ Go 官方建议将服务器内部包放入 `internal`，并通过 `_test.go` 与
 | Unit/contract | 各包 `*_test.go`；`go test ./...` | 无 | 领域/配置/Handler/资源生命周期的确定性规则 |
 | Race | `go test -race ./...` | 无 | 当前测试覆盖内的数据竞争；不等于压力测试 |
 | Local services | `backend/tests/*`；`-tags=services` | 本机 PG/MinIO/Redis/RabbitMQ | 实际协议、鉴权、TTL、confirm/requeue 与清理 |
-| Integration | `backend/tests/*`；`-tags=integration` | Testcontainers PG | 实际进程、断连恢复、错误退出与契约分发 |
-| Container | `backend/tests/*`；`-tags=container` | 显式构建的本地镜像与 Docker | 非 root、只读根、资源限制、健康和 SIGTERM |
+| Integration | `backend/tests/*`；`-tags=integration` | Testcontainers PG/Redis/MinIO/RabbitMQ | 实际 `all` 进程、合成照片全链、断连恢复、错误退出与契约分发 |
+| Container | `backend/tests/*`；`-tags=container` | 显式构建的本地镜像与 Docker | `api|worker|all`、非 root、只读根、资源限制、健康和 SIGTERM |
 
 各入口独立执行、独立失败。缺少依赖不得跳过并记为通过；services 测试不得连接非 loopback 地址。普通 `go test ./...` 保持快速，不启动 Docker 或本机中间件。
 

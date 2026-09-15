@@ -7,10 +7,11 @@ import (
 )
 
 var (
-	ErrInvalidAccountInput = errors.New("invalid account input")
-	ErrEmailConflict       = errors.New("email conflict")
-	ErrAuthentication      = errors.New("authentication failed")
-	ErrAccountUnavailable  = errors.New("account unavailable")
+	ErrInvalidAccountInput  = errors.New("invalid account input")
+	ErrEmailConflict        = errors.New("email conflict")
+	ErrAccountMediaConflict = errors.New("account still owns active media")
+	ErrAuthentication       = errors.New("authentication failed")
+	ErrAccountUnavailable   = errors.New("account unavailable")
 )
 
 type User struct {

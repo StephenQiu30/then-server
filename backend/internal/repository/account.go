@@ -9,6 +9,7 @@ import (
 	"github.com/StephenQiu30/then-server/backend/internal/model"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type AccountRepository struct{ database *gorm.DB }
@@ -25,6 +26,9 @@ type userRecord struct {
 	Credentials  []credentialRecord           `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 	Sessions     []sessionRecord              `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 	Declarations []selfAdultDeclarationRecord `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Consents     []consentRecord              `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Media        []mediaAssetRecord           `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Deletions    []deletionRequestRecord      `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 }
 
 func (userRecord) TableName() string { return "users" }
@@ -173,14 +177,34 @@ func (r *AccountRepository) DeleteSession(ctx context.Context, tokenHash []byte)
 }
 
 func (r *AccountRepository) DeleteUser(ctx context.Context, userID string) error {
-	rows, err := gorm.G[userRecord](r.database).Where("id = ?", userID).Delete(ctx)
-	if err != nil {
-		return model.ErrAccountUnavailable
-	}
-	if rows != 1 {
-		return model.ErrAuthentication
-	}
-	return nil
+	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var user userRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", userID).First(&user).Error; err != nil {
+			return err
+		}
+		var activeMedia int64
+		if err := tx.Model(&mediaAssetRecord{}).Where("owner_id = ? AND status <> ?", userID, string(model.MediaDeleted)).Count(&activeMedia).Error; err != nil {
+			return err
+		}
+		if activeMedia != 0 {
+			return model.ErrAccountMediaConflict
+		}
+		if err := tx.Exec("DELETE FROM inbox_receipts WHERE event_id IN (SELECT id FROM outbox_events WHERE aggregate_id IN (SELECT id FROM media_assets WHERE owner_id = ?))", userID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM outbox_events WHERE aggregate_id IN (SELECT id FROM media_assets WHERE owner_id = ?)", userID).Error; err != nil {
+			return err
+		}
+		rows, err := gorm.G[userRecord](tx).Where("id = ?", userID).Delete(ctx)
+		if err != nil {
+			return err
+		}
+		if rows != 1 {
+			return model.ErrAuthentication
+		}
+		return nil
+	})
+	return mapDatabaseError(err)
 }
 
 func findAccount(ctx context.Context, database *gorm.DB, userID string) (model.User, error) {
@@ -216,6 +240,9 @@ func mapDatabaseError(err error) error {
 	}
 	if errors.Is(err, model.ErrAuthentication) {
 		return model.ErrAuthentication
+	}
+	if errors.Is(err, model.ErrAccountMediaConflict) {
+		return model.ErrAccountMediaConflict
 	}
 	var postgresError *pgconn.PgError
 	if errors.As(err, &postgresError) && postgresError.Code == "23505" && postgresError.ConstraintName == "user_credentials_email_unique" {

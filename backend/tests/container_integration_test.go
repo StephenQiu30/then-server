@@ -83,6 +83,34 @@ func TestContainerRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	minioPassword := rand.Text()
+	_, err = createTestContainer(t, ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:      "minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+			Cmd:        []string{"server", "/data"},
+			Env:        map[string]string{"MINIO_ROOT_USER": "then_test", "MINIO_ROOT_PASSWORD": minioPassword},
+			WaitingFor: wait.ForLog("API:").WithStartupTimeout(time.Minute),
+			HostConfigModifier: func(h *dockercontainer.HostConfig) {
+				h.NetworkMode = dockercontainer.NetworkMode("container:" + db.GetContainerID())
+			},
+		}, Started: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = createTestContainer(t, ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:      "rabbitmq:4.3.5-management@sha256:57bddb6fbc3498b5d8b5a14dc6f4506073ebcf94c66ba2a7678c335faa8dd631",
+			Env:        map[string]string{"RABBITMQ_DEFAULT_USER": "then_test", "RABBITMQ_DEFAULT_PASS": "then_test", "RABBITMQ_DEFAULT_VHOST": "then_test"},
+			WaitingFor: wait.ForLog("Server startup complete").WithStartupTimeout(time.Minute),
+			HostConfigModifier: func(h *dockercontainer.HostConfig) {
+				h.NetworkMode = dockercontainer.NetworkMode("container:" + db.GetContainerID())
+			},
+		}, Started: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	host, err := db.Host(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -152,32 +180,46 @@ func TestContainerRuntime(t *testing.T) {
 		t.Fatalf("SIGTERM exit code: %d", inspected.State.ExitCode)
 	}
 	for _, role := range []string{"worker", "all"} {
-		t.Run(role+" rejected", func(t *testing.T) {
-			unsupported, err := createTestContainer(t, ctx, testcontainers.GenericContainerRequest{ContainerRequest: testcontainers.ContainerRequest{Image: image, Env: map[string]string{"APP_ROLE": role}}, Started: false})
+		t.Run(role+" restricted runtime", func(t *testing.T) {
+			environment := map[string]string{
+				"APP_ROLE": role, "HTTP_ADDR": "127.0.0.1:8080", "DATABASE_URL": dsn.String(), "REDIS_URL": "redis://127.0.0.1:6379/0",
+				"MEDIA_DEVELOPMENT_ENABLED": "true", "MINIO_ENDPOINT": "127.0.0.1:9000", "MINIO_ACCESS_KEY": "then_test", "MINIO_SECRET_KEY": minioPassword,
+				"MINIO_SECURE": "false", "RABBITMQ_URL": "amqp://then_test:then_test@127.0.0.1:5672/then_test", "SESSION_COOKIE_SECURE": "false",
+			}
+			marker := "worker_started"
+			if role == "all" {
+				marker = "api_started"
+			}
+			runtime, err := createTestContainer(t, ctx, testcontainers.GenericContainerRequest{ContainerRequest: testcontainers.ContainerRequest{
+				Image: image, Env: environment, WaitingFor: wait.ForLog(marker).WithStartupTimeout(20 * time.Second),
+				HostConfigModifier: func(h *dockercontainer.HostConfig) {
+					h.NetworkMode = dockercontainer.NetworkMode("container:" + db.GetContainerID())
+					h.ReadonlyRootfs = true
+					h.CapDrop = []string{"ALL"}
+					h.SecurityOpt = []string{"no-new-privileges:true"}
+					limit := int64(64)
+					h.Resources = dockercontainer.Resources{Memory: 256 * 1024 * 1024, NanoCPUs: 1000000000, PidsLimit: &limit}
+				},
+			}, Started: true})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := unsupported.Start(ctx); err != nil {
+			inspected, err := runtime.Inspect(ctx)
+			if err != nil {
 				t.Fatal(err)
 			}
-			deadline := time.Now().Add(5 * time.Second)
-			for {
-				state, err := unsupported.Inspect(ctx)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !state.State.Running {
-					if state.State.ExitCode == 0 {
-						t.Fatal("unsupported role exited successfully")
-					}
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatal("unsupported role did not exit")
-				}
-				time.Sleep(50 * time.Millisecond)
+			if inspected.Config.User != "65532:65532" || !inspected.HostConfig.ReadonlyRootfs {
+				t.Fatal("role runtime security settings differ from contract")
+			}
+			timeout := 12 * time.Second
+			if err := runtime.Stop(ctx, &timeout); err != nil {
+				t.Fatal(err)
+			}
+			inspected, err = runtime.Inspect(ctx)
+			if err != nil || inspected.State.ExitCode != 0 {
+				t.Fatal("role runtime did not stop cleanly")
 			}
 		})
 	}
-	t.Logf("image %s: ready/live 200, UID/GID 65532, readonly rootfs, SIGTERM exit 0", image)
+	t.Logf("image %s: api/worker/all, UID/GID 65532, readonly rootfs, SIGTERM exit 0", image)
 }

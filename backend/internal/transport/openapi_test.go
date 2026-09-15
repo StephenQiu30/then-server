@@ -50,6 +50,14 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"getSelfAdultDeclaration":      true,
 		"confirmSelfAdultDeclaration":  true,
 		"withdrawSelfAdultDeclaration": true,
+		"createConsent":                true,
+		"getConsent":                   true,
+		"withdrawConsent":              true,
+		"createMediaUpload":            true,
+		"completeMediaUpload":          true,
+		"getMedia":                     true,
+		"deleteMedia":                  true,
+		"getDeletionRequest":           true,
 	}
 	for _, path := range spec.Paths {
 		for method, operation := range path {
@@ -87,8 +95,13 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.6.0" || operations != 11 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.7.0" || operations != 19 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
+	}
+	for _, operationID := range []string{"createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest"} {
+		if !identifiers[operationID] {
+			t.Fatalf("generated contract is missing %s", operationID)
+		}
 	}
 	confirmationConstraintFound := false
 	for _, schema := range spec.Components.Schemas {

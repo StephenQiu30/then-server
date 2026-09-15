@@ -26,7 +26,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 ## SMART范围
 
 - Specific：接口只由 Huma operation/Go tag 声明，schema 只由 Repository GORM record 声明。
-- Measurable：当前 11 个 operation 的运行时契约可校验；空 PostgreSQL 能由实际二进制自动建表并启动；账号唯一约束、事务和级联删除通过。
+- Measurable：当前 19 个 operation 的运行时契约可校验；空 PostgreSQL 能由实际二进制自动建表并启动；账号与媒体约束、事务和级联关系通过。
 - Achievable：沿用现有 Gin、Huma、GORM 和测试体系，不引入新框架。
 - Relevant：满足 Swagger/Umi 生成，同时删除 Atlas 和物化 OpenAPI 的维护成本。
 - Time-bound：本切片完成代码、CI、规范与真实 PostgreSQL 验证；不创建 `frontend/` 页面。

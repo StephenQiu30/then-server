@@ -288,6 +288,18 @@ func TestLogoutClearsOnlyCurrentCookie(t *testing.T) {
 	}
 }
 
+func TestAccountDeletionRequiresPrivateMediaDeletionFirst(t *testing.T) {
+	service := &accountServiceStub{user: fixtureUser(), err: model.ErrAccountMediaConflict}
+	router := accountRouter(t, service, false)
+	request := httptest.NewRequest(http.MethodDelete, "/v1/users/me", nil)
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"CONFLICT"`) {
+		t.Fatalf("active private media did not block account deletion: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestAccountSuccessResponsesMatchOpenAPI(t *testing.T) {
 	document, _, err := GeneratedOpenAPI(context.Background())
 	if err != nil {
