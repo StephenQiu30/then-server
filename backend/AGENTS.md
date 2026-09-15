@@ -4,8 +4,8 @@
 
 ## 当前工程形态
 
-- 一个 Go module、一个根 `main.go`、一个 API 二进制和一个 OCI 镜像。
-- 当前只有 API 命令，不增加空的 `cmd/`、微服务、依赖注入框架或通用 BaseRepository。
+- 一个 Go module、一个根 `main.go`、一个二进制和一个 OCI 镜像；`APP_ROLE=api|worker|all` 选择已实现角色。
+- 不增加空的 `cmd/`、微服务、依赖注入框架或通用 BaseRepository。
 - PostgreSQL 由 GORM 访问；当前开发阶段没有历史数据，进程启动时调用 GORM `AutoMigrate` 对齐表结构。
 - Gin 承担 HTTP 运行时，Huma operation 与 Go struct tag 是接口声明源；OpenAPI 在运行时生成，不提交 YAML/JSON 物化文件。
 - Swagger UI 读取同一进程的 `/openapi.json`；Umi 也从该地址生成请求代码。
@@ -22,6 +22,9 @@ backend/
 │   ├── repository/                 # GORM record、迁移、查询与事务
 │   ├── transport/                  # Gin/Huma 路由、DTO 与错误映射
 │   │   └── swaggerui/              # 内嵌 Swagger UI 固定资源
+│   ├── objectstore/                # MinIO 私有对象适配器
+│   ├── messagequeue/               # RabbitMQ 持久消息适配器
+│   ├── worker/                     # Outbox relay、媒体检查与删除消费者
 │   └── platform/
 │       ├── config/                 # 类型化配置
 │       ├── database/               # PostgreSQL/GORM 连接与探测
@@ -37,10 +40,11 @@ backend/
 ## 依赖方向
 
 ```text
-main -> transport, service, repository, platform
+main -> transport, service, repository, objectstore, messagequeue, worker, platform
 transport -> model
 service -> model
 repository -> model
+objectstore, messagequeue, worker -> model
 ```
 
 | 包 | 负责 | 禁止 |
@@ -50,6 +54,9 @@ repository -> model
 | `service` | 用例规则；定义自己需要的最小 Repository 接口 | `gin.Context`、GORM record、SQL |
 | `repository` | GORM record、AutoMigrate、参数化查询、事务、领域映射 | Gin/Huma DTO、HTTP 状态码 |
 | `transport` | 路由、输入校验、会话 Cookie、错误与状态映射 | GORM、业务 SQL、业务事务 |
+| `objectstore` | MinIO 私有桶、versioning、签名 PUT、固定版本读写与全版本删除 | HTTP DTO、业务状态事务 |
+| `messagequeue` | RabbitMQ durable exchange/queue、publisher confirm、manual ack | 业务数据库、媒体正文 |
+| `worker` | Outbox relay、JPEG 有界检查/重编码、删除与清扫编排 | Gin/Huma、GORM、具体 SDK |
 | `platform` | 数据库和 HTTP 等技术资源的连接与生命周期 | 用户权限和业务状态规则 |
 
 根 `architecture_test.go` 负责阻止核心包反向依赖。新增依赖方向前先更新 Design 与测试，不用全局 service locator 绕过组装。
@@ -77,7 +84,7 @@ repository -> model
 - API、Service、Repository I/O 传递 `context.Context`；构造函数拒绝无效依赖，资源由创建者逆序有界关闭。
 - 包内 `_test.go` 验证纯逻辑和 HTTP 契约；`tests/` 只放真实 PostgreSQL、本机中间件、实际进程和镜像测试，它不是 test 微服务。
 - 最小检查：`gofmt -l .`、`go mod verify`、`go vet ./...`、`go test ./... -count=1`、`go test -race ./... -count=1`。
-- 涉及 GORM/PostgreSQL 或 Redis 运行时依赖时增加 `go test -race -tags=services ./tests -count=1` 和 `go test -race -tags=integration ./tests -count=1`；涉及镜像时再运行 container 测试。
+- 涉及 GORM/PostgreSQL、Redis、MinIO 或 RabbitMQ 运行时依赖时增加 `go test -race -tags=services ./tests -count=1` 和 `go test -race -tags=integration ./tests -count=1`；涉及镜像时再运行 container 测试。
 
 ## 完成条件
 

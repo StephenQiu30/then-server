@@ -40,7 +40,7 @@ type ReadinessResponse struct {
 
 type ErrorResponse struct {
 	status    int
-	Code      string `json:"code" enum:"BAD_REQUEST,EMAIL_CONFLICT,AUTHENTICATION_FAILED,RATE_LIMITED,NOT_READY,NOT_FOUND,METHOD_NOT_ALLOWED,INTERNAL_ERROR" example:"AUTHENTICATION_FAILED"`
+	Code      string `json:"code" enum:"BAD_REQUEST,EMAIL_CONFLICT,CONFLICT,PAYLOAD_TOO_LARGE,AUTHENTICATION_FAILED,RATE_LIMITED,NOT_READY,NOT_FOUND,METHOD_NOT_ALLOWED,INTERNAL_ERROR" example:"AUTHENTICATION_FAILED"`
 	Message   string `json:"message" minLength:"1" maxLength:"160" example:"Sign-in information is invalid."`
 	RequestID string `json:"request_id" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" example:"TESTREQUESTIDENTIFIER00000003"`
 	Retryable bool   `json:"retryable" example:"false"`
@@ -61,7 +61,7 @@ type readinessOutput struct {
 
 var configureHumaErrors sync.Once
 
-func NewRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, timeout time.Duration, log *slog.Logger) (*Router, error) {
+func NewRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, timeout time.Duration, log *slog.Logger, mediaHandlers ...*MediaHandler) (*Router, error) {
 	if probe == nil || log == nil || timeout <= 0 || timeout > 5*time.Second || (accounts != nil && (accounts.service == nil || accounts.limiter == nil)) || (privacy != nil && privacy.service == nil) {
 		return nil, errors.New("invalid router dependencies")
 	}
@@ -70,7 +70,11 @@ func NewRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, acc
 		return nil, err
 	}
 	router := &Router{engine: engine}
-	api := registerAPI(engine, router, probe, accounts, privacy, timeout)
+	var media *MediaHandler
+	if len(mediaHandlers) > 0 {
+		media = mediaHandlers[0]
+	}
+	api := registerAPI(engine, router, probe, accounts, privacy, media, timeout)
 	yamlDocument, jsonDocument, err := serializeOpenAPI(ctx, api.OpenAPI())
 	if err != nil {
 		return nil, err
@@ -124,7 +128,7 @@ func newEngine(log *slog.Logger) (*gin.Engine, error) {
 	return engine, nil
 }
 
-func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, timeout time.Duration) huma.API {
+func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, media *MediaHandler, timeout time.Duration) huma.API {
 	configureHumaErrors.Do(func() {
 		huma.NewError = func(status int, _ string, _ ...error) huma.StatusError {
 			return newErrorResponse(status, "")
@@ -133,7 +137,7 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 			return newErrorResponse(status, requestID(ctx.Context()))
 		}
 	})
-	config := huma.DefaultConfig("于是 OOTD API", "0.6.0")
+	config := huma.DefaultConfig("于是 OOTD API", "0.7.0")
 	config.OpenAPI.OpenAPI = "3.1.2"
 	config.Info.Description = "“于是”OOTD 产品后端接口。OpenAPI 由 Go operation 与类型字段标签生成。"
 	config.OpenAPIPath = ""
@@ -149,6 +153,7 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 	registerHealthOperations(api, router, probe, timeout)
 	registerAccountOperations(api, accounts)
 	registerPrivacyOperations(api, privacy)
+	registerMediaOperations(api, media)
 	normalizeGeneratedOpenAPI(api.OpenAPI())
 	return api
 }
@@ -256,7 +261,7 @@ func notReadyError(ctx context.Context) error {
 }
 
 func newErrorResponse(status int, id string) *ErrorResponse {
-	if status == http.StatusUnprocessableEntity || status == http.StatusRequestEntityTooLarge || status == http.StatusRequestTimeout {
+	if status == http.StatusUnprocessableEntity || status == http.StatusRequestTimeout {
 		status = http.StatusBadRequest
 	}
 	response := &ErrorResponse{status: status, RequestID: id}
@@ -267,6 +272,8 @@ func newErrorResponse(status int, id string) *ErrorResponse {
 		response.Code, response.Message = "AUTHENTICATION_FAILED", "Sign-in information is invalid."
 	case http.StatusConflict:
 		response.Code, response.Message = "EMAIL_CONFLICT", "This email cannot be used."
+	case http.StatusRequestEntityTooLarge:
+		response.Code, response.Message = "PAYLOAD_TOO_LARGE", "Declared media size exceeds the allowed limit."
 	case http.StatusTooManyRequests:
 		response.Code, response.Message, response.Retryable = "RATE_LIMITED", "Too many authentication attempts.", true
 	case http.StatusServiceUnavailable:
@@ -311,7 +318,7 @@ func serializeOpenAPI(ctx context.Context, spec *huma.OpenAPI) ([]byte, []byte, 
 func GeneratedOpenAPI(ctx context.Context) ([]byte, []byte, error) {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
-	api := registerAPI(engine, &Router{}, nil, nil, nil, time.Second)
+	api := registerAPI(engine, &Router{}, nil, nil, nil, nil, time.Second)
 	return serializeOpenAPI(ctx, api.OpenAPI())
 }
 

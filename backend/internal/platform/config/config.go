@@ -11,18 +11,24 @@ import (
 )
 
 type Config struct {
-	Role            string
-	HTTPAddr        string
-	DocsEnabled     bool
-	SessionSecure   bool
-	DatabaseURL     string
-	RedisURL        string
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime time.Duration
-	StartupTimeout  time.Duration
-	HealthTimeout   time.Duration
-	ShutdownTimeout time.Duration
+	Role                    string
+	HTTPAddr                string
+	DocsEnabled             bool
+	SessionSecure           bool
+	DatabaseURL             string
+	RedisURL                string
+	MediaDevelopmentEnabled bool
+	MinIOEndpoint           string
+	MinIOAccessKey          string
+	MinIOSecretKey          string
+	MinIOSecure             bool
+	RabbitMQURL             string
+	MaxOpenConns            int
+	MaxIdleConns            int
+	ConnMaxLifetime         time.Duration
+	StartupTimeout          time.Duration
+	HealthTimeout           time.Duration
+	ShutdownTimeout         time.Duration
 }
 
 // Load never includes raw environment values in returned errors.
@@ -34,13 +40,17 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		return fallback
 	}
 	c := Config{
-		Role:        get("APP_ROLE", "api"),
-		HTTPAddr:    get("HTTP_ADDR", "127.0.0.1:8080"),
-		DatabaseURL: get("DATABASE_URL", ""),
-		RedisURL:    get("REDIS_URL", "redis://127.0.0.1:6379/0"),
+		Role:           get("APP_ROLE", "api"),
+		HTTPAddr:       get("HTTP_ADDR", "127.0.0.1:8080"),
+		DatabaseURL:    get("DATABASE_URL", ""),
+		RedisURL:       get("REDIS_URL", "redis://127.0.0.1:6379/0"),
+		MinIOEndpoint:  get("MINIO_ENDPOINT", "127.0.0.1:9000"),
+		MinIOAccessKey: get("MINIO_ACCESS_KEY", ""),
+		MinIOSecretKey: get("MINIO_SECRET_KEY", ""),
+		RabbitMQURL:    get("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/"),
 	}
-	if c.Role != "api" {
-		return Config{}, fmt.Errorf("APP_ROLE: only api is implemented in this release")
+	if c.Role != "api" && c.Role != "worker" && c.Role != "all" {
+		return Config{}, fmt.Errorf("APP_ROLE: expected api, worker or all")
 	}
 	host, port, err := net.SplitHostPort(c.HTTPAddr)
 	p, portErr := strconv.Atoi(port)
@@ -60,6 +70,39 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		c.SessionSecure = true
 	default:
 		return Config{}, fmt.Errorf("SESSION_COOKIE_SECURE: expected true or false")
+	}
+	switch get("MEDIA_DEVELOPMENT_ENABLED", "false") {
+	case "false":
+	case "true":
+		c.MediaDevelopmentEnabled = true
+	default:
+		return Config{}, fmt.Errorf("MEDIA_DEVELOPMENT_ENABLED: expected true or false")
+	}
+	switch get("MINIO_SECURE", "false") {
+	case "false":
+	case "true":
+		c.MinIOSecure = true
+	default:
+		return Config{}, fmt.Errorf("MINIO_SECURE: expected true or false")
+	}
+	if (c.Role == "worker" || c.Role == "all") && !c.MediaDevelopmentEnabled {
+		return Config{}, fmt.Errorf("MEDIA_DEVELOPMENT_ENABLED: required for worker and all roles")
+	}
+	if c.MediaDevelopmentEnabled {
+		if !net.ParseIP(host).IsLoopback() {
+			return Config{}, fmt.Errorf("MEDIA_DEVELOPMENT_ENABLED: requires loopback HTTP_ADDR")
+		}
+		if c.MinIOAccessKey == "" || c.MinIOSecretKey == "" {
+			return Config{}, fmt.Errorf("MINIO credentials: required for local media development")
+		}
+		minioHost, minioPort, splitErr := net.SplitHostPort(c.MinIOEndpoint)
+		parsedPort, parseErr := strconv.Atoi(minioPort)
+		if splitErr != nil || !isLoopbackHost(minioHost) || parseErr != nil || parsedPort < 1 || parsedPort > 65535 {
+			return Config{}, fmt.Errorf("MINIO_ENDPOINT: local media development requires loopback IP:port")
+		}
+		if err := validateRabbitMQURL(c.RabbitMQURL); err != nil {
+			return Config{}, err
+		}
 	}
 	if !c.SessionSecure && !net.ParseIP(host).IsLoopback() {
 		return Config{}, fmt.Errorf("SESSION_COOKIE_SECURE: required for non-loopback HTTP_ADDR")
@@ -130,6 +173,23 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		*field.dest = v
 	}
 	return c, nil
+}
+
+func validateRabbitMQURL(value string) error {
+	u, err := url.Parse(value)
+	if err != nil || u == nil || (u.Scheme != "amqp" && u.Scheme != "amqps") || u.Hostname() == "" || u.Port() == "" || u.Fragment != "" {
+		return fmt.Errorf("RABBITMQ_URL: expected AMQP URL")
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || port < 1 || port > 65535 || !isLoopbackHost(u.Hostname()) {
+		return fmt.Errorf("RABBITMQ_URL: local media development requires loopback host")
+	}
+	return nil
+}
+
+func isLoopbackHost(host string) bool {
+	ip := net.ParseIP(host)
+	return host == "localhost" || (ip != nil && ip.IsLoopback())
 }
 
 func validateRedisURL(value string) error {

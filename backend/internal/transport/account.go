@@ -132,7 +132,7 @@ func registerAccountOperations(api huma.API, handler *AccountHandler) {
 	}), handler.update)
 	huma.Register(api, authenticatedOperation(huma.Operation{
 		OperationID: "deleteCurrentUser", Method: http.MethodDelete, Path: "/v1/users/me", Tags: []string{"Account"},
-		Summary: "删除本人账户及全部会话", Errors: []int{http.StatusUnauthorized, http.StatusInternalServerError},
+		Summary: "删除本人账户及全部会话", Description: "存在未完成删除的私有媒体时返回 409，避免数据库级联留下孤立对象。", Errors: []int{http.StatusUnauthorized, http.StatusConflict, http.StatusInternalServerError},
 	}), handler.deleteCurrent)
 }
 
@@ -272,6 +272,10 @@ func accountError(ctx context.Context, err error) error {
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
 	case errors.Is(err, model.ErrEmailConflict):
 		return newErrorResponse(http.StatusConflict, requestID(ctx))
+	case errors.Is(err, model.ErrAccountMediaConflict):
+		response := newErrorResponse(http.StatusConflict, requestID(ctx))
+		response.Code, response.Message = "CONFLICT", "Delete private media before deleting the account."
+		return response
 	case errors.Is(err, model.ErrAuthentication):
 		return newErrorResponse(http.StatusUnauthorized, requestID(ctx))
 	default:

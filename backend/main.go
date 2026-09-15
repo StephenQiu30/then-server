@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/StephenQiu30/then-server/backend/internal/messagequeue"
+	"github.com/StephenQiu30/then-server/backend/internal/objectstore"
 	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
 	"github.com/StephenQiu30/then-server/backend/internal/platform/database"
 	"github.com/StephenQiu30/then-server/backend/internal/platform/httpserver"
@@ -16,6 +18,7 @@ import (
 	"github.com/StephenQiu30/then-server/backend/internal/repository"
 	"github.com/StephenQiu30/then-server/backend/internal/service"
 	"github.com/StephenQiu30/then-server/backend/internal/transport"
+	"github.com/StephenQiu30/then-server/backend/internal/worker"
 	"github.com/gin-gonic/gin"
 )
 
@@ -55,6 +58,47 @@ func run(log *slog.Logger) error {
 	if err := repository.Migrate(startup, pool.ORM()); err != nil {
 		return errors.New("database schema migration failed")
 	}
+	var objects *objectstore.Store
+	if cfg.MediaDevelopmentEnabled {
+		objects, err = objectstore.Open(startup, cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOSecure)
+		if err != nil {
+			return err
+		}
+	}
+	var runner *worker.Runner
+	var broker *messagequeue.Broker
+	if cfg.Role == "worker" || cfg.Role == "all" {
+		broker, err = messagequeue.Open(cfg.RabbitMQURL)
+		if err != nil {
+			return err
+		}
+		defer broker.Close()
+		runner, err = worker.New(repository.NewMediaRepository(pool.ORM()), broker, objects)
+		if err != nil {
+			return err
+		}
+	}
+	if cfg.Role == "worker" {
+		log.Info("worker_started", "role", cfg.Role)
+		err = runner.Run(ctx)
+		log.Info("worker_stopped")
+		return err
+	}
+	if cfg.Role == "all" {
+		combined, cancelCombined := context.WithCancel(ctx)
+		defer cancelCombined()
+		results := make(chan error, 2)
+		go func() { results <- runner.Run(combined) }()
+		go func() { results <- runAPI(combined, startup, cfg, pool, objects, log) }()
+		err = <-results
+		cancelCombined()
+		<-results
+		return err
+	}
+	return runAPI(ctx, startup, cfg, pool, objects, log)
+}
+
+func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool, objects *objectstore.Store, log *slog.Logger) error {
 	limiter, err := ratelimit.Open(startup, cfg.RedisURL)
 	if err != nil {
 		return err
@@ -69,7 +113,17 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	router, err := transport.NewRouter(startup, cfg.DocsEnabled, dependencyProbes{pool, limiter}, transport.NewAccountHandler(accounts, cfg.SessionSecure, limiter), transport.NewPrivacyHandler(privacy, cfg.SessionSecure), cfg.HealthTimeout, log)
+	probes := dependencyProbes{pool, limiter}
+	var mediaHandler *transport.MediaHandler
+	if objects != nil {
+		media, serviceErr := service.NewMediaService(accounts, repository.NewMediaRepository(pool.ORM()), objects)
+		if serviceErr != nil {
+			return serviceErr
+		}
+		mediaHandler = transport.NewMediaHandler(media, cfg.SessionSecure)
+		probes = append(probes, objects)
+	}
+	router, err := transport.NewRouter(startup, cfg.DocsEnabled, probes, transport.NewAccountHandler(accounts, cfg.SessionSecure, limiter), transport.NewPrivacyHandler(privacy, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler)
 	if err != nil {
 		return err
 	}

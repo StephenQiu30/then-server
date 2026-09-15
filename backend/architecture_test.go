@@ -13,18 +13,24 @@ import (
 const internalImportPrefix = "github.com/StephenQiu30/then-server/backend/internal/"
 
 var allowedInternalImports = map[string]map[string]bool{
-	"model":      {},
-	"service":    {"model": true},
-	"repository": {"model": true},
-	"transport":  {"model": true},
-	"platform":   {"platform": true},
+	"model":        {},
+	"service":      {"model": true},
+	"repository":   {"model": true},
+	"transport":    {"model": true},
+	"objectstore":  {"model": true},
+	"messagequeue": {"model": true},
+	"worker":       {"model": true},
+	"platform":     {"platform": true},
 }
 
 var forbiddenFrameworkImports = map[string][]string{
-	"model":      {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
-	"service":    {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
-	"repository": {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
-	"transport":  {"gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
+	"model":        {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
+	"service":      {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
+	"repository":   {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
+	"transport":    {"gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
+	"objectstore":  {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/"},
+	"messagequeue": {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/redis/", "github.com/minio/"},
+	"worker":       {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
 }
 
 func TestInternalPackageDependencyDirection(t *testing.T) {

@@ -131,8 +131,8 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		reason string
 	}{
 		{"missing database", []string{"APP_ROLE=api"}, "DATABASE_URL"},
-		{"unsupported worker", []string{"APP_ROLE=worker"}, "APP_ROLE"},
-		{"unsupported all", []string{"APP_ROLE=all"}, "APP_ROLE"},
+		{"worker without media config", []string{"APP_ROLE=worker"}, "MEDIA_DEVELOPMENT_ENABLED"},
+		{"all without media config", []string{"APP_ROLE=all"}, "MEDIA_DEVELOPMENT_ENABLED"},
 		{"invalid credentials", []string{"DATABASE_URL=" + wrongPassword.String()}, "database unavailable"},
 		{"schema migration", []string{"DATABASE_URL=" + readOnlySchema.String()}, "database schema migration failed"},
 		{"redis unavailable", []string{"DATABASE_URL=" + u.String(), "REDIS_URL=redis://127.0.0.1:1/0"}, "rate limiter unavailable"},

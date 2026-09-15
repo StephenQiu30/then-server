@@ -109,3 +109,40 @@ func TestDocumentationConfiguration(t *testing.T) {
 		})
 	}
 }
+
+func TestLocalMediaRolesRequireExplicitLocalConfiguration(t *testing.T) {
+	base := map[string]string{
+		"DATABASE_URL":              "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable",
+		"MEDIA_DEVELOPMENT_ENABLED": "true",
+		"MINIO_ENDPOINT":            "127.0.0.1:9000",
+		"MINIO_ACCESS_KEY":          "fixture",
+		"MINIO_SECRET_KEY":          "synthetic-secret",
+		"RABBITMQ_URL":              "amqp://fixture:synthetic-secret@127.0.0.1:5672/fixture",
+	}
+	for _, role := range []string{"api", "worker", "all"} {
+		t.Run(role, func(t *testing.T) {
+			environment := make(map[string]string, len(base)+1)
+			for key, value := range base {
+				environment[key] = value
+			}
+			environment["APP_ROLE"] = role
+			configuration, err := Load(func(key string) (string, bool) { value, ok := environment[key]; return value, ok })
+			if err != nil || configuration.Role != role || !configuration.MediaDevelopmentEnabled {
+				t.Fatalf("local media role rejected: role=%s err=%v", role, err)
+			}
+		})
+	}
+	for name, value := range map[string]string{"HTTP_ADDR": "0.0.0.0:8080", "MINIO_ENDPOINT": "192.0.2.1:9000", "RABBITMQ_URL": "amqp://fixture:synthetic-secret@192.0.2.1:5672/fixture"} {
+		t.Run("reject "+name, func(t *testing.T) {
+			environment := make(map[string]string, len(base)+1)
+			for key, current := range base {
+				environment[key] = current
+			}
+			environment[name] = value
+			_, err := Load(func(key string) (string, bool) { current, ok := environment[key]; return current, ok })
+			if err == nil || strings.Contains(err.Error(), "synthetic-secret") {
+				t.Fatal("remote or secret-bearing local media configuration was not rejected safely")
+			}
+		})
+	}
+}

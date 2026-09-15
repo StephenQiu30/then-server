@@ -13,5 +13,11 @@ func Migrate(ctx context.Context, database *gorm.DB) error {
 		&credentialRecord{},
 		&sessionRecord{},
 		&selfAdultDeclarationRecord{},
+		&consentRecord{},
+		&mediaAssetRecord{},
+		&mediaDerivationRecord{},
+		&deletionRequestRecord{},
+		&outboxEventRecord{},
+		&inboxReceiptRecord{},
 	)
 }

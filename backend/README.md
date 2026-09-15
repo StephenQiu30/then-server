@@ -1,6 +1,6 @@
 # OOTD Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis 认证限流和进程生命周期；账号、会话与本人成年声明 API 已经实现。
+这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明以及合成本人照片的私有上传/检查/删除 API 已经实现。
 
 ## 本地运行
 
@@ -53,11 +53,19 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `PUT /v1/privacy/self-adult-declaration`
 - `DELETE /v1/privacy/self-adult-declaration`
 
-该 API 只记录当前账号对 `self-adult-v1` 的确认或撤回，不收集出生日期、证件或照片。它不是第三方 AI 逐次同意，也不会启用上传或生成。
+该 API 只记录当前账号对 `self-adult-v1` 的确认或撤回，不收集出生日期或证件。它不是第三方 AI 逐次同意。
+
+## 合成本人照片开发闭环
+
+运行时 OpenAPI 0.7.0 包含 8 个私有媒体 operation：同意创建/查询/撤回、上传意图、finalize、媒体状态、删除和删除状态。开发入口必须显式设置 `MEDIA_DEVELOPMENT_ENABLED=true`，并只接受回环 HTTP、MinIO 与 RabbitMQ；因此真实用户照片和生产流量无法通过这组配置误开启。
+
+MinIO 使用 `raw-private` 与 `derived-private` 私有版本桶；RabbitMQ worker 从 PostgreSQL Outbox 取得事件，以 Inbox 和条件状态更新保证重复投递不产生第二份业务效果。输入只接受 12 MiB/24 MP 以内的单帧 JPEG，worker 固定对象 version ID、复算 SHA-256、解码后重编码并记录派生关系。删除先在事务内 tombstone，再删除原始对象全部版本和派生对象。
+
+本机合成数据运行示例需要 `.env.example` 中的 PostgreSQL、Redis、MinIO 和 RabbitMQ 参数，并使用 `APP_ROLE=all`。`api` 与 `worker` 可由同一二进制分别运行。
 
 ## 本机中间件验证
 
-Redis 已进入 API 运行时，只保存认证限流的短期计数；账户与会话事实仍在 PostgreSQL。RabbitMQ 和 MinIO 当前只用于开发协议测试。默认测试连接本机 loopback；需要时用 `THEN_TEST_*` 环境变量覆盖本机端口和账号。
+Redis 只保存认证限流的短期计数；PostgreSQL 是账户、同意、媒体状态、Outbox 和 Inbox 的事实源。RabbitMQ 与 MinIO 已进入获批的合成照片开发闭环。默认测试连接本机 loopback；需要时用 `THEN_TEST_*` 环境变量覆盖本机端口和账号。
 
 ```sh
 brew services start minio
@@ -78,6 +86,9 @@ backend/
 │   ├── service/
 │   ├── repository/
 │   ├── transport/
+│   ├── objectstore/
+│   ├── messagequeue/
+│   ├── worker/
 │   └── platform/
 ├── tests/
 ├── Dockerfile
