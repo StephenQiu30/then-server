@@ -27,7 +27,7 @@ func NewPrivacyHandler(service PrivacyService, secureCookie bool) *PrivacyHandle
 
 type ConfirmSelfAdultDeclarationRequest struct {
 	PolicyVersion        string `json:"policy_version" enum:"self-adult-v1" doc:"服务端当前本人成年声明版本" example:"self-adult-v1"`
-	ConfirmsSelfAndAdult bool   `json:"confirms_self_and_adult" doc:"用户主动确认照片仅属于本人且已年满 18 周岁；必须为 true" example:"true"`
+	ConfirmsSelfAndAdult bool   `json:"confirms_self_and_adult" enum:"true" doc:"用户主动确认照片仅属于本人且已年满 18 周岁；必须为 true" example:"true"`
 }
 
 type SelfAdultDeclarationResponse struct {
