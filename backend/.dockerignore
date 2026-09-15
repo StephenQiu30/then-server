@@ -2,13 +2,14 @@
 !go.mod
 !go.sum
 !main.go
-!openapi.yaml
 !internal/
 !internal/**/
 !internal/**/*.go
 !internal/transport/swaggerui/*.html
 !internal/transport/swaggerui/*.js
 !internal/transport/swaggerui/*.css
+!internal/transport/swaggerui/*.ico
+!internal/transport/swaggerui/*.png
 !internal/transport/swaggerui/LICENSE
 !internal/transport/swaggerui/*.LICENSE.txt
 **/*_test.go
