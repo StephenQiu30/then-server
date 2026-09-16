@@ -81,6 +81,13 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"getWearEvent":                 true,
 		"updateWearEvent":              true,
 		"deleteWearEvent":              true,
+		"createDiaryEntry":             true,
+		"listDiaryEntries":             true,
+		"getDiaryEntry":                true,
+		"updateDiaryEntry":             true,
+		"getDiaryEntryDeletionImpact":  true,
+		"deleteDiaryEntry":             true,
+		"getCalendarMonth":             true,
 	}
 	versionedPath := regexp.MustCompile(`^/v[0-9]+(?:/|$)`)
 	for path, item := range spec.Paths {
@@ -122,10 +129,10 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.13.0" || operations != 41 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.14.0" || operations != 48 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
-	for _, operationID := range []string{"getCurrentProfile", "putCurrentProfile", "getPublicProfile", "createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent"} {
+	for _, operationID := range []string{"getCurrentProfile", "putCurrentProfile", "getPublicProfile", "createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent", "createDiaryEntry", "listDiaryEntries", "getDiaryEntry", "updateDiaryEntry", "getDiaryEntryDeletionImpact", "deleteDiaryEntry", "getCalendarMonth"} {
 		if !identifiers[operationID] {
 			t.Fatalf("generated contract is missing %s", operationID)
 		}

@@ -113,7 +113,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(t.TempDir(), "then-backend")
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd/then-server")
+	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v %s", err, output)
 	}
@@ -219,7 +219,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 						Version string `json:"version"`
 					} `json:"info"`
 				}
-				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.13.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) {
+				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.14.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) || !strings.Contains(string(body), `"operationId":"createDiaryEntry"`) {
 					t.Fatal("binary did not serve a valid JSON representation of its compiled contract")
 				}
 			}

@@ -1,6 +1,6 @@
 # OOTD Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。`cmd/then-server` 通过 `internal/bootstrap` 组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着，以及合成本人照片的私有上传/检查/删除 API 已经实现。
+这是“于是”当前的 Go/Gin 模块化单体。`cmd/main.go` 通过 `internal/bootstrap` 组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着、私人穿搭日记与日历，以及私有图片上传/检查/删除 API 已经实现。
 
 ## 本地运行
 
@@ -12,7 +12,7 @@ brew services start redis
 cd backend
 DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' \
 REDIS_URL='redis://127.0.0.1:6379/0' \
-go run ./cmd/then-server
+go run ./cmd
 ```
 
 进程连接数据库后会在监听端口前执行 GORM `AutoMigrate`。当前处于无历史数据的开发阶段，数据库结构由 [`internal/adapter/postgres`](internal/adapter/postgres) 的 GORM record 统一声明；项目不维护 Atlas 配置或 SQL migration。需要破坏性调整时更新 record 并重建本地开发库。
@@ -23,7 +23,7 @@ go run ./cmd/then-server
 API_DOCS_ENABLED=true \
 DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' \
 REDIS_URL='redis://127.0.0.1:6379/0' \
-go run ./cmd/then-server
+go run ./cmd
 ```
 
 默认入口：
@@ -64,7 +64,7 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `PUT /wardrobe/items/{item_id}`
 - `DELETE /wardrobe/items/{item_id}`
 
-OpenAPI 0.13.0 在既有衣橱、计划与实际事件合同上增加账号状态/revision和公开资料三接口，并保持业务路径无版本前缀。本人账号更新必须提交 `expected_revision`，公开资料只包含 handle、显示名称、简介和版本；HttpOnly 会话 Cookie 不进入生成客户端参数。
+OpenAPI 0.14.0 共 48 个 operation，在既有账号、衣橱、计划与实际事件合同上增加私人日记 CRUD、删除影响和月日历七个接口，并保持业务路径无版本前缀。本人账号和日记更新必须提交 `expected_revision`；公开资料只包含 handle、显示名称、简介和版本，私人日记响应不暴露 owner、对象 key 或同意记录，HttpOnly 会话 Cookie 不进入生成客户端参数。
 
 ## 账号穿搭计划 API
 
@@ -97,6 +97,18 @@ MinIO 使用 `raw-private` 与 `derived-private` 私有版本桶；RabbitMQ work
 
 本机合成数据运行示例需要 `.env.example` 中的 PostgreSQL、Redis、MinIO 和 RabbitMQ 参数，并使用 `APP_ROLE=all`。`api` 与 `worker` 可由同一二进制分别运行。
 
+## 私人穿搭日记与月日历
+
+- `POST /diary-entries`
+- `GET /diary-entries`
+- `GET /diary-entries/{entry_id}`
+- `PUT /diary-entries/{entry_id}`
+- `GET /diary-entries/{entry_id}/deletion-impact`
+- `DELETE /diary-entries/{entry_id}`
+- `GET /calendar?month=YYYY-MM`
+
+日记允许纯文字、普通私有图片或两者组合，可选关联本人的计划和同日实际穿着。普通日记 JPEG 复用媒体净化链但不要求本人照片同意；只有 ready 的 owner 媒体可关联。日记保留原本地日期和 IANA 时区，可同日多条；未来日期、跨账号关联和旧 revision 被拒绝。删除日记保留媒体，删除计划或实际事件只解除关联，月日历分别返回计划、实际穿着和日记数量。
+
 ## 本机中间件验证
 
 Redis 只保存认证限流的短期计数；PostgreSQL 是账户、同意、媒体状态、Outbox 和 Inbox 的事实源。RabbitMQ 与 MinIO 已进入获批的合成照片开发闭环。默认测试连接本机 loopback；需要时用 `THEN_TEST_*` 环境变量覆盖本机端口和账号。
@@ -114,7 +126,8 @@ go test -race -tags=services ./tests/... -count=1 -v
 
 ```text
 backend/
-├── cmd/then-server/
+├── cmd/
+│   └── main.go
 ├── internal/
 │   ├── domain/
 │   ├── application/

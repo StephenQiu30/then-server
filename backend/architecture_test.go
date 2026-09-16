@@ -72,7 +72,7 @@ func TestInternalPackageDependencyDirection(t *testing.T) {
 }
 
 func TestCommandEntrypointIsThin(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), filepath.Join("cmd", "then-server", "main.go"), nil, parser.ImportsOnly)
+	file, err := parser.ParseFile(token.NewFileSet(), filepath.Join("cmd", "main.go"), nil, parser.ImportsOnly)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestCommandEntrypointIsThin(t *testing.T) {
 			t.Fatal(err)
 		}
 		if strings.HasPrefix(importPath, internalImportPrefix) && importPath != internalImportPrefix+"bootstrap" {
-			t.Errorf("cmd/then-server/main.go must delegate only to internal/bootstrap, imported %s", importPath)
+			t.Errorf("cmd/main.go must delegate only to internal/bootstrap, imported %s", importPath)
 		}
 	}
 }

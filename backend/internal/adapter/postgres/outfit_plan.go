@@ -19,7 +19,7 @@ func NewOutfitPlanRepository(database *gorm.DB) *OutfitPlanRepository {
 
 type outfitPlanRecord struct {
 	OwnerID        string                 `gorm:"column:owner_id;type:uuid;primaryKey;index:outfit_plans_owner_order_idx,priority:1"`
-	ID             string                 `gorm:"column:id;type:uuid;primaryKey"`
+	ID             string                 `gorm:"column:id;type:uuid;primaryKey;uniqueIndex:outfit_plans_id_unique"`
 	LocalDate      time.Time              `gorm:"column:local_date;type:date;not null;index:outfit_plans_owner_order_idx,priority:2,sort:desc"`
 	TimeZone       string                 `gorm:"column:time_zone;type:text;not null;check:outfit_plans_time_zone_check,char_length(time_zone) BETWEEN 1 AND 255"`
 	ContextSummary *string                `gorm:"column:context_summary;type:text;check:outfit_plans_context_summary_check,context_summary IS NULL OR (context_summary = btrim(context_summary) AND char_length(context_summary) BETWEEN 1 AND 120)"`
@@ -298,6 +298,9 @@ func (r *OutfitPlanRepository) DeleteOutfitPlan(ctx context.Context, ownerID, pl
 			return err
 		}
 		if err := unlinkWearEventsFromPlan(tx, ownerID, planID, at); err != nil {
+			return err
+		}
+		if err := tx.Model(&diaryEntryRecord{}).Where("owner_id = ? AND plan_id = ?", ownerID, planID).Update("plan_id", nil).Error; err != nil {
 			return err
 		}
 		return tx.Where("owner_id = ? AND id = ?", ownerID, planID).Delete(&outfitPlanRecord{}).Error

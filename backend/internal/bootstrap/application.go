@@ -15,6 +15,7 @@ import (
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/objectstore"
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 	"github.com/StephenQiu30/then-server/backend/internal/application/mediaworker"
 	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
@@ -124,6 +125,10 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 	if err != nil {
 		return err
 	}
+	diaries, err := diaryapp.NewService(accounts, postgres.NewDiaryRepository(pool.ORM()))
+	if err != nil {
+		return err
+	}
 	var mediaHandler *httpapi.MediaHandler
 	if objects != nil {
 		media, serviceErr := mediaapp.NewMediaService(accounts, postgres.NewMediaRepository(pool.ORM()), objects)
@@ -133,7 +138,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		mediaHandler = httpapi.NewMediaHandler(media, cfg.SessionSecure)
 		probes = append(probes, objects)
 	}
-	router, err := httpapi.NewRouter(startup, cfg.DocsEnabled, probes, httpapi.NewAccountHandler(accounts, cfg.SessionSecure, limiter), httpapi.NewPrivacyHandler(privacy, cfg.SessionSecure), httpapi.NewWardrobeHandler(wardrobe, cfg.SessionSecure), httpapi.NewOutfitPlanHandler(outfits, cfg.SessionSecure), httpapi.NewWearEventHandler(wearEvents, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler)
+	router, err := httpapi.NewRouterWithDiary(startup, cfg.DocsEnabled, probes, httpapi.NewAccountHandler(accounts, cfg.SessionSecure, limiter), httpapi.NewPrivacyHandler(privacy, cfg.SessionSecure), httpapi.NewWardrobeHandler(wardrobe, cfg.SessionSecure), httpapi.NewOutfitPlanHandler(outfits, cfg.SessionSecure), httpapi.NewWearEventHandler(wearEvents, cfg.SessionSecure), httpapi.NewDiaryHandler(diaries, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler)
 	if err != nil {
 		return err
 	}

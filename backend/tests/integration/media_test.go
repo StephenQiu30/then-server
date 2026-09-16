@@ -44,7 +44,7 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 	minioAddress := mappedAddress(t, ctx, minioContainer, "9000/tcp")
 	rabbitAddress := mappedAddress(t, ctx, rabbitContainer, "5672/tcp")
 	binary := filepath.Join(t.TempDir(), "then-backend")
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd/then-server")
+	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build actual binary: %v %s", err, output)
 	}
@@ -137,6 +137,69 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 		ID string `json:"id"`
 	}
 	postJSON(t, client, http.MethodDelete, baseURL+"/media/"+upload.Media.ID, nil, http.StatusAccepted, &deletion)
+	waitForHTTPStatus(t, ctx, client, baseURL+"/deletion-requests/"+deletion.ID, "complete")
+
+	var diaryUpload struct {
+		Media struct {
+			ID string `json:"id"`
+		} `json:"media"`
+		URL     string            `json:"url"`
+		Headers map[string]string `json:"headers"`
+	}
+	postJSON(t, client, http.MethodPost, baseURL+"/media/uploads", map[string]any{"purpose": "diary_image", "content_type": "image/jpeg", "byte_size": len(photo), "sha256": digest}, http.StatusCreated, &diaryUpload)
+	put, err = http.NewRequestWithContext(ctx, http.MethodPut, diaryUpload.URL, bytes.NewReader(photo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	put.ContentLength = int64(len(photo))
+	for key, value := range diaryUpload.Headers {
+		if key != "Content-Length" {
+			put.Header.Set(key, value)
+		}
+	}
+	putResponse, err = client.Do(put)
+	if err != nil {
+		t.Fatal("diary signed PUT failed")
+	}
+	putResponse.Body.Close()
+	versionID = putResponse.Header.Get("X-Amz-Version-Id")
+	if putResponse.StatusCode != http.StatusOK || versionID == "" {
+		t.Fatal("diary signed PUT did not produce a version")
+	}
+	postJSON(t, client, http.MethodPost, baseURL+"/media/"+diaryUpload.Media.ID+"/complete", map[string]any{"version_id": versionID}, http.StatusOK, nil)
+	waitForHTTPStatus(t, ctx, client, baseURL+"/media/"+diaryUpload.Media.ID, "ready")
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	today := time.Now().In(location).Format("2006-01-02")
+	entryID := "20000000-0000-4000-8000-000000000001"
+	var diary struct {
+		Revision int      `json:"revision"`
+		MediaIDs []string `json:"media_ids"`
+	}
+	postJSON(t, client, http.MethodPost, baseURL+"/diary-entries", map[string]any{"id": entryID, "local_date": today, "time_zone": "Asia/Shanghai", "body": "合成图片日记", "media_ids": []string{diaryUpload.Media.ID}}, http.StatusCreated, &diary)
+	if diary.Revision != 1 || len(diary.MediaIDs) != 1 {
+		t.Fatal("actual diary create lost revision or media")
+	}
+	var calendar struct {
+		Days []struct {
+			LocalDate  string `json:"local_date"`
+			DiaryCount int    `json:"diary_count"`
+		} `json:"days"`
+	}
+	postJSON(t, client, http.MethodGet, baseURL+"/calendar?month="+today[:7], nil, http.StatusOK, &calendar)
+	found := false
+	for _, day := range calendar.Days {
+		if day.LocalDate == today && day.DiaryCount == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("actual calendar did not count the private diary")
+	}
+	postJSON(t, client, http.MethodDelete, baseURL+"/diary-entries/"+entryID+"?expected_revision=1", nil, http.StatusNoContent, nil)
+	postJSON(t, client, http.MethodDelete, baseURL+"/media/"+diaryUpload.Media.ID, nil, http.StatusAccepted, &deletion)
 	waitForHTTPStatus(t, ctx, client, baseURL+"/deletion-requests/"+deletion.ID, "complete")
 	if err := process.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)

@@ -7,7 +7,9 @@ import (
 
 const (
 	MediaPurposeAvatarSourcePreparation       = "avatar_source_preparation"
+	MediaPurposeDiaryImage                    = "diary_image"
 	MediaCategoryPersonPhoto                  = "person_photo"
+	MediaCategoryOrdinaryImage                = "ordinary_image"
 	MediaProcessorThen                        = "then"
 	MediaRegionLocalDevelopment               = "local-development"
 	MediaContentTypeJPEG                      = "image/jpeg"

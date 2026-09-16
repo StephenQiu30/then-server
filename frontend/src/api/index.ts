@@ -3,6 +3,7 @@
 // API 更新时间：
 // API 唯一标识：
 import * as authentication from './authentication'
+import * as diary from './diary'
 import * as privateMedia from './privateMedia'
 import * as health from './health'
 import * as outfitPlans from './outfitPlans'
@@ -13,6 +14,7 @@ import * as wardrobe from './wardrobe'
 import * as wearEvents from './wearEvents'
 export default {
   authentication,
+  diary,
   privateMedia,
   health,
   outfitPlans,

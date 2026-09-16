@@ -3,6 +3,18 @@ declare namespace API {
     user: UserResponse
   }
 
+  type CalendarDayResponse = {
+    diary_count: number
+    local_date: string
+    plan_count: number
+    wear_event_count: number
+  }
+
+  type CalendarMonthResponse = {
+    days: any
+    month: string
+  }
+
   type cancelOutfitPlanParams = {
     plan_id: string
   }
@@ -51,11 +63,24 @@ declare namespace API {
     training_allowed: false
   }
 
+  type CreateDiaryEntryRequest = {
+    body?: string
+    id: string
+    local_date: string
+    media_ids: any
+    mood?: string
+    occasion?: string
+    plan_id?: string
+    time_zone: string
+    title?: string
+    wear_event_id?: string
+  }
+
   type CreateMediaUploadRequest = {
     byte_size: number
-    consent_id: string
+    consent_id?: string
     content_type: 'image/jpeg'
-    purpose: 'avatar_source_preparation'
+    purpose: 'avatar_source_preparation' | 'diary_image'
     sha256: string
   }
 
@@ -113,6 +138,11 @@ declare namespace API {
     time_zone: string
   }
 
+  type deleteDiaryEntryParams = {
+    entry_id: string
+    expected_revision?: number
+  }
+
   type deleteMediaParams = {
     media_id: string
   }
@@ -147,6 +177,35 @@ declare namespace API {
     updated_at: string
   }
 
+  type DiaryDeletionImpactResponse = {
+    entry_id: string
+    media_count: number
+    media_retained: boolean
+    published_post_count: number
+    revision: number
+  }
+
+  type DiaryEntryPageResponse = {
+    entries: any
+    next_after_id?: string
+  }
+
+  type DiaryEntryResponse = {
+    body?: string
+    created_at: string
+    id: string
+    local_date: string
+    media_ids: any
+    mood?: string
+    occasion?: string
+    plan_id?: string
+    revision: number
+    time_zone: string
+    title?: string
+    updated_at: string
+    wear_event_id?: string
+  }
+
   type ErrorResponse = {
     code:
       | 'BAD_REQUEST'
@@ -165,12 +224,24 @@ declare namespace API {
     retryable: boolean
   }
 
+  type getCalendarMonthParams = {
+    month?: string
+  }
+
   type getConsentParams = {
     consent_id: string
   }
 
   type getDeletionRequestParams = {
     request_id: string
+  }
+
+  type getDiaryEntryDeletionImpactParams = {
+    entry_id: string
+  }
+
+  type getDiaryEntryParams = {
+    entry_id: string
   }
 
   type getMediaParams = {
@@ -196,6 +267,13 @@ declare namespace API {
 
   type getWearEventParams = {
     wear_event_id: string
+  }
+
+  type listDiaryEntriesParams = {
+    limit?: number
+    after_id?: string
+    date_from?: string
+    date_to?: string
   }
 
   type listOutfitPlansParams = {
@@ -226,14 +304,14 @@ declare namespace API {
 
   type MediaResponse = {
     byte_size: number
-    category: 'person_photo'
-    consent_id: string
+    category: 'person_photo' | 'ordinary_image'
+    consent_id?: string
     content_type: 'image/jpeg'
     created_at: string
     id: string
     pixel_height?: number
     pixel_width?: number
-    purpose: 'avatar_source_preparation'
+    purpose: 'avatar_source_preparation' | 'diary_image'
     reason?: string
     status:
       | 'pending_upload'
@@ -343,6 +421,23 @@ declare namespace API {
 
   type TransitionOutfitPlanRequest = {
     expected_revision: number
+  }
+
+  type updateDiaryEntryParams = {
+    entry_id: string
+  }
+
+  type UpdateDiaryEntryRequest = {
+    body?: string
+    expected_revision: number
+    local_date: string
+    media_ids: any
+    mood?: string
+    occasion?: string
+    plan_id?: string
+    time_zone: string
+    title?: string
+    wear_event_id?: string
   }
 
   type updateOutfitPlanParams = {
