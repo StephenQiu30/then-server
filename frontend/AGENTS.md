@@ -18,9 +18,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 frontend/
 ├── src/
 │   ├── app/                       # App Router 路由、layout/page 与路由自有样式
+│   ├── api/                       # Umi OpenAPI 生成客户端
 │   ├── components/                # 跨路由共享的 UI 与 Client Provider
 │   └── lib/
-│       └── api/                   # Axios 入口与 Umi OpenAPI 生成客户端
+│       └── api/                   # Axios 统一请求入口
 ├── tests/
 │   └── unit/                      # 不参与生产源码组织的单元测试
 ├── next.config.ts
@@ -29,7 +30,8 @@ frontend/
 ```
 
 - `src/app` 只负责路由组织，不放通用 HTTP 客户端、共享 Provider 或业务杂项。
-- `src/lib/api/request.ts` 是唯一 Axios 实例入口；`src/lib/api/generated/` 只由 Umi OpenAPI 覆盖生成，不手工修改。
+- `src/lib/api/request.ts` 是唯一 Axios 实例入口；`src/api/` 直属 `src/`，只由 Umi OpenAPI 覆盖生成，不手工修改。
+- 页面样式优先使用 Tailwind CSS utility；只有 Tailwind 不适合表达的路由私有样式才保留 CSS Module。
 - 共享 Client Component 放到 `src/components/`，Server Component 保持默认。
 - 只有业务切片获批并实际实现时才创建 `src/features/<feature>`；不创建空 `public`、`assets`、`features` 或占位路由。
 - 配置文件保留在 `frontend/` 根目录，测试按类型放在 `tests/`，不得混入生成目录。

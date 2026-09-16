@@ -1,6 +1,6 @@
 # Then Frontend
 
-“于是”Web 前端基础工程。项目使用 Next.js App Router、React、TypeScript、Radix UI Themes、TanStack Query、Axios、ESLint 与 Prettier，配置以当前官方 `create-next-app` 脚手架为基准。不使用 Vite 或 React Router。
+“于是”Web 前端基础工程。项目使用 Next.js App Router、React、TypeScript、Radix UI Themes、Tailwind CSS、TanStack Query、Axios、ESLint 与 Prettier，配置以当前官方 `create-next-app` 脚手架为基准。不使用 Vite 或 React Router。
 
 ## 本地开发
 
@@ -21,7 +21,7 @@ Next.js 开发服务默认使用 `http://127.0.0.1:3000`，`next.config.ts` 只�
 npm run openapi
 ```
 
-`@umijs/openapi` 默认读取 `http://127.0.0.1:8080/openapi.json`，生成到 `src/lib/api/generated/`，并通过 `src/lib/api/request.ts` 的 Axios 实例发送请求。需要读取其他开发地址时可临时设置 `THEN_OPENAPI_SCHEMA`；仓库不保存第二份 OpenAPI JSON/YAML。
+`@umijs/openapi` 默认读取 `http://127.0.0.1:8080/openapi.json`，生成到 `src/api/`，并通过 `src/lib/api/request.ts` 的 Axios 实例发送请求。需要读取其他开发地址时可临时设置 `THEN_OPENAPI_SCHEMA`；仓库不保存第二份 OpenAPI JSON/YAML。
 
 生成目录由工具全量覆盖，不手工编辑。生成器固定依赖当前仍有无上游修复的开发期安全公告；它不进入生产 bundle，`npm audit --omit=dev` 必须保持为 0。
 
@@ -30,7 +30,8 @@ npm run openapi
 ```text
 src/app/                 App Router 路由入口与路由样式
 src/components/          跨路由共享组件与 Client Provider
-src/lib/api/             Axios 统一入口与 Umi 生成客户端
+src/api/                 Umi OpenAPI 生成客户端
+src/lib/api/             Axios 统一请求入口
 tests/unit/              单元测试
 ```
 

@@ -6,6 +6,8 @@ approved 表示需求已确认；approved_with_gates 表示启用还受发布门
 
 ## 当前文档
 
+- [每日记录与穿搭社区需求](19-每日记录与穿搭社区需求.md)（approved/staged implementation）
+
 - [OOTD 产品需求](10-OOTD产品需求.md)
 - [数字形象与照片采集需求](11-数字形象与照片采集需求.md)
 - [数字衣橱与衣物录入需求](12-数字衣橱与衣物录入需求.md)

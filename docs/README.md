@@ -6,6 +6,7 @@
 
 | 需要了解 | 入口 |
 | --- | --- |
+| 当前后端需求与数据设计 | [领域](design/21-后端产品边界与领域设计.md)、[数据库](design/22-后端数据库设计.md)、[API](design/23-后端接口设计.md)、[审核计划](plan/19-01-后端需求与数据设计审核计划.md) |
 | 整体进度、阻断与下一步 | [产品实施计划](plan/10-OOTD产品实施计划.md) |
 | 完整产品与分期 | [Design 20](design/20-OOTD完整产品能力与阶段架构设计.md)、[PRD 10](prd/10-OOTD产品需求.md) |
 | 当前技术栈与变更规则 | [Design 01](design/01-技术选型.md) |
@@ -19,6 +20,7 @@
 
 | 功能 | 设计 | 需求 | 验收 |
 | --- | --- | --- | --- |
+| 每日记录与图文社区 | [Design 21](design/21-后端产品边界与领域设计.md) | [PRD 19](prd/19-每日记录与穿搭社区需求.md) | [Acceptance 19](acceptance/19-每日记录与穿搭社区验收.md) |
 | 人物与可选照片 | [Design 04](design/04-数字形象与照片采集设计.md) | [PRD 11](prd/11-数字形象与照片采集需求.md) | [Acceptance 11](acceptance/11-数字形象与照片采集验收.md) |
 | 内置衣物与真实衣橱 | [Design 05](design/05-数字衣橱与衣物录入设计.md) | [PRD 12](prd/12-数字衣橱与衣物录入需求.md) | [Acceptance 12](acceptance/12-数字衣橱与衣物录入验收.md) |
 | 推荐 | [Design 06](design/06-穿搭推荐设计.md) | [PRD 13](prd/13-穿搭推荐需求.md) | [Acceptance 13](acceptance/13-穿搭推荐验收.md) |
