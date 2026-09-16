@@ -34,12 +34,12 @@ Woo 参考没有展示认证页面，因此这些页面只能沿用“于是”�
 
 2026-09-14 用户进一步确认 Web 使用 Umi OpenAPI 生成 API 文件，替代此前 Hey API 候选。仅做了可撤销的本地生成预检，未保留 `frontend/` 代码：
 
-- `@umijs/openapi` 1.14.1 + TypeScript 6.0.3 已验证可消费运行时 OpenAPI 3.1.2；当前 API 0.15.0 共 70 个 operation，并包含账号状态/revision、公开资料、衣橱确认属性、计划/实际穿着、私人日记/日历以及社区审核治理请求响应。每次合同变化必须从实际 `/openapi.json` 重新生成并验证函数数量，不复用旧产物。
+- `@umijs/openapi` 1.14.1 + TypeScript 6.0.3 已验证可消费运行时 OpenAPI 3.1.2；当前 API 0.16.0 共 98 个 operation，并包含账号状态/revision、公开资料、衣橱确认属性、计划/实际穿着、私人日记/日历、社区审核治理、发现互动和通知请求响应。每次合同变化必须从实际 `/openapi.json` 重新生成并验证函数数量，不复用旧产物。
 - 该 CLI 对 HTTP `schemaPath` 使用 JSON 解析，不能直接消费 `/openapi.yaml`；Go API 因此直接暴露由 Huma operation 与标注类型生成并校验的 `/openapi.json`。
 - 会话 Cookie 只通过 OpenAPI security scheme 表达，不生成函数参数；Umi 产物中没有 `then_session` 参数，浏览器随同源请求自动发送 HttpOnly Cookie。
 - 生成器包没有声明其 CLI 实际需要的 `tslib`，前端正式安装时将 `tslib` 2.8.1 作为显式开发依赖；这不是生成后修补。当前完整开发依赖审计因生成器固定依赖的 `mockjs` 原型污染公告报告 2 个 high 且无上游修复，`npm audit --omit=dev` 为 0。前端开工时必须复核；生成器不进入生产 bundle，`mock` 固定关闭。
 
-2026-09-16 基础工程已从实际本机 API 重新生成 API 0.15.0 的 70 个函数，生成目录为 `src/api/`，请求适配器为 `src/lib/api/request.ts`；新增 community posts/moderation/reports、public community 与 account administration client，HttpOnly Cookie 未成为参数。Tailwind CSS 4 通过 PostCSS 接入并由根布局加载，生成时不设置 `mockFolder`，因此不产出 mock；完整开发依赖审计仍以依赖审计切片证据为准。
+2026-09-16 基础工程已从实际本机 API 重新生成 API 0.16.0 的 98 个函数，生成目录为 `src/api/`，请求适配器为 `src/lib/api/request.ts`；新增社区发现、互动、关系、评论、安全、通知和申诉 client，HttpOnly Cookie 未成为参数。Tailwind CSS 4 通过 PostCSS 接入并由根布局加载，生成时不设置 `mockFolder`，因此不产出 mock；完整开发依赖审计仍以依赖审计切片证据为准。
 
 ## 页面状态与可访问性清单
 

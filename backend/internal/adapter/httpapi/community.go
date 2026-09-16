@@ -21,8 +21,31 @@ type CommunityHTTPService interface {
 	SubmitPost(context.Context, string, string, int) (communityapp.Post, error)
 	WithdrawPost(context.Context, string, string, int) (communityapp.Post, error)
 	DeletePost(context.Context, string, string, int) error
-	GetPublicPost(context.Context, string) (communityapp.PublicPost, error)
-	GetPublicPostImage(context.Context, string, int) (communityapp.MediaObjectReference, error)
+	GetPublicPostForViewer(context.Context, string, string) (communityapp.PublicPost, error)
+	GetPublicPostImageForViewer(context.Context, string, string, int) (communityapp.MediaObjectReference, error)
+	ListFeed(context.Context, string, string, int, string) (communityapp.PublicPostPage, error)
+	SearchPosts(context.Context, string, string, string, int, string) (communityapp.PublicPostPage, error)
+	ListProfilePosts(context.Context, string, string, int, string) (communityapp.PublicPostPage, error)
+	SetPostLike(context.Context, string, string, bool) error
+	SetPostBookmark(context.Context, string, string, bool) error
+	ListBookmarks(context.Context, string, int, string) (communityapp.PublicPostPage, error)
+	SetFollow(context.Context, string, string, bool) error
+	ListProfileRelationships(context.Context, string, string, string, int, string) (communityapp.PublicProfilePage, error)
+	SetBlock(context.Context, string, string, bool) error
+	ListBlocks(context.Context, string, int, string) (communityapp.BlockedUserPage, error)
+	CreateComment(context.Context, string, string, string, communityapp.CreateCommentInput) (communityapp.Comment, error)
+	ListComments(context.Context, string, string, *string, int, string) (communityapp.CommentPage, error)
+	ListReplies(context.Context, string, string, int, string) (communityapp.CommentPage, error)
+	DeleteComment(context.Context, string, string, int) error
+	ListCommentModeration(context.Context, string, int, string) (communityapp.CommentModerationPage, error)
+	DecideComment(context.Context, string, string, communityapp.DecideCommentInput) (communityapp.Comment, error)
+	RemoveComment(context.Context, string, string, int, string) error
+	ListNotifications(context.Context, string, int, string) (communityapp.NotificationPage, error)
+	MarkNotificationRead(context.Context, string, string) (communityapp.Notification, error)
+	CreateAppeal(context.Context, string, string, string, string) (communityapp.ModerationAppeal, error)
+	ListOwnAppeals(context.Context, string, int, string) (communityapp.ModerationAppealPage, error)
+	ListAppeals(context.Context, string, int, string, string) (communityapp.AdminModerationAppealPage, error)
+	ResolveAppeal(context.Context, string, string, string, string) (communityapp.ModerationAppeal, error)
 	ListModerationCandidates(context.Context, string, int, string) (communityapp.ModerationCandidatePage, error)
 	GetModerationCandidate(context.Context, string, string, int) (communityapp.ModerationCandidate, error)
 	GetModerationImage(context.Context, string, string, int, int) (communityapp.MediaObjectReference, error)
@@ -89,6 +112,8 @@ type RemovePostRequest struct {
 type CreateReportRequest struct {
 	ID         string  `json:"id" format:"uuid"`
 	PostID     string  `json:"post_id" format:"uuid"`
+	TargetType string  `json:"target_type" enum:"post,comment" default:"post"`
+	CommentID  *string `json:"comment_id,omitempty" format:"uuid"`
 	ReasonCode string  `json:"reason_code" enum:"spam,harassment,sexual,violence,misinformation,other"`
 	Detail     *string `json:"detail,omitempty" maxLength:"500"`
 }
@@ -147,6 +172,11 @@ type PublicPostResponse struct {
 	Body              *string   `json:"body,omitempty" maxLength:"3000"`
 	Tags              []string  `json:"tags" maxItems:"5"`
 	ImageCount        int       `json:"image_count" minimum:"0" maximum:"9"`
+	LikeCount         int64     `json:"like_count" minimum:"0"`
+	CommentCount      int64     `json:"comment_count" minimum:"0"`
+	ViewerLiked       bool      `json:"viewer_liked"`
+	ViewerBookmarked  bool      `json:"viewer_bookmarked"`
+	FollowingAuthor   bool      `json:"following_author"`
 	PublishedAt       time.Time `json:"published_at" format:"date-time"`
 }
 
@@ -172,6 +202,8 @@ type ModerationCandidatePageResponse struct {
 type ContentReportResponse struct {
 	ID             string     `json:"id" format:"uuid"`
 	PostID         string     `json:"post_id" format:"uuid"`
+	TargetType     string     `json:"target_type" enum:"post,comment"`
+	CommentID      *string    `json:"comment_id,omitempty" format:"uuid"`
 	ReasonCode     string     `json:"reason_code"`
 	Detail         *string    `json:"detail,omitempty" maxLength:"500"`
 	Status         string     `json:"status" enum:"open,resolved,dismissed"`
@@ -200,6 +232,7 @@ type ModerationActionResponse struct {
 	ActorID       string    `json:"actor_id" format:"uuid"`
 	PostID        *string   `json:"post_id,omitempty" format:"uuid"`
 	PostVersion   *int      `json:"post_version,omitempty" minimum:"1"`
+	CommentID     *string   `json:"comment_id,omitempty" format:"uuid"`
 	ReportID      *string   `json:"report_id,omitempty" format:"uuid"`
 	SubjectUserID *string   `json:"subject_user_id,omitempty" format:"uuid"`
 	Action        string    `json:"action"`
@@ -231,7 +264,8 @@ type communitySessionInput struct {
 	Session string `cookie:"then_session" hidden:"true"`
 }
 type postResourceInput struct {
-	ID string `path:"post_id" format:"uuid"`
+	Session string `cookie:"then_session" hidden:"true"`
+	ID      string `path:"post_id" format:"uuid"`
 }
 type ownPostInput struct {
 	Session string `cookie:"then_session" hidden:"true"`
@@ -263,6 +297,7 @@ type listOwnPostsInput struct {
 	State   string `query:"state" required:"false" enum:"draft,pending,published,withdrawn,removed"`
 }
 type postImageInput struct {
+	Session string `cookie:"then_session" hidden:"true"`
 	ID      string `path:"post_id" format:"uuid"`
 	Ordinal int    `path:"ordinal" minimum:"0" maximum:"8"`
 }
@@ -392,6 +427,7 @@ func registerCommunityOperations(api huma.API, handler *CommunityHandler) {
 	huma.Register(api, admin(huma.Operation{OperationID: "listAdminUsers", Method: http.MethodGet, Path: "/admin/users", Tags: []string{"Account administration"}, Summary: "管理员分页读取账号状态", Errors: common}), handler.listUsers)
 	huma.Register(api, admin(huma.Operation{OperationID: "suspendUser", Method: http.MethodPost, Path: "/admin/users/{user_id}/suspend", Tags: []string{"Account administration"}, Summary: "封禁账号并撤销全部会话", MaxBodyBytes: 8 * 1024, Errors: common}), handler.suspendUser)
 	huma.Register(api, admin(huma.Operation{OperationID: "restoreUser", Method: http.MethodPost, Path: "/admin/users/{user_id}/restore", Tags: []string{"Account administration"}, Summary: "恢复账号，不改变帖子治理状态", MaxBodyBytes: 8 * 1024, Errors: common}), handler.restoreUser)
+	registerCommunitySocialOperations(api, handler, common)
 }
 
 func (h *CommunityHandler) createPost(ctx context.Context, input *createPostInput) (*postOutput, error) {
@@ -478,7 +514,7 @@ func (h *CommunityHandler) getPublicPost(ctx context.Context, input *postResourc
 	if err := h.available(ctx, "", true); err != nil {
 		return nil, err
 	}
-	post, err := h.service.GetPublicPost(ctx, input.ID)
+	post, err := h.service.GetPublicPostForViewer(ctx, input.Session, input.ID)
 	if err != nil {
 		return nil, h.mapError(ctx, err)
 	}
@@ -489,7 +525,7 @@ func (h *CommunityHandler) getPublicImage(ctx context.Context, input *postImageI
 	if err := h.available(ctx, "", true); err != nil {
 		return nil, err
 	}
-	reference, err := h.service.GetPublicPostImage(ctx, input.ID, input.Ordinal)
+	reference, err := h.service.GetPublicPostImageForViewer(ctx, input.Session, input.ID, input.Ordinal)
 	if err != nil {
 		return nil, h.mapError(ctx, err)
 	}
@@ -558,7 +594,7 @@ func (h *CommunityHandler) createReport(ctx context.Context, input *createReport
 	if err := h.available(ctx, input.Session, false); err != nil {
 		return nil, err
 	}
-	report, err := h.service.CreateReport(ctx, input.Session, input.Body.ID, input.Body.PostID, communityapp.CreateReportInput{ReasonCode: input.Body.ReasonCode, Detail: input.Body.Detail})
+	report, err := h.service.CreateReport(ctx, input.Session, input.Body.ID, input.Body.PostID, communityapp.CreateReportInput{TargetType: communityapp.ReportTargetType(input.Body.TargetType), CommentID: input.Body.CommentID, ReasonCode: input.Body.ReasonCode, Detail: input.Body.Detail})
 	if err != nil {
 		return nil, h.mapError(ctx, err)
 	}
@@ -616,7 +652,7 @@ func (h *CommunityHandler) listActions(ctx context.Context, input *moderationLis
 	}
 	actions := make([]ModerationActionResponse, 0, len(page.Actions))
 	for _, action := range page.Actions {
-		actions = append(actions, ModerationActionResponse{ID: action.ID, ActorID: action.ActorID, PostID: action.PostID, PostVersion: action.PostVersion, ReportID: action.ReportID, SubjectUserID: action.SubjectUserID, Action: action.Action, ReasonCode: action.ReasonCode, CreatedAt: action.CreatedAt})
+		actions = append(actions, ModerationActionResponse{ID: action.ID, ActorID: action.ActorID, PostID: action.PostID, PostVersion: action.PostVersion, CommentID: action.CommentID, ReportID: action.ReportID, SubjectUserID: action.SubjectUserID, Action: action.Action, ReasonCode: action.ReasonCode, CreatedAt: action.CreatedAt})
 	}
 	return &actionPageOutput{RequestID: requestID(ctx), Body: ModerationActionPageResponse{Actions: actions, NextAfterID: page.NextAfterID}}, nil
 }
@@ -684,7 +720,7 @@ func (h *CommunityHandler) mapError(ctx context.Context, err error) error {
 		return authenticatedSessionError(ctx, h.secureCookie)
 	case errors.Is(err, communityapp.ErrInvalidCommunityInput):
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
-	case errors.Is(err, communityapp.ErrPostNotFound), errors.Is(err, communityapp.ErrReportNotFound):
+	case errors.Is(err, communityapp.ErrPostNotFound), errors.Is(err, communityapp.ErrCommentNotFound), errors.Is(err, communityapp.ErrAppealNotFound), errors.Is(err, communityapp.ErrNotificationNotFound), errors.Is(err, communityapp.ErrReportNotFound):
 		return newErrorResponse(http.StatusNotFound, requestID(ctx))
 	case errors.Is(err, communityapp.ErrCommunityForbidden):
 		response := newErrorResponse(http.StatusForbidden, requestID(ctx))
@@ -717,7 +753,7 @@ func revisionResponse(revision communityapp.PostRevision) PostRevisionResponse {
 }
 
 func publicPostResponse(post communityapp.PublicPost) PublicPostResponse {
-	return PublicPostResponse{ID: post.ID, AuthorHandle: post.AuthorHandle, AuthorDisplayName: post.AuthorDisplayName, Title: post.Title, Body: post.Body, Tags: append([]string(nil), post.Tags...), ImageCount: post.ImageCount, PublishedAt: post.PublishedAt}
+	return PublicPostResponse{ID: post.ID, AuthorHandle: post.AuthorHandle, AuthorDisplayName: post.AuthorDisplayName, Title: post.Title, Body: post.Body, Tags: append([]string(nil), post.Tags...), ImageCount: post.ImageCount, LikeCount: post.LikeCount, CommentCount: post.CommentCount, ViewerLiked: post.ViewerLiked, ViewerBookmarked: post.ViewerBookmarked, FollowingAuthor: post.FollowingAuthor, PublishedAt: post.PublishedAt}
 }
 
 func candidateResponse(candidate communityapp.ModerationCandidate) ModerationCandidateResponse {
@@ -725,7 +761,7 @@ func candidateResponse(candidate communityapp.ModerationCandidate) ModerationCan
 }
 
 func reportResponse(report communityapp.ContentReport) ContentReportResponse {
-	return ContentReportResponse{ID: report.ID, PostID: report.PostID, ReasonCode: report.ReasonCode, Detail: report.Detail, Status: string(report.Status), ResolutionCode: report.ResolutionCode, CreatedAt: report.CreatedAt, ResolvedAt: report.ResolvedAt}
+	return ContentReportResponse{ID: report.ID, PostID: report.PostID, TargetType: string(report.TargetType), CommentID: report.CommentID, ReasonCode: report.ReasonCode, Detail: report.Detail, Status: string(report.Status), ResolutionCode: report.ResolutionCode, CreatedAt: report.CreatedAt, ResolvedAt: report.ResolvedAt}
 }
 
 func adminUserResponse(user communityapp.AdminUser) AdminUserResponse {

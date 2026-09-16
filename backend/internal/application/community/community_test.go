@@ -48,3 +48,26 @@ func TestCommunityReasonCodesAreBounded(t *testing.T) {
 		}
 	}
 }
+
+func TestSocialInputNormalization(t *testing.T) {
+	query, ok := normalizeSearchQuery("  秋日 穿搭  ")
+	if !ok || query == nil || *query != "秋日 穿搭" {
+		t.Fatalf("search query normalization failed: %v %v", query, ok)
+	}
+	tag, ok := normalizeSearchTag("  OOTD  ")
+	if !ok || tag == nil || *tag != "ootd" {
+		t.Fatalf("search tag normalization failed: %v %v", tag, ok)
+	}
+	comment, ok := normalizeCommentBody("  第一行\n第二行  ")
+	if !ok || comment != "第一行\n第二行" {
+		t.Fatalf("comment normalization failed: %q %v", comment, ok)
+	}
+	for _, invalid := range []string{"x", strings.Repeat("x", 81), "valid\u0000control"} {
+		if _, ok := normalizeSearchQuery(invalid); ok {
+			t.Fatalf("invalid search query passed: %q", invalid)
+		}
+	}
+	if _, ok := normalizeCommentBody(strings.Repeat("评", 501)); ok {
+		t.Fatal("oversized comment passed")
+	}
+}

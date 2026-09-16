@@ -90,7 +90,7 @@ func (deletionRequestRecord) TableName() string { return "deletion_requests" }
 
 type outboxEventRecord struct {
 	ID          string     `gorm:"column:id;type:uuid;primaryKey"`
-	EventType   string     `gorm:"column:event_type;type:text;not null;index:outbox_events_pending_idx,priority:2;check:outbox_events_type_check,event_type IN ('media.uploaded','media.deletion_requested')"`
+	EventType   string     `gorm:"column:event_type;type:text;not null;index:outbox_events_pending_idx,priority:2;check:outbox_events_type_check,event_type IN ('media.uploaded','media.deletion_requested','community.notification_requested')"`
 	AggregateID string     `gorm:"column:aggregate_id;type:uuid;not null"`
 	Payload     []byte     `gorm:"column:payload;type:jsonb;not null"`
 	CreatedAt   time.Time  `gorm:"column:created_at;type:timestamptz;not null"`
@@ -348,6 +348,32 @@ func (r *MediaRepository) PendingOutbox(ctx context.Context, limit int) ([]media
 func (r *MediaRepository) MarkOutboxPublished(ctx context.Context, eventID string, at time.Time) error {
 	result := r.database.WithContext(ctx).Model(&outboxEventRecord{}).Where("id = ? AND published_at IS NULL", eventID).Update("published_at", at)
 	if result.Error != nil {
+		return mediaapp.ErrMediaUnavailable
+	}
+	return nil
+}
+
+func (r *MediaRepository) DeliverNotification(ctx context.Context, eventID, notificationID string, at time.Time) error {
+	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var receipt inboxReceiptRecord
+		if err := tx.Where("event_id = ? AND handler_name = ?", eventID, "community-notification").First(&receipt).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		result := tx.Model(&notificationRecord{}).Where("id = ? AND event_id = ? AND available_at IS NULL", notificationID, eventID).Update("available_at", at)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return mediaapp.ErrMediaConflict
+		}
+		return tx.Create(&inboxReceiptRecord{EventID: eventID, HandlerName: "community-notification", ProcessedAt: at}).Error
+	})
+	if err != nil {
+		if errors.Is(err, mediaapp.ErrMediaConflict) {
+			return err
+		}
 		return mediaapp.ErrMediaUnavailable
 	}
 	return nil

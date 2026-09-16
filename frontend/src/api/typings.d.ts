@@ -1,10 +1,28 @@
 declare namespace API {
+  type AdminAppealPageResponse = {
+    appeals: any
+    next_after_id?: string
+  }
+
+  type AdminAppealResponse = {
+    action: string
+    action_id: string
+    appellant_id: string
+    created_at: string
+    id: string
+    reason: string
+    resolution_code?: string
+    resolved_at?: string
+    status: 'open' | 'upheld' | 'reversed'
+  }
+
   type AdminReportPageResponse = {
     next_after_id?: string
     reports: any
   }
 
   type AdminReportResponse = {
+    comment_id?: string
     created_at: string
     detail?: string
     id: string
@@ -14,6 +32,7 @@ declare namespace API {
     resolution_code?: string
     resolved_at?: string
     status: 'open' | 'resolved' | 'dismissed'
+    target_type: 'post' | 'comment'
   }
 
   type AdminUserPageResponse = {
@@ -31,8 +50,44 @@ declare namespace API {
     updated_at: string
   }
 
+  type AppealPageResponse = {
+    appeals: any
+    next_after_id?: string
+  }
+
+  type AppealResponse = {
+    action: string
+    action_id: string
+    created_at: string
+    id: string
+    reason: string
+    resolution_code?: string
+    resolved_at?: string
+    status: 'open' | 'upheld' | 'reversed'
+  }
+
   type AuthenticatedUserResponse = {
     user: UserResponse
+  }
+
+  type BlockedUserPageResponse = {
+    next_after_id?: string
+    users: any
+  }
+
+  type BlockedUserResponse = {
+    blocked_at: string
+    display_name: string
+    handle: string
+    user_id: string
+  }
+
+  type blockUserParams = {
+    user_id: string
+  }
+
+  type bookmarkPostParams = {
+    post_id: string
   }
 
   type CalendarDayResponse = {
@@ -53,6 +108,46 @@ declare namespace API {
 
   type CancelOutfitPlanRequest = {
     expected_revision: number
+  }
+
+  type CommentModerationPageResponse = {
+    comments: any
+    next_after_id?: string
+  }
+
+  type CommentModerationResponse = {
+    author_display_name: string
+    author_handle: string
+    body?: string
+    created_at: string
+    id: string
+    parent_id?: string
+    post_author_handle: string
+    post_id: string
+    post_title?: string
+    reason_code?: string
+    revision: number
+    state: 'pending' | 'published' | 'rejected' | 'deleted' | 'removed'
+    updated_at: string
+  }
+
+  type CommentPageResponse = {
+    comments: any
+    next_after_id?: string
+  }
+
+  type CommentResponse = {
+    author_display_name: string
+    author_handle: string
+    body?: string
+    created_at: string
+    id: string
+    parent_id?: string
+    post_id: string
+    reason_code?: string
+    revision: number
+    state: 'pending' | 'published' | 'rejected' | 'deleted' | 'removed'
+    updated_at: string
   }
 
   type completeMediaUploadParams = {
@@ -85,6 +180,7 @@ declare namespace API {
   }
 
   type ContentReportResponse = {
+    comment_id?: string
     created_at: string
     detail?: string
     id: string
@@ -93,6 +189,23 @@ declare namespace API {
     resolution_code?: string
     resolved_at?: string
     status: 'open' | 'resolved' | 'dismissed'
+    target_type: 'post' | 'comment'
+  }
+
+  type CreateAppealRequest = {
+    action_id: string
+    id: string
+    reason: string
+  }
+
+  type createCommentParams = {
+    post_id: string
+  }
+
+  type CreateCommentRequest = {
+    body: string
+    id: string
+    parent_id?: string
   }
 
   type CreateConsentRequest = {
@@ -146,6 +259,7 @@ declare namespace API {
   }
 
   type CreateReportRequest = {
+    comment_id?: string
     detail?: string
     id: string
     post_id: string
@@ -156,6 +270,7 @@ declare namespace API {
       | 'violence'
       | 'misinformation'
       | 'other'
+    target_type: 'post' | 'comment'
   }
 
   type CreateSessionRequest = {
@@ -203,6 +318,16 @@ declare namespace API {
     time_zone: string
   }
 
+  type decideCommentModerationParams = {
+    comment_id: string
+  }
+
+  type DecideCommentRequest = {
+    decision: 'approve' | 'reject'
+    expected_revision: number
+    reason_code: string
+  }
+
   type decidePostModerationParams = {
     post_id: string
   }
@@ -213,6 +338,11 @@ declare namespace API {
     reason_code: string
     review_round: number
     version: number
+  }
+
+  type deleteCommentParams = {
+    comment_id: string
+    expected_revision?: number
   }
 
   type deleteDiaryEntryParams = {
@@ -307,6 +437,10 @@ declare namespace API {
     retryable: boolean
   }
 
+  type followProfileParams = {
+    handle: string
+  }
+
   type getCalendarMonthParams = {
     month?: string
   }
@@ -376,9 +510,47 @@ declare namespace API {
     wear_event_id: string
   }
 
+  type likePostParams = {
+    post_id: string
+  }
+
   type listAdminUsersParams = {
     limit?: number
     after_id?: string
+  }
+
+  type listBlockedUsersParams = {
+    limit?: number
+    after_id?: string
+  }
+
+  type listBookmarksParams = {
+    limit?: number
+    after_id?: string
+  }
+
+  type listCommentModerationCandidatesParams = {
+    limit?: number
+    after_id?: string
+  }
+
+  type listCommentRepliesParams = {
+    limit?: number
+    after_id?: string
+    comment_id: string
+  }
+
+  type listCommentsParams = {
+    limit?: number
+    after_id?: string
+    post_id: string
+    parent_id?: string
+  }
+
+  type listCommunityFeedParams = {
+    limit?: number
+    after_id?: string
+    type?: 'discover' | 'following'
   }
 
   type listCommunityReportsParams = {
@@ -399,10 +571,26 @@ declare namespace API {
     after_id?: string
   }
 
+  type listModerationAppealsParams = {
+    limit?: number
+    after_id?: string
+    status?: 'open' | 'upheld' | 'reversed'
+  }
+
+  type listNotificationsParams = {
+    limit?: number
+    after_id?: string
+  }
+
   type listOutfitPlansParams = {
     limit?: number
     after_id?: string
     local_date?: string
+  }
+
+  type listOwnModerationAppealsParams = {
+    limit?: number
+    after_id?: string
   }
 
   type listOwnPostsParams = {
@@ -422,6 +610,24 @@ declare namespace API {
     after_id?: string
   }
 
+  type listProfileFollowersParams = {
+    limit?: number
+    after_id?: string
+    handle: string
+  }
+
+  type listProfileFollowingParams = {
+    limit?: number
+    after_id?: string
+    handle: string
+  }
+
+  type listProfilePostsParams = {
+    limit?: number
+    after_id?: string
+    handle: string
+  }
+
   type listWardrobeItemsParams = {
     limit?: number
     after_id?: string
@@ -436,6 +642,10 @@ declare namespace API {
   type LivenessResponse = {
     request_id: string
     status: 'live'
+  }
+
+  type markNotificationReadParams = {
+    notification_id: string
   }
 
   type markOutfitPlanNotWornParams = {
@@ -480,6 +690,7 @@ declare namespace API {
   type ModerationActionResponse = {
     action: string
     actor_id: string
+    comment_id?: string
     created_at: string
     id: string
     post_id?: string
@@ -506,6 +717,27 @@ declare namespace API {
     tags: any
     title?: string
     version: number
+  }
+
+  type NotificationPageResponse = {
+    next_after_id?: string
+    notifications: any
+  }
+
+  type NotificationResponse = {
+    actor_handle?: string
+    comment_id?: string
+    created_at: string
+    id: string
+    kind:
+      | 'comment_published'
+      | 'reply_published'
+      | 'followed'
+      | 'post_reviewed'
+      | 'comment_reviewed'
+      | 'appeal_resolved'
+    post_id?: string
+    read_at?: string
   }
 
   type OutfitPlanItemContentResponse = {
@@ -592,15 +824,30 @@ declare namespace API {
     version: number
   }
 
+  type PublicPostPageResponse = {
+    next_after_id?: string
+    posts: any
+  }
+
   type PublicPostResponse = {
     author_display_name: string
     author_handle: string
     body?: string
+    comment_count: number
+    following_author: boolean
     id: string
     image_count: number
+    like_count: number
     published_at: string
     tags: any
     title?: string
+    viewer_bookmarked: boolean
+    viewer_liked: boolean
+  }
+
+  type PublicProfilePageResponse = {
+    next_after_id?: string
+    profiles: any
   }
 
   type PublicProfileResponse = {
@@ -610,6 +857,15 @@ declare namespace API {
     handle: string
     revision: number
     updated_at: string
+  }
+
+  type PublicProfileSummaryResponse = {
+    bio?: string
+    display_name: string
+    follower_count: number
+    following: boolean
+    following_count: number
+    handle: string
   }
 
   type PutProfileRequest = {
@@ -640,6 +896,10 @@ declare namespace API {
     reason_code: string
   }
 
+  type removePublishedCommentParams = {
+    comment_id: string
+  }
+
   type removePublishedPostParams = {
     post_id: string
   }
@@ -649,8 +909,17 @@ declare namespace API {
     reports: any
   }
 
+  type ResolveAppealRequest = {
+    resolution_code: string
+    status: 'upheld' | 'reversed'
+  }
+
   type resolveCommunityReportParams = {
     report_id: string
+  }
+
+  type resolveModerationAppealParams = {
+    appeal_id: string
   }
 
   type ResolveReportRequest = {
@@ -664,6 +933,13 @@ declare namespace API {
 
   type restoreUserParams = {
     user_id: string
+  }
+
+  type searchCommunityPostsParams = {
+    limit?: number
+    after_id?: string
+    q?: string
+    tag?: string
   }
 
   type SelfAdultDeclarationResponse = {
@@ -688,6 +964,22 @@ declare namespace API {
 
   type TransitionOutfitPlanRequest = {
     expected_revision: number
+  }
+
+  type unblockUserParams = {
+    user_id: string
+  }
+
+  type unbookmarkPostParams = {
+    post_id: string
+  }
+
+  type unfollowProfileParams = {
+    handle: string
+  }
+
+  type unlikePostParams = {
+    post_id: string
   }
 
   type updateDiaryEntryParams = {

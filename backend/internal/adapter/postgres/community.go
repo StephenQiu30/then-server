@@ -83,17 +83,20 @@ type postRevisionTagRecord struct {
 func (postRevisionTagRecord) TableName() string { return "post_revision_tags" }
 
 type contentReportRecord struct {
-	ID             string     `gorm:"column:id;type:uuid;primaryKey"`
-	ReporterID     string     `gorm:"column:reporter_id;type:uuid;not null;index:content_reports_reporter_idx;uniqueIndex:content_reports_open_unique,priority:1,where:status = 'open'"`
-	PostID         string     `gorm:"column:post_id;type:uuid;not null;index:content_reports_post_idx;uniqueIndex:content_reports_open_unique,priority:2,where:status = 'open'"`
-	ReasonCode     string     `gorm:"column:reason_code;type:text;not null"`
-	Detail         *string    `gorm:"column:detail;type:text;check:content_reports_detail_check,detail IS NULL OR char_length(detail) BETWEEN 1 AND 500"`
-	Status         string     `gorm:"column:status;type:text;not null;index:content_reports_status_idx;check:content_reports_status_check,status IN ('open','resolved','dismissed')"`
-	ResolutionCode *string    `gorm:"column:resolution_code;type:text"`
-	CreatedAt      time.Time  `gorm:"column:created_at;type:timestamptz;not null;index:content_reports_created_idx,sort:desc"`
-	ResolvedAt     *time.Time `gorm:"column:resolved_at;type:timestamptz"`
-	Reporter       userRecord `gorm:"foreignKey:ReporterID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	Post           postRecord `gorm:"foreignKey:PostID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	ID             string         `gorm:"column:id;type:uuid;primaryKey"`
+	ReporterID     string         `gorm:"column:reporter_id;type:uuid;not null;index:content_reports_reporter_idx;uniqueIndex:content_reports_open_post_unique,priority:1,where:status = 'open' AND target_type = 'post';uniqueIndex:content_reports_open_comment_unique,priority:1,where:status = 'open' AND target_type = 'comment'"`
+	PostID         string         `gorm:"column:post_id;type:uuid;not null;index:content_reports_post_idx;uniqueIndex:content_reports_open_post_unique,priority:2,where:status = 'open' AND target_type = 'post'"`
+	TargetType     string         `gorm:"column:target_type;type:text;not null;default:'post';check:content_reports_target_type_check,target_type IN ('post','comment')"`
+	CommentID      *string        `gorm:"column:comment_id;type:uuid;uniqueIndex:content_reports_open_comment_unique,priority:2,where:status = 'open' AND target_type = 'comment';check:content_reports_target_pair_check,(target_type = 'post' AND comment_id IS NULL) OR (target_type = 'comment' AND comment_id IS NOT NULL)"`
+	ReasonCode     string         `gorm:"column:reason_code;type:text;not null"`
+	Detail         *string        `gorm:"column:detail;type:text;check:content_reports_detail_check,detail IS NULL OR char_length(detail) BETWEEN 1 AND 500"`
+	Status         string         `gorm:"column:status;type:text;not null;index:content_reports_status_idx;check:content_reports_status_check,status IN ('open','resolved','dismissed')"`
+	ResolutionCode *string        `gorm:"column:resolution_code;type:text"`
+	CreatedAt      time.Time      `gorm:"column:created_at;type:timestamptz;not null;index:content_reports_created_idx,sort:desc"`
+	ResolvedAt     *time.Time     `gorm:"column:resolved_at;type:timestamptz"`
+	Reporter       userRecord     `gorm:"foreignKey:ReporterID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Post           postRecord     `gorm:"foreignKey:PostID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Comment        *commentRecord `gorm:"foreignKey:CommentID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 }
 
 func (contentReportRecord) TableName() string { return "content_reports" }
@@ -103,6 +106,7 @@ type moderationActionRecord struct {
 	ActorID       string    `gorm:"column:actor_id;type:uuid;not null;index:moderation_actions_actor_idx"`
 	PostID        *string   `gorm:"column:post_id;type:uuid;index:moderation_actions_post_idx"`
 	PostVersion   *int      `gorm:"column:post_version"`
+	CommentID     *string   `gorm:"column:comment_id;type:uuid;index:moderation_actions_comment_idx"`
 	ReportID      *string   `gorm:"column:report_id;type:uuid;index:moderation_actions_report_idx"`
 	SubjectUserID *string   `gorm:"column:subject_user_id;type:uuid;index:moderation_actions_subject_idx"`
 	Action        string    `gorm:"column:action;type:text;not null"`
@@ -329,52 +333,6 @@ func (r *CommunityRepository) DeletePost(ctx context.Context, ownerID, postID st
 	return mapCommunityError(err)
 }
 
-func (r *CommunityRepository) GetPublicPost(ctx context.Context, postID string) (communityapp.PublicPost, error) {
-	var row struct {
-		PostID           string
-		Handle           string
-		DisplayName      string
-		Title            *string
-		Body             *string
-		PublishedVersion int
-		PublishedAt      time.Time
-	}
-	result := r.database.WithContext(ctx).Raw(`
-		SELECT p.id AS post_id, up.handle, u.display_name, pr.title, pr.body,
-		       p.published_version, p.published_at
-		FROM posts p
-		JOIN users u ON u.id = p.owner_id AND u.status = 'active'
-		JOIN user_profiles up ON up.user_id = p.owner_id
-		JOIN post_revisions pr ON pr.post_id = p.id AND pr.version = p.published_version
-		WHERE p.id = ? AND p.state = 'published' AND p.published_version IS NOT NULL
-		LIMIT 1`, postID).Scan(&row)
-	if result.Error != nil {
-		return communityapp.PublicPost{}, communityapp.ErrCommunityUnavailable
-	}
-	if result.RowsAffected != 1 {
-		return communityapp.PublicPost{}, communityapp.ErrPostNotFound
-	}
-	media, tags, err := loadRevisionCollections(r.database.WithContext(ctx), postID, row.PublishedVersion)
-	if err != nil {
-		return communityapp.PublicPost{}, communityapp.ErrCommunityUnavailable
-	}
-	return communityapp.PublicPost{ID: row.PostID, AuthorHandle: row.Handle, AuthorDisplayName: row.DisplayName, Title: row.Title, Body: row.Body, Tags: tags, ImageCount: len(media), PublishedVersion: row.PublishedVersion, PublishedAt: row.PublishedAt}, nil
-}
-
-func (r *CommunityRepository) GetPublicPostImage(ctx context.Context, postID string, ordinal int) (communityapp.MediaObjectReference, error) {
-	var media postRevisionMediaRecord
-	err := r.database.WithContext(ctx).Raw(`
-		SELECT prm.* FROM post_revision_media prm
-		JOIN posts p ON p.id = prm.post_id AND p.published_version = prm.version
-		JOIN users u ON u.id = p.owner_id AND u.status = 'active'
-		WHERE p.id = ? AND p.state = 'published' AND prm.ordinal = ?
-		LIMIT 1`, postID, ordinal).Scan(&media).Error
-	if err != nil || media.ObjectKey == "" || media.ObjectVersionID == "" {
-		return communityapp.MediaObjectReference{}, communityapp.ErrPostNotFound
-	}
-	return communityapp.MediaObjectReference{ObjectKey: media.ObjectKey, ObjectVersionID: media.ObjectVersionID}, nil
-}
-
 func (r *CommunityRepository) ListModerationCandidates(ctx context.Context, limit int, afterID *string) (communityapp.ModerationCandidatePage, error) {
 	query := r.database.WithContext(ctx).Table("posts p").
 		Select("p.id").
@@ -487,6 +445,9 @@ func (r *CommunityRepository) DecidePost(ctx context.Context, actorID, postID st
 		if err := tx.Create(&moderationActionRecord{ID: uuid.NewString(), ActorID: actorID, PostID: &postID, PostVersion: &postVersion, Action: "post_" + string(input.Decision), ReasonCode: input.ReasonCode, CreatedAt: at}).Error; err != nil {
 			return err
 		}
+		if err := enqueueNotification(tx, record.OwnerID, &actorID, communityapp.NotificationPostReviewed, &postID, nil, at); err != nil {
+			return err
+		}
 		loaded, loadErr := loadOwnPost(ctx, tx, record.OwnerID, postID)
 		result = loaded
 		return loadErr
@@ -526,7 +487,7 @@ func (r *CommunityRepository) CreateReport(ctx context.Context, reporterID, repo
 		var existing contentReportRecord
 		err := tx.Where("id = ?", reportID).First(&existing).Error
 		if err == nil {
-			if existing.ReporterID == reporterID && existing.PostID == postID && existing.ReasonCode == input.ReasonCode && reflect.DeepEqual(existing.Detail, input.Detail) {
+			if existing.ReporterID == reporterID && existing.PostID == postID && existing.TargetType == string(input.TargetType) && reflect.DeepEqual(existing.CommentID, input.CommentID) && existing.ReasonCode == input.ReasonCode && reflect.DeepEqual(existing.Detail, input.Detail) {
 				result = existing
 				return nil
 			}
@@ -539,14 +500,20 @@ func (r *CommunityRepository) CreateReport(ctx context.Context, reporterID, repo
 		if err := tx.Raw(`SELECT p.* FROM posts p JOIN users u ON u.id = p.owner_id AND u.status = 'active' WHERE p.id = ? AND p.state = 'published'`, postID).Scan(&post).Error; err != nil || post.ID == "" {
 			return communityapp.ErrPostNotFound
 		}
+		if input.TargetType == communityapp.ReportTargetComment {
+			var comment commentRecord
+			if err := tx.Where("id = ? AND post_id = ? AND state = ?", *input.CommentID, postID, string(communityapp.CommentPublished)).First(&comment).Error; err != nil {
+				return communityapp.ErrCommentNotFound
+			}
+		}
 		var open contentReportRecord
-		if err := tx.Where("reporter_id = ? AND post_id = ? AND status = 'open'", reporterID, postID).First(&open).Error; err == nil {
+		if err := tx.Where("reporter_id = ? AND post_id = ? AND target_type = ? AND comment_id IS NOT DISTINCT FROM ? AND status = 'open'", reporterID, postID, string(input.TargetType), input.CommentID).First(&open).Error; err == nil {
 			result = open
 			return nil
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		result = contentReportRecord{ID: reportID, ReporterID: reporterID, PostID: postID, ReasonCode: input.ReasonCode, Detail: input.Detail, Status: string(communityapp.ReportOpen), CreatedAt: at}
+		result = contentReportRecord{ID: reportID, ReporterID: reporterID, PostID: postID, TargetType: string(input.TargetType), CommentID: input.CommentID, ReasonCode: input.ReasonCode, Detail: input.Detail, Status: string(communityapp.ReportOpen), CreatedAt: at}
 		return tx.Create(&result).Error
 	})
 	if err != nil {
@@ -621,7 +588,7 @@ func (r *CommunityRepository) ResolveReport(ctx context.Context, actorID, report
 			return err
 		}
 		result.Status, result.ResolutionCode, result.ResolvedAt = string(status), &reason, &at
-		return tx.Create(&moderationActionRecord{ID: uuid.NewString(), ActorID: actorID, PostID: &result.PostID, ReportID: &reportID, Action: "report_" + string(status), ReasonCode: reason, CreatedAt: at}).Error
+		return tx.Create(&moderationActionRecord{ID: uuid.NewString(), ActorID: actorID, PostID: &result.PostID, CommentID: result.CommentID, ReportID: &reportID, Action: "report_" + string(status), ReasonCode: reason, CreatedAt: at}).Error
 	})
 	if err != nil {
 		return communityapp.ContentReport{}, mapCommunityError(err)
@@ -649,7 +616,7 @@ func (r *CommunityRepository) ListModerationActions(ctx context.Context, limit i
 			page.NextAfterID = &id
 			break
 		}
-		page.Actions = append(page.Actions, communityapp.ModerationAction{ID: record.ID, ActorID: record.ActorID, PostID: record.PostID, PostVersion: record.PostVersion, ReportID: record.ReportID, SubjectUserID: record.SubjectUserID, Action: record.Action, ReasonCode: record.ReasonCode, CreatedAt: record.CreatedAt})
+		page.Actions = append(page.Actions, communityapp.ModerationAction{ID: record.ID, ActorID: record.ActorID, PostID: record.PostID, PostVersion: record.PostVersion, CommentID: record.CommentID, ReportID: record.ReportID, SubjectUserID: record.SubjectUserID, Action: record.Action, ReasonCode: record.ReasonCode, CreatedAt: record.CreatedAt})
 	}
 	return page, nil
 }
@@ -882,7 +849,7 @@ func dereferenceVersion(versions ...*int) int {
 }
 
 func reportFromRecord(record contentReportRecord) communityapp.ContentReport {
-	return communityapp.ContentReport{ID: record.ID, PostID: record.PostID, ReasonCode: record.ReasonCode, Detail: record.Detail, Status: communityapp.ReportStatus(record.Status), ResolutionCode: record.ResolutionCode, CreatedAt: record.CreatedAt, ResolvedAt: record.ResolvedAt}
+	return communityapp.ContentReport{ID: record.ID, PostID: record.PostID, TargetType: communityapp.ReportTargetType(record.TargetType), CommentID: record.CommentID, ReasonCode: record.ReasonCode, Detail: record.Detail, Status: communityapp.ReportStatus(record.Status), ResolutionCode: record.ResolutionCode, CreatedAt: record.CreatedAt, ResolvedAt: record.ResolvedAt}
 }
 
 func applyCreatedCursor(query, database *gorm.DB, table, ownerID, ownerColumn string, afterID *string) (*gorm.DB, error) {
@@ -923,7 +890,7 @@ func mapCommunityError(err error) error {
 	if err == nil {
 		return nil
 	}
-	for _, domainError := range []error{communityapp.ErrPostNotFound, communityapp.ErrPostConflict, communityapp.ErrCommunityForbidden, communityapp.ErrReportNotFound} {
+	for _, domainError := range []error{communityapp.ErrPostNotFound, communityapp.ErrPostConflict, communityapp.ErrCommentNotFound, communityapp.ErrAppealNotFound, communityapp.ErrNotificationNotFound, communityapp.ErrCommunityForbidden, communityapp.ErrReportNotFound} {
 		if errors.Is(err, domainError) {
 			return domainError
 		}

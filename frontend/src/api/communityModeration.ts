@@ -2,6 +2,25 @@
 /* eslint-disable */
 import request, { type RequestOptions } from '../lib/api/request'
 
+/** 下架已发布评论 POST /admin/comments/${param0}/remove */
+export async function removePublishedComment(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.removePublishedCommentParams,
+  body: API.RemovePostRequest,
+  options?: RequestOptions,
+) {
+  const { comment_id: param0, ...queryParams } = params
+  return request<any>(`/admin/comments/${param0}/remove`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    params: { ...queryParams },
+    data: body,
+    ...(options || {}),
+  })
+}
+
 /** 分页读取最小治理审计动作 GET /admin/moderation-actions */
 export async function listModerationActions(
   // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
@@ -17,6 +36,48 @@ export async function listModerationActions(
         limit: '20',
         ...params,
       },
+      ...(options || {}),
+    },
+  )
+}
+
+/** 读取待审评论 GET /admin/moderation/comments */
+export async function listCommentModerationCandidates(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.listCommentModerationCandidatesParams,
+  options?: RequestOptions,
+) {
+  return request<API.CommentModerationPageResponse>(
+    '/admin/moderation/comments',
+    {
+      method: 'GET',
+      params: {
+        // limit has a default value: 20
+        limit: '20',
+        ...params,
+      },
+      ...(options || {}),
+    },
+  )
+}
+
+/** 审核评论 POST /admin/moderation/comments/${param0}/decisions */
+export async function decideCommentModeration(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.decideCommentModerationParams,
+  body: API.DecideCommentRequest,
+  options?: RequestOptions,
+) {
+  const { comment_id: param0, ...queryParams } = params
+  return request<API.CommentResponse>(
+    `/admin/moderation/comments/${param0}/decisions`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      params: { ...queryParams },
+      data: body,
       ...(options || {}),
     },
   )

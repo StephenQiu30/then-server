@@ -223,6 +223,7 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 		} `json:"user"`
 	}
 	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/auth/registrations", map[string]any{"email": "moderator@example.test", "display_name": "Moderator", "password": "correct-password-moderator"}, http.StatusCreated, &moderatorRegistration)
+	postJSON(t, moderatorClient, http.MethodPut, baseURL+"/users/me/profile", map[string]any{"handle": "integration_moderator", "expected_revision": 0}, http.StatusOK, nil)
 	databaseURL := "postgres://then_test:" + url.QueryEscape(postgresPassword) + "@" + postgresAddress + "/then_test?sslmode=disable"
 	database, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{Logger: logger.Discard})
 	if err != nil {
@@ -293,7 +294,13 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 	if approved.State != "published" {
 		t.Fatal("actual moderation decision did not publish post")
 	}
-	postJSON(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet, baseURL+"/posts/"+postID, nil, http.StatusOK, nil)
+	var publicPost struct {
+		AuthorHandle string `json:"author_handle"`
+	}
+	postJSON(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet, baseURL+"/posts/"+postID, nil, http.StatusOK, &publicPost)
+	if publicPost.AuthorHandle != "integration_author" {
+		t.Fatal("actual public post lost author handle")
+	}
 	imageResponse, err := http.Get(baseURL + "/posts/" + postID + "/images/0")
 	if err != nil {
 		t.Fatal("read actual public community image")
@@ -303,9 +310,56 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 	if imageErr != nil || imageResponse.StatusCode != http.StatusOK || imageResponse.Header.Get("Content-Type") != "image/jpeg" || len(imageBytes) == 0 {
 		t.Fatal("actual public community image was not served from the fixed derived version")
 	}
+	var feed struct {
+		Posts []struct {
+			ID string `json:"id"`
+		} `json:"posts"`
+	}
+	postJSON(t, moderatorClient, http.MethodGet, baseURL+"/feed?type=discover&limit=20", nil, http.StatusOK, &feed)
+	if len(feed.Posts) != 1 || feed.Posts[0].ID != postID {
+		t.Fatal("actual discovery feed did not include approved post")
+	}
+	postJSON(t, moderatorClient, http.MethodPut, baseURL+"/posts/"+postID+"/like", nil, http.StatusNoContent, nil)
+	postJSON(t, moderatorClient, http.MethodPut, baseURL+"/posts/"+postID+"/bookmark", nil, http.StatusNoContent, nil)
+	postJSON(t, moderatorClient, http.MethodPut, baseURL+"/profiles/integration_author/follow", nil, http.StatusNoContent, nil)
+	commentID := "30000000-0000-4000-8000-000000000003"
+	var pendingComment struct {
+		Revision int `json:"revision"`
+	}
+	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/posts/"+postID+"/comments", map[string]any{"id": commentID, "body": "Integration comment"}, http.StatusAccepted, &pendingComment)
+	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/admin/moderation/comments/"+commentID+"/decisions", map[string]any{"expected_revision": pendingComment.Revision, "decision": "approve", "reason_code": "content_approved"}, http.StatusOK, nil)
+	var comments struct {
+		Comments []struct {
+			ID string `json:"id"`
+		} `json:"comments"`
+	}
+	postJSON(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet, baseURL+"/posts/"+postID+"/comments?limit=20", nil, http.StatusOK, &comments)
+	if len(comments.Comments) != 1 || comments.Comments[0].ID != commentID {
+		t.Fatal("actual approved comment was not public")
+	}
+	notificationDeadline := time.Now().Add(5 * time.Second)
+	for {
+		var notifications struct {
+			Notifications []json.RawMessage `json:"notifications"`
+		}
+		postJSON(t, client, http.MethodGet, baseURL+"/notifications?limit=20", nil, http.StatusOK, &notifications)
+		if len(notifications.Notifications) >= 3 {
+			break
+		}
+		if time.Now().After(notificationDeadline) {
+			t.Fatal("actual notification worker did not deliver community events")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	postJSON(t, moderatorClient, http.MethodPut, baseURL+"/users/me/blocks/"+authorRegistration.User.ID, nil, http.StatusNoContent, nil)
+	postJSON(t, moderatorClient, http.MethodGet, baseURL+"/feed?type=discover&limit=20", nil, http.StatusOK, &feed)
+	if len(feed.Posts) != 0 {
+		t.Fatal("actual block did not filter discovery")
+	}
+	postJSON(t, moderatorClient, http.MethodDelete, baseURL+"/users/me/blocks/"+authorRegistration.User.ID, nil, http.StatusNoContent, nil)
 
 	reportID := "30000000-0000-4000-8000-000000000002"
-	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/reports", map[string]any{"id": reportID, "post_id": postID, "reason_code": "other"}, http.StatusCreated, nil)
+	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/reports", map[string]any{"id": reportID, "post_id": postID, "target_type": "post", "reason_code": "other"}, http.StatusCreated, nil)
 	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/admin/reports/"+reportID+"/resolve", map[string]any{"status": "resolved", "resolution_code": "reviewed_no_action"}, http.StatusOK, nil)
 	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/admin/posts/"+postID+"/remove", map[string]any{"expected_revision": approved.Revision, "reason_code": "policy_violation"}, http.StatusNoContent, nil)
 	postJSON(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet, baseURL+"/posts/"+postID, nil, http.StatusNotFound, nil)

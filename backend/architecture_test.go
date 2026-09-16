@@ -35,7 +35,7 @@ var allowedApplicationImports = map[string]map[string]bool{
 	"diary":       {"account": true},
 	"community":   {"account": true},
 	"media":       {"account": true},
-	"mediaworker": {"media": true},
+	"eventworker": {"media": true},
 }
 
 var forbiddenFrameworkImports = map[string][]string{
