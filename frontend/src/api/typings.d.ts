@@ -1,4 +1,12 @@
 declare namespace API {
+  type AccountDeletionResponse = {
+    completed_at?: string
+    id: string
+    media_count: number
+    requested_at: string
+    status: 'pending' | 'complete'
+  }
+
   type AdminAppealPageResponse = {
     appeals: any
     next_after_id?: string

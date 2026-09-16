@@ -10,7 +10,7 @@ export async function getCurrentUser(options?: RequestOptions) {
   })
 }
 
-/** 删除本人账户及全部会话 存在未完成删除的私有媒体时返回 409，避免数据库级联留下孤立对象。 DELETE /users/me */
+/** 受理本人账户删除 立即撤销全部会话并关闭公开内容；对象存储清理完成后物理删除账户。 DELETE /users/me */
 export async function deleteCurrentUser(options?: RequestOptions) {
   return request<any>('/users/me', {
     method: 'DELETE',

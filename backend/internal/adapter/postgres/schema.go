@@ -20,6 +20,7 @@ func Migrate(ctx context.Context, database *gorm.DB) error {
 		&wearEventDeletionRecord{},
 		&credentialRecord{},
 		&sessionRecord{},
+		&accountDeletionRequestRecord{},
 		&selfAdultDeclarationRecord{},
 		&consentRecord{},
 		&mediaAssetRecord{},

@@ -7,16 +7,15 @@ import (
 )
 
 var (
-	ErrInvalidAccountInput  = errors.New("invalid account input")
-	ErrEmailConflict        = errors.New("email conflict")
-	ErrAccountConflict      = errors.New("account revision conflict")
-	ErrAccountMediaConflict = errors.New("account still owns active media")
-	ErrAuthentication       = errors.New("authentication failed")
-	ErrAccountUnavailable   = errors.New("account unavailable")
-	ErrInvalidProfileInput  = errors.New("invalid profile input")
-	ErrProfileNotFound      = errors.New("profile not found")
-	ErrProfileConflict      = errors.New("profile revision conflict")
-	ErrHandleConflict       = errors.New("profile handle conflict")
+	ErrInvalidAccountInput = errors.New("invalid account input")
+	ErrEmailConflict       = errors.New("email conflict")
+	ErrAccountConflict     = errors.New("account revision conflict")
+	ErrAuthentication      = errors.New("authentication failed")
+	ErrAccountUnavailable  = errors.New("account unavailable")
+	ErrInvalidProfileInput = errors.New("invalid profile input")
+	ErrProfileNotFound     = errors.New("profile not found")
+	ErrProfileConflict     = errors.New("profile revision conflict")
+	ErrHandleConflict      = errors.New("profile handle conflict")
 )
 
 type AccountStatus string
@@ -63,6 +62,21 @@ type AuthenticatedUser struct {
 	User      User
 	Token     string
 	ExpiresAt time.Time
+}
+
+type AccountDeletionStatus string
+
+const (
+	AccountDeletionPending  AccountDeletionStatus = "pending"
+	AccountDeletionComplete AccountDeletionStatus = "complete"
+)
+
+type AccountDeletionRequest struct {
+	ID          string
+	Status      AccountDeletionStatus
+	MediaCount  int
+	RequestedAt time.Time
+	CompletedAt *time.Time
 }
 
 type RegisterAccountInput struct {

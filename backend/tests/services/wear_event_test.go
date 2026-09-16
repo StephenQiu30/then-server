@@ -153,7 +153,8 @@ func TestWearEventPersistenceLifecycle(t *testing.T) {
 		t.Fatal("wardrobe deletion did not redact and revise wear history")
 	}
 
-	serviceOK(t, "delete wear event owner", accounts.DeleteCurrentUser(ctx, owner.Token))
+	_, err = accounts.DeleteCurrentUser(ctx, owner.Token)
+	serviceOK(t, "delete wear event owner", err)
 	for _, table := range []string{"wear_events", "wear_event_items", "wear_event_deletions"} {
 		var count int64
 		serviceOK(t, "count account-owned "+table, database.WithContext(ctx).Table(table).Where("owner_id = ?", owner.User.ID).Count(&count).Error)

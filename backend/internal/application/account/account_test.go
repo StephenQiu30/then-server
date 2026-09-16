@@ -27,6 +27,7 @@ type accountRepositoryStub struct {
 	profileInput    PutProfileInput
 	deletedSession  []byte
 	deletedUser     string
+	deletion        AccountDeletionRequest
 }
 
 func (r *accountRepositoryStub) CreateAccount(_ context.Context, user User, hash string, session Session) (User, error) {
@@ -79,9 +80,9 @@ func (r *accountRepositoryStub) DeleteSession(_ context.Context, hash []byte) er
 	return nil
 }
 
-func (r *accountRepositoryStub) DeleteUser(_ context.Context, userID string) error {
+func (r *accountRepositoryStub) BeginAccountDeletion(_ context.Context, userID string, _ time.Time) (AccountDeletionRequest, error) {
 	r.deletedUser = userID
-	return nil
+	return r.deletion, nil
 }
 
 func newAccountServiceForTest(t *testing.T, repository *accountRepositoryStub) *AccountService {
@@ -175,7 +176,9 @@ func TestAuthenticatedUpdateLogoutAndDeleteUseSessionOwner(t *testing.T) {
 	if err := service.Logout(context.Background(), registered.Token); err != nil || len(repository.deletedSession) != 32 {
 		t.Fatal("logout did not delete the hashed current session")
 	}
-	if err := service.DeleteCurrentUser(context.Background(), registered.Token); err != nil || repository.deletedUser != "user-id" {
+	repository.deletion = AccountDeletionRequest{ID: "deletion-id", Status: AccountDeletionPending, MediaCount: 2}
+	deletion, err := service.DeleteCurrentUser(context.Background(), registered.Token)
+	if err != nil || repository.deletedUser != "user-id" || deletion.ID != "deletion-id" || deletion.MediaCount != 2 {
 		t.Fatal("account deletion did not use the authenticated owner")
 	}
 }

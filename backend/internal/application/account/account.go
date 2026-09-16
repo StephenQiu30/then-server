@@ -34,7 +34,7 @@ type AccountRepository interface {
 	FindProfileByHandle(context.Context, string) (PublicProfile, error)
 	PutProfile(context.Context, string, PutProfileInput, time.Time) (PublicProfile, error)
 	DeleteSession(context.Context, []byte) error
-	DeleteUser(context.Context, string) error
+	BeginAccountDeletion(context.Context, string, time.Time) (AccountDeletionRequest, error)
 }
 
 type AccountService struct {
@@ -167,12 +167,12 @@ func (s *AccountService) Logout(ctx context.Context, token string) error {
 	return s.repository.DeleteSession(ctx, hash)
 }
 
-func (s *AccountService) DeleteCurrentUser(ctx context.Context, token string) error {
+func (s *AccountService) DeleteCurrentUser(ctx context.Context, token string) (AccountDeletionRequest, error) {
 	user, err := s.CurrentUser(ctx, token)
 	if err != nil {
-		return err
+		return AccountDeletionRequest{}, err
 	}
-	return s.repository.DeleteUser(ctx, user.ID)
+	return s.repository.BeginAccountDeletion(ctx, user.ID, s.now().UTC())
 }
 
 func (s *AccountService) newToken() (string, []byte, error) {

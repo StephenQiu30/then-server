@@ -361,12 +361,21 @@ func (r *MediaRepository) DeliverNotification(ctx context.Context, eventID, noti
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		result := tx.Model(&notificationRecord{}).Where("id = ? AND event_id = ? AND available_at IS NULL", notificationID, eventID).Update("available_at", at)
-		if result.Error != nil {
-			return result.Error
+		var notification notificationRecord
+		if err := tx.Where("id = ? AND event_id = ?", notificationID, eventID).First(&notification).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			return tx.Create(&inboxReceiptRecord{EventID: eventID, HandlerName: "community-notification", ProcessedAt: at}).Error
 		}
-		if result.RowsAffected != 1 {
-			return mediaapp.ErrMediaConflict
+		if notification.AvailableAt == nil {
+			result := tx.Model(&notificationRecord{}).Where("id = ? AND event_id = ? AND available_at IS NULL", notificationID, eventID).Update("available_at", at)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return mediaapp.ErrMediaConflict
+			}
 		}
 		return tx.Create(&inboxReceiptRecord{EventID: eventID, HandlerName: "community-notification", ProcessedAt: at}).Error
 	})
@@ -490,6 +499,10 @@ func (r *MediaRepository) CompleteDeletion(ctx context.Context, eventID, mediaID
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+		var media mediaAssetRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", mediaID).First(&media).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("media_id = ?", mediaID).Delete(&mediaDerivationRecord{}).Error; err != nil {
 			return err
 		}
@@ -501,7 +514,10 @@ func (r *MediaRepository) CompleteDeletion(ctx context.Context, eventID, mediaID
 		if result.Error != nil || result.RowsAffected != 1 {
 			return mediaapp.ErrMediaConflict
 		}
-		return tx.Create(&inboxReceiptRecord{EventID: eventID, HandlerName: "media-delete", ProcessedAt: at}).Error
+		if err := tx.Create(&inboxReceiptRecord{EventID: eventID, HandlerName: "media-delete", ProcessedAt: at}).Error; err != nil {
+			return err
+		}
+		return finalizeAccountDeletionIfReady(ctx, tx, media.OwnerID, at)
 	})
 }
 

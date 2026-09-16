@@ -51,6 +51,8 @@ backend/
 
 只按已经进入实现的业务能力创建语义包，例如 `application/account`、`adapter/postgres`、`adapter/httpapi`。不创建 `common`、`utils`、`manager` 等无明确所有权的收容目录。
 
+package 内继续按真实能力拆语义文件。HTTP 的 contract、route registration、handler 可以分文件；PostgreSQL 的 records、commands/queries、moderation、notifications 等按事务所有权分文件。只有职责形成可独立导入和测试的依赖边界时才增加子 package，不能为套用 Java MVC 或缩短单个文件机械复制目录树。完整 SOP 见 [Design 24](../docs/design/24-Go后端工程结构研究与规范.md)。
+
 ## 依赖方向
 
 ```text

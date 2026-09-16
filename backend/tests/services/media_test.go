@@ -25,6 +25,7 @@ import (
 	eventworkerapp "github.com/StephenQiu30/then-server/backend/internal/application/eventworker"
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
+	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -78,7 +79,8 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	serviceOK(t, "construct media privacy service", err)
 	_, err = privacy.ConfirmSelfAdultDeclaration(ctx, owner.Token, privacyapp.ConfirmSelfAdultDeclarationInput{PolicyVersion: privacyapp.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true})
 	serviceOK(t, "confirm synthetic adult declaration", err)
-	mediaService, err := mediaapp.NewMediaService(accounts, store.NewMediaRepository(database), objects)
+	mediaRepository := store.NewMediaRepository(database)
+	mediaService, err := mediaapp.NewMediaService(accounts, mediaRepository, objects)
 	serviceOK(t, "construct media service", err)
 	consent, err := mediaService.CreateConsent(ctx, owner.Token, mediaapp.CreateConsentInput{Purpose: mediaapp.MediaPurposeAvatarSourcePreparation, Category: mediaapp.MediaCategoryPersonPhoto, PolicyVersion: mediaapp.CurrentMediaPolicyVersion, ActivelyAgreed: true})
 	serviceOK(t, "create fixed synthetic consent", err)
@@ -155,10 +157,6 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	if _, err := mediaService.GetMedia(ctx, other.Token, uploaded.ID); !errors.Is(err, mediaapp.ErrMediaNotFound) {
 		t.Fatal("cross-owner media lookup did not use the not-found boundary")
 	}
-	if err := accounts.DeleteCurrentUser(ctx, owner.Token); !errors.Is(err, accountapp.ErrAccountMediaConflict) {
-		t.Fatal("account deletion did not block while private media remained active")
-	}
-
 	broker, err := messagequeue.Open(environment.rabbitMQURL)
 	serviceOK(t, "open media broker", err)
 	defer broker.Close()
@@ -195,12 +193,99 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	if deleted.Status != mediaapp.MediaDeleted || deleted.SHA256 != strings.Repeat("0", 64) || deleted.ObjectVersionID != "" {
 		t.Fatal("completed deletion retained an active object reference")
 	}
-	if err := accounts.DeleteCurrentUser(ctx, owner.Token); err != nil {
+	accountDeletion, err := accounts.DeleteCurrentUser(ctx, owner.Token)
+	if err != nil || accountDeletion.Status != accountapp.AccountDeletionComplete || accountDeletion.MediaCount != 0 {
 		t.Fatal("account deletion remained blocked after media deletion")
 	}
+	assertAccountDeletionCleansActiveMedia(t, ctx, database, accounts, mediaService, objects, photo, digest)
+	assertMissingNotificationDeliveryIsAcknowledged(t, ctx, database, mediaRepository)
 	stopWorker()
 	if err := <-workerDone; err != nil {
 		t.Fatal("media worker did not stop cleanly")
+	}
+}
+
+func assertMissingNotificationDeliveryIsAcknowledged(t *testing.T, ctx context.Context, database *gorm.DB, repository *store.MediaRepository) {
+	t.Helper()
+	eventID, notificationID := uuid.NewString(), uuid.NewString()
+	serviceOK(t, "ack missing notification target", repository.DeliverNotification(ctx, eventID, notificationID, time.Now().UTC()))
+	serviceOK(t, "replay missing notification target", repository.DeliverNotification(ctx, eventID, notificationID, time.Now().UTC()))
+	var receipts int64
+	serviceOK(t, "count missing notification receipt", database.WithContext(ctx).Table("inbox_receipts").Where("event_id = ? AND handler_name = ?", eventID, "community-notification").Count(&receipts).Error)
+	if receipts != 1 {
+		t.Fatalf("missing notification delivery receipts=%d, want 1", receipts)
+	}
+}
+
+func assertAccountDeletionCleansActiveMedia(t *testing.T, ctx context.Context, database *gorm.DB, accounts *accountapp.AccountService, mediaService *mediaapp.MediaService, objects *objectstore.Store, photo []byte, digest string) {
+	t.Helper()
+	owner, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "account-delete-media@example.test", DisplayName: "Delete Media", Password: "correct-password-delete-media"})
+	serviceOK(t, "register account deletion owner", err)
+	upload, err := mediaService.CreateMediaUpload(ctx, owner.Token, mediaapp.CreateMediaUploadInput{Purpose: mediaapp.MediaPurposeDiaryImage, ContentType: mediaapp.MediaContentTypeJPEG, ByteSize: int64(len(photo)), SHA256: digest})
+	serviceOK(t, "create account deletion media", err)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, upload.URL, bytes.NewReader(photo))
+	serviceOK(t, "build account deletion media upload", err)
+	request.ContentLength = int64(len(photo))
+	for key, value := range upload.Headers {
+		if key != "Content-Length" {
+			request.Header.Set(key, value)
+		}
+	}
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	serviceOK(t, "upload account deletion media", err)
+	response.Body.Close()
+	versionID := response.Header.Get("X-Amz-Version-Id")
+	if response.StatusCode != http.StatusOK || versionID == "" {
+		t.Fatal("account deletion fixture upload failed")
+	}
+	asset, err := mediaService.CompleteMediaUpload(ctx, owner.Token, upload.Media.ID, mediaapp.CompleteMediaUploadInput{VersionID: versionID})
+	serviceOK(t, "complete account deletion media", err)
+	deletion, err := accounts.DeleteCurrentUser(ctx, owner.Token)
+	serviceOK(t, "request account deletion with active media", err)
+	if deletion.Status != accountapp.AccountDeletionPending || deletion.MediaCount != 1 || deletion.CompletedAt != nil {
+		t.Fatal("account deletion did not retain a pending cleanup receipt")
+	}
+	if _, err := accounts.CurrentUser(ctx, owner.Token); !errors.Is(err, accountapp.ErrAuthentication) {
+		t.Fatal("account deletion did not revoke the active session immediately")
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var receipt accountapp.AccountDeletionRequest
+		var row struct {
+			ID          string     `gorm:"column:id"`
+			Status      string     `gorm:"column:status"`
+			MediaCount  int        `gorm:"column:media_count"`
+			RequestedAt time.Time  `gorm:"column:requested_at"`
+			CompletedAt *time.Time `gorm:"column:completed_at"`
+		}
+		serviceOK(t, "read account deletion receipt", database.WithContext(ctx).Table("account_deletion_requests").Where("id = ?", deletion.ID).Scan(&row).Error)
+		receipt = accountapp.AccountDeletionRequest{ID: row.ID, Status: accountapp.AccountDeletionStatus(row.Status), MediaCount: row.MediaCount, RequestedAt: row.RequestedAt, CompletedAt: row.CompletedAt}
+		if receipt.Status == accountapp.AccountDeletionComplete && receipt.CompletedAt != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("account deletion did not complete after media cleanup")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	for table, query := range map[string]string{
+		"user":  "SELECT count(*) FROM users WHERE id = ?",
+		"media": "SELECT count(*) FROM media_assets WHERE id = ?",
+	} {
+		var count int64
+		identifier := owner.User.ID
+		if table == "media" {
+			identifier = asset.ID
+		}
+		serviceOK(t, "verify deleted "+table, database.WithContext(ctx).Raw(query, identifier).Scan(&count).Error)
+		if count != 0 {
+			t.Fatalf("%s remained after account deletion", table)
+		}
+	}
+	reader, err := objects.OpenVersion(ctx, asset.RawObjectKey, asset.ObjectVersionID)
+	if err == nil {
+		reader.Close()
+		t.Fatal("raw object remained after account deletion")
 	}
 }
 
@@ -251,12 +336,13 @@ func assertAccountDeleteAndMediaCreateSerialize(t *testing.T, ctx context.Contex
 		}()
 		go func() {
 			<-start
-			deleteResult <- store.NewAccountRepository(database).DeleteUser(ctx, user.User.ID)
+			_, err := store.NewAccountRepository(database).BeginAccountDeletion(ctx, user.User.ID, time.Now().UTC())
+			deleteResult <- err
 		}()
 		close(start)
 		createErr, deleteErr := <-createResult, <-deleteResult
 		switch {
-		case createErr == nil && errors.Is(deleteErr, accountapp.ErrAccountMediaConflict):
+		case createErr == nil && deleteErr == nil:
 		case errors.Is(createErr, mediaapp.ErrConsentRequired) && deleteErr == nil:
 		default:
 			t.Fatalf("media creation/account deletion were not serialized: create=%v delete=%v", createErr, deleteErr)
