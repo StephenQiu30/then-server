@@ -11,7 +11,7 @@
 - [私人穿搭日记与日历 API 执行计划](19-03-私人穿搭日记与日历API执行计划.md)（completed）
 - [社区帖子审核与治理 API 执行计划](19-04-社区帖子审核与治理API执行计划.md)（approved/completed）
 - [社区发现、互动与通知 API 执行计划](19-05-社区发现互动与通知API执行计划.md)（approved/completed）
-- [可靠账号删除执行计划](19-06-可靠账号删除执行计划.md)（approved/in_progress）
+- [可靠账号删除执行计划](19-06-可靠账号删除执行计划.md)（approved/completed）
 
 - [OOTD 产品实施计划](10-OOTD产品实施计划.md)
 - [照片输入与质量门执行计划](11-01-照片输入与质量门执行计划.md)
@@ -42,7 +42,7 @@
 - [账号穿搭计划 API 执行计划](17-22-账号穿搭计划API执行计划.md)（approved/completed；后端开发范围）
 - [账号实际穿着 API 执行计划](17-23-账号实际穿着API执行计划.md)（approved/completed；后端开发范围）
 - [Go 工程结构与测试分层执行计划](17-24-Go工程结构与测试分层执行计划.md)（approved/completed）
-- [Go 业务能力文件细分执行计划](17-25-Go业务能力文件细分执行计划.md)（approved/in_progress）
+- [Go 业务能力文件细分执行计划](17-25-Go业务能力文件细分执行计划.md)（approved/completed）
 
 ## 单切片要求
 
