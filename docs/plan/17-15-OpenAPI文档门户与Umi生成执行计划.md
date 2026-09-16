@@ -66,7 +66,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 - [x] 顶层 `frontend/` 已按用户后续要求创建，Umi 从运行时 OpenAPI 生成请求文件。
 - [x] 2026-09-16 跟进：移除前后端路径版本前缀，Cookie Path 收敛为 `/`，升级 API 文档版本并重新生成 Umi 客户端。
 - [x] 2026-09-16 跟进：Axios 官方源码对照后的统一 `request.ts`、前端请求测试、Go 契约/单元/race、真实运行时 OpenAPI 与前端 lint/typecheck/build 全部通过。
-- [x] 2026-09-16 跟进：Umi 生成目录迁移为 `frontend/src/api/`，重新从最终 `cmd/then-server` 的 `/openapi.json` 生成 API 0.13.0 / 41 个 operation，并继续只通过 `src/lib/api/request.ts` 发送请求。
+- [x] 2026-09-16 跟进：Umi 生成目录迁移为 `frontend/src/api/`，从当时真实命令入口的 `/openapi.json` 生成 API 0.13.0 / 41 个 operation，并继续只通过 `src/lib/api/request.ts` 发送请求；当前入口已统一为 `cmd/main.go`。
 
 ## 非目标
 
@@ -77,4 +77,4 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 
 ## 完成判定
 
-代码、规范与运行证据都只保留两份事实源：HTTP adapter 的运行时接口声明和 PostgreSQL adapter 的 GORM schema 声明。当前本机运行时 OpenAPI 为 API 0.13.0 / 41 个 operation，路径无版本前缀；19-02 变更后已从实际 `/openapi.json` 重新生成 `src/api/` 下的 profile/账号 client，并通过 TypeScript 与请求层测试。本切片保持 `completed`；远程 CI 和生产数据迁移仍按各自切片验收。
+代码、规范与运行证据都只保留两份事实源：HTTP adapter 的运行时接口声明和 PostgreSQL adapter 的 GORM schema 声明。当前本机运行时 OpenAPI 为 API 0.14.0 / 48 个 operation，路径无版本前缀；19-03 变更后已从实际 `/openapi.json` 重新生成 `src/api/` 下的 diary client，并通过 TypeScript、请求层测试和生产构建。本切片保持 `completed`；远程 CI 和生产数据迁移仍按各自切片验收。

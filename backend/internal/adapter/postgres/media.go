@@ -37,9 +37,9 @@ func (consentRecord) TableName() string { return "consent_records" }
 type mediaAssetRecord struct {
 	ID              string                  `gorm:"column:id;type:uuid;primaryKey"`
 	OwnerID         string                  `gorm:"column:owner_id;type:uuid;not null;index:media_assets_owner_idx"`
-	ConsentID       string                  `gorm:"column:consent_id;type:uuid;not null;index:media_assets_consent_idx"`
-	Purpose         string                  `gorm:"column:purpose;type:text;not null;check:media_assets_purpose_check,purpose = 'avatar_source_preparation'"`
-	Category        string                  `gorm:"column:category;type:text;not null;check:media_assets_category_check,category = 'person_photo'"`
+	ConsentID       *string                 `gorm:"column:consent_id;type:uuid;index:media_assets_consent_idx"`
+	Purpose         string                  `gorm:"column:purpose;type:text;not null;check:media_assets_purpose_check,purpose IN ('avatar_source_preparation','diary_image');check:media_assets_purpose_category_check,(purpose = 'avatar_source_preparation' AND category = 'person_photo' AND consent_id IS NOT NULL) OR (purpose = 'diary_image' AND category = 'ordinary_image' AND consent_id IS NULL)"`
+	Category        string                  `gorm:"column:category;type:text;not null;check:media_assets_category_check,category IN ('person_photo','ordinary_image')"`
 	ContentType     string                  `gorm:"column:content_type;type:text;not null;check:media_assets_content_type_check,content_type = 'image/jpeg'"`
 	ByteSize        int64                   `gorm:"column:byte_size;not null;check:media_assets_byte_size_check,byte_size BETWEEN 1 AND 12582912"`
 	SHA256          string                  `gorm:"column:sha256;type:char(64);not null;check:media_assets_sha256_check,char_length(sha256) = 64 AND sha256 = lower(sha256)"`
@@ -170,15 +170,23 @@ func (r *MediaRepository) IsSelfAdultConfirmed(ctx context.Context, ownerID stri
 
 func (r *MediaRepository) CreateMedia(ctx context.Context, ownerID string, input domain.CreateMediaUploadInput, at time.Time) (domain.MediaAsset, error) {
 	mediaID := uuid.NewString()
-	record := mediaAssetRecord{ID: mediaID, OwnerID: ownerID, ConsentID: input.ConsentID, Purpose: input.Purpose, Category: domain.MediaCategoryPersonPhoto, ContentType: input.ContentType, ByteSize: input.ByteSize, SHA256: input.SHA256, RawObjectKey: "owners/" + ownerID + "/media/" + mediaID + "/source.jpg", Status: string(domain.MediaPendingUpload), UploadExpiresAt: at.Add(domain.UploadIntentLifetime), CreatedAt: at, UpdatedAt: at}
+	category := domain.MediaCategoryOrdinaryImage
+	var consentID *string
+	if input.Purpose == domain.MediaPurposeAvatarSourcePreparation {
+		category = domain.MediaCategoryPersonPhoto
+		consentID = &input.ConsentID
+	}
+	record := mediaAssetRecord{ID: mediaID, OwnerID: ownerID, ConsentID: consentID, Purpose: input.Purpose, Category: category, ContentType: input.ContentType, ByteSize: input.ByteSize, SHA256: input.SHA256, RawObjectKey: "owners/" + ownerID + "/media/" + mediaID + "/source.jpg", Status: string(domain.MediaPendingUpload), UploadExpiresAt: at.Add(domain.UploadIntentLifetime), CreatedAt: at, UpdatedAt: at}
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user userRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", ownerID).First(&user).Error; err != nil {
 			return err
 		}
-		var consent consentRecord
-		if err := tx.Where("id = ? AND owner_id = ? AND purpose = ? AND category = ? AND policy_version = ? AND withdrawn_at IS NULL", input.ConsentID, ownerID, domain.MediaPurposeAvatarSourcePreparation, domain.MediaCategoryPersonPhoto, domain.CurrentMediaPolicyVersion).First(&consent).Error; err != nil {
-			return err
+		if input.Purpose == domain.MediaPurposeAvatarSourcePreparation {
+			var consent consentRecord
+			if err := tx.Where("id = ? AND owner_id = ? AND purpose = ? AND category = ? AND policy_version = ? AND withdrawn_at IS NULL", input.ConsentID, ownerID, domain.MediaPurposeAvatarSourcePreparation, domain.MediaCategoryPersonPhoto, domain.CurrentMediaPolicyVersion).First(&consent).Error; err != nil {
+				return err
+			}
 		}
 		return tx.Create(&record).Error
 	})
@@ -241,6 +249,9 @@ func (r *MediaRepository) DeleteMedia(ctx context.Context, ownerID, mediaID stri
 		if media.Status == string(domain.MediaDeleted) {
 			return domain.ErrMediaConflict
 		}
+		if err := unlinkMediaFromDiaries(tx, ownerID, mediaID, at); err != nil {
+			return err
+		}
 		request = deletionRequestRecord{ID: uuid.NewString(), OwnerID: ownerID, MediaID: mediaID, Status: string(domain.DeletionPending), ReadRevokedAt: at, BackupExpiresAt: at, NextAttemptAt: at, CreatedAt: at, UpdatedAt: at}
 		if err := tx.Model(&media).Updates(map[string]any{"status": string(domain.MediaDeleting), "updated_at": at}).Error; err != nil {
 			return err
@@ -257,6 +268,49 @@ func (r *MediaRepository) DeleteMedia(ctx context.Context, ownerID, mediaID stri
 		return domain.DeletionRequest{}, mediaLookupError(err)
 	}
 	return deletionFromRecord(request), nil
+}
+
+func unlinkMediaFromDiaries(tx *gorm.DB, ownerID, mediaID string, at time.Time) error {
+	var links []diaryEntryMediaRecord
+	if err := tx.Where("owner_id = ? AND media_id = ?", ownerID, mediaID).Find(&links).Error; err != nil {
+		return err
+	}
+	for _, link := range links {
+		var entry diaryEntryRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, link.EntryID).First(&entry).Error; err != nil {
+			return err
+		}
+		var count int64
+		if err := tx.Model(&diaryEntryMediaRecord{}).Where("owner_id = ? AND entry_id = ?", ownerID, link.EntryID).Count(&count).Error; err != nil {
+			return err
+		}
+		if entry.Body == nil && count <= 1 {
+			return domain.ErrMediaConflict
+		}
+		if err := tx.Where("owner_id = ? AND entry_id = ? AND media_id = ?", ownerID, link.EntryID, mediaID).Delete(&diaryEntryMediaRecord{}).Error; err != nil {
+			return err
+		}
+		var remaining []diaryEntryMediaRecord
+		if err := tx.Where("owner_id = ? AND entry_id = ?", ownerID, link.EntryID).Order("ordinal ASC").Find(&remaining).Error; err != nil {
+			return err
+		}
+		for ordinal, record := range remaining {
+			if record.Ordinal == ordinal {
+				continue
+			}
+			if err := tx.Model(&diaryEntryMediaRecord{}).Where("owner_id = ? AND entry_id = ? AND ordinal = ?", ownerID, link.EntryID, record.Ordinal).Update("ordinal", ordinal).Error; err != nil {
+				return err
+			}
+		}
+		updatedAt := at
+		if updatedAt.Before(entry.UpdatedAt) {
+			updatedAt = entry.UpdatedAt
+		}
+		if err := tx.Model(&diaryEntryRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, link.EntryID, entry.Revision).Updates(map[string]any{"revision": entry.Revision + 1, "updated_at": updatedAt}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *MediaRepository) GetDeletionRequest(ctx context.Context, ownerID, requestID string) (domain.DeletionRequest, error) {
@@ -299,13 +353,18 @@ func (r *MediaRepository) BeginMediaCheck(ctx context.Context, mediaID string, a
 		}
 		switch domain.MediaStatus(record.Status) {
 		case domain.MediaUploaded:
-			var consent consentRecord
-			if err := tx.Where("id = ?", record.ConsentID).First(&consent).Error; err != nil {
-				return err
-			}
-			if consent.WithdrawnAt != nil {
-				record.Status, record.StableReason, record.UpdatedAt = string(domain.MediaRejected), "consent_withdrawn", at
-				return tx.Model(&record).Updates(map[string]any{"status": record.Status, "stable_reason": record.StableReason, "updated_at": at}).Error
+			if record.Purpose == domain.MediaPurposeAvatarSourcePreparation {
+				if record.ConsentID == nil {
+					return domain.ErrMediaConflict
+				}
+				var consent consentRecord
+				if err := tx.Where("id = ?", *record.ConsentID).First(&consent).Error; err != nil {
+					return err
+				}
+				if consent.WithdrawnAt != nil {
+					record.Status, record.StableReason, record.UpdatedAt = string(domain.MediaRejected), "consent_withdrawn", at
+					return tx.Model(&record).Updates(map[string]any{"status": record.Status, "stable_reason": record.StableReason, "updated_at": at}).Error
+				}
 			}
 			record.Status, record.UpdatedAt, process = string(domain.MediaChecking), at, true
 			return tx.Model(&record).Updates(map[string]any{"status": record.Status, "updated_at": at}).Error
@@ -464,7 +523,11 @@ func consentFromRecord(record consentRecord) domain.ConsentRecord {
 }
 
 func mediaFromRecord(record mediaAssetRecord) domain.MediaAsset {
-	return domain.MediaAsset{ID: record.ID, OwnerID: record.OwnerID, ConsentID: record.ConsentID, Purpose: record.Purpose, Category: record.Category, ContentType: record.ContentType, ByteSize: record.ByteSize, SHA256: record.SHA256, RawObjectKey: record.RawObjectKey, ObjectVersionID: record.ObjectVersionID, Status: domain.MediaStatus(record.Status), StableReason: record.StableReason, PixelWidth: record.PixelWidth, PixelHeight: record.PixelHeight, UploadExpiresAt: record.UploadExpiresAt, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, SourceDeletedAt: record.SourceDeletedAt}
+	consentID := ""
+	if record.ConsentID != nil {
+		consentID = *record.ConsentID
+	}
+	return domain.MediaAsset{ID: record.ID, OwnerID: record.OwnerID, ConsentID: consentID, Purpose: record.Purpose, Category: record.Category, ContentType: record.ContentType, ByteSize: record.ByteSize, SHA256: record.SHA256, RawObjectKey: record.RawObjectKey, ObjectVersionID: record.ObjectVersionID, Status: domain.MediaStatus(record.Status), StableReason: record.StableReason, PixelWidth: record.PixelWidth, PixelHeight: record.PixelHeight, UploadExpiresAt: record.UploadExpiresAt, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, SourceDeletedAt: record.SourceDeletedAt}
 }
 
 func deletionFromRecord(record deletionRequestRecord) domain.DeletionRequest {

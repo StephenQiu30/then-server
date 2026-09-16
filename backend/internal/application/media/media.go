@@ -85,12 +85,14 @@ func (s *MediaService) CreateMediaUpload(ctx context.Context, token string, inpu
 		}
 		return domain.MediaUpload{}, domain.ErrInvalidMediaInput
 	}
-	confirmed, err := s.repository.IsSelfAdultConfirmed(ctx, user.ID)
-	if err != nil {
-		return domain.MediaUpload{}, err
-	}
-	if !confirmed {
-		return domain.MediaUpload{}, domain.ErrConsentRequired
+	if input.Purpose == domain.MediaPurposeAvatarSourcePreparation {
+		confirmed, err := s.repository.IsSelfAdultConfirmed(ctx, user.ID)
+		if err != nil {
+			return domain.MediaUpload{}, err
+		}
+		if !confirmed {
+			return domain.MediaUpload{}, domain.ErrConsentRequired
+		}
 	}
 	media, err := s.repository.CreateMedia(ctx, user.ID, input, s.now().UTC())
 	if err != nil {
@@ -166,7 +168,15 @@ func validConsentInput(input domain.CreateConsentInput) bool {
 }
 
 func validUploadInput(input domain.CreateMediaUploadInput) bool {
-	return input.ConsentID != "" && input.Purpose == domain.MediaPurposeAvatarSourcePreparation &&
-		input.ContentType == domain.MediaContentTypeJPEG && input.ByteSize > 0 &&
-		input.ByteSize <= domain.MaxPersonPhotoBytes && sha256Pattern.MatchString(input.SHA256)
+	if input.ContentType != domain.MediaContentTypeJPEG || input.ByteSize <= 0 || input.ByteSize > domain.MaxPersonPhotoBytes || !sha256Pattern.MatchString(input.SHA256) {
+		return false
+	}
+	switch input.Purpose {
+	case domain.MediaPurposeAvatarSourcePreparation:
+		return input.ConsentID != ""
+	case domain.MediaPurposeDiaryImage:
+		return input.ConsentID == ""
+	default:
+		return false
+	}
 }

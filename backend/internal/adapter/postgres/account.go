@@ -38,6 +38,8 @@ type userRecord struct {
 	OutfitDeletes []outfitPlanDeletionRecord   `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 	WearEvents    []wearEventRecord            `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 	WearDeletes   []wearEventDeletionRecord    `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	DiaryEntries  []diaryEntryRecord           `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	DiaryDeletes  []diaryEntryDeletionRecord   `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 }
 
 func (userRecord) TableName() string { return "users" }

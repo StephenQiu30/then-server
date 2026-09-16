@@ -56,18 +56,18 @@ type ConsentResponse struct {
 }
 
 type CreateMediaUploadRequest struct {
-	ConsentID   string `json:"consent_id" format:"uuid"`
-	Purpose     string `json:"purpose" enum:"avatar_source_preparation"`
-	ContentType string `json:"content_type" enum:"image/jpeg"`
-	ByteSize    int64  `json:"byte_size" minimum:"1"`
-	SHA256      string `json:"sha256" pattern:"^[a-f0-9]{64}$"`
+	ConsentID   *string `json:"consent_id,omitempty" format:"uuid"`
+	Purpose     string  `json:"purpose" enum:"avatar_source_preparation,diary_image"`
+	ContentType string  `json:"content_type" enum:"image/jpeg"`
+	ByteSize    int64   `json:"byte_size" minimum:"1"`
+	SHA256      string  `json:"sha256" pattern:"^[a-f0-9]{64}$"`
 }
 
 type MediaResponse struct {
 	ID          string             `json:"id" format:"uuid"`
-	ConsentID   string             `json:"consent_id" format:"uuid"`
-	Purpose     string             `json:"purpose" enum:"avatar_source_preparation"`
-	Category    string             `json:"category" enum:"person_photo"`
+	ConsentID   *string            `json:"consent_id,omitempty" format:"uuid"`
+	Purpose     string             `json:"purpose" enum:"avatar_source_preparation,diary_image"`
+	Category    string             `json:"category" enum:"person_photo,ordinary_image"`
 	ContentType string             `json:"content_type" enum:"image/jpeg"`
 	ByteSize    int64              `json:"byte_size" minimum:"1"`
 	Status      domain.MediaStatus `json:"status" enum:"pending_upload,uploaded,checking,ready,rejected,deleting,deleted"`
@@ -203,7 +203,11 @@ func (h *MediaHandler) createUpload(ctx context.Context, input *createMediaUploa
 		return nil, err
 	}
 	r := input.Body
-	upload, err := h.service.CreateMediaUpload(ctx, input.Session, domain.CreateMediaUploadInput{ConsentID: r.ConsentID, Purpose: r.Purpose, ContentType: r.ContentType, ByteSize: r.ByteSize, SHA256: r.SHA256})
+	consentID := ""
+	if r.ConsentID != nil {
+		consentID = *r.ConsentID
+	}
+	upload, err := h.service.CreateMediaUpload(ctx, input.Session, domain.CreateMediaUploadInput{ConsentID: consentID, Purpose: r.Purpose, ContentType: r.ContentType, ByteSize: r.ByteSize, SHA256: r.SHA256})
 	if err != nil {
 		return nil, h.mediaError(ctx, err)
 	}
@@ -287,7 +291,12 @@ func consentResponse(c domain.ConsentRecord) ConsentResponse {
 	return ConsentResponse{ID: c.ID, Purpose: c.Purpose, Category: c.Category, Processor: c.Processor, Region: c.Region, PolicyVersion: c.PolicyVersion, MaxRetentionHours: c.MaxRetentionHours, TrainingAllowed: c.TrainingAllowed, Status: c.Status, AgreedAt: c.AgreedAt, WithdrawnAt: c.WithdrawnAt}
 }
 func mediaResponse(m domain.MediaAsset) MediaResponse {
-	return MediaResponse{ID: m.ID, ConsentID: m.ConsentID, Purpose: m.Purpose, Category: m.Category, ContentType: m.ContentType, ByteSize: m.ByteSize, Status: m.Status, Reason: m.StableReason, PixelWidth: m.PixelWidth, PixelHeight: m.PixelHeight, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt}
+	var consentID *string
+	if m.ConsentID != "" {
+		value := m.ConsentID
+		consentID = &value
+	}
+	return MediaResponse{ID: m.ID, ConsentID: consentID, Purpose: m.Purpose, Category: m.Category, ContentType: m.ContentType, ByteSize: m.ByteSize, Status: m.Status, Reason: m.StableReason, PixelWidth: m.PixelWidth, PixelHeight: m.PixelHeight, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt}
 }
 func deletionResponse(d domain.DeletionRequest) DeletionRequestResponse {
 	return DeletionRequestResponse{ID: d.ID, MediaID: d.MediaID, Status: d.Status, ReadRevokedAt: d.ReadRevokedAt, CompletedAt: d.CompletedAt, BackupExpiresAt: d.BackupExpiresAt, Error: d.StableError, Attempts: d.Attempts, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt}

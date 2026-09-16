@@ -24,6 +24,8 @@ type mediaRepositoryStub struct {
 	media       domain.MediaAsset
 	deletion    domain.DeletionRequest
 	createCalls int
+	adultCalls  int
+	mediaInput  domain.CreateMediaUploadInput
 }
 
 func (s *mediaRepositoryStub) CreateConsent(_ context.Context, ownerID string, input domain.CreateConsentInput, at time.Time) (domain.ConsentRecord, error) {
@@ -38,9 +40,11 @@ func (s *mediaRepositoryStub) WithdrawConsent(context.Context, string, string, t
 	return s.consent, nil
 }
 func (s *mediaRepositoryStub) IsSelfAdultConfirmed(context.Context, string) (bool, error) {
+	s.adultCalls++
 	return s.adult, nil
 }
-func (s *mediaRepositoryStub) CreateMedia(context.Context, string, domain.CreateMediaUploadInput, time.Time) (domain.MediaAsset, error) {
+func (s *mediaRepositoryStub) CreateMedia(_ context.Context, _ string, input domain.CreateMediaUploadInput, _ time.Time) (domain.MediaAsset, error) {
+	s.mediaInput = input
 	return s.media, nil
 }
 func (s *mediaRepositoryStub) GetMedia(context.Context, string, string) (domain.MediaAsset, error) {
@@ -109,5 +113,21 @@ func TestMediaServiceReturnsOnlySignedUploadResponse(t *testing.T) {
 	upload, err := service.CreateMediaUpload(context.Background(), "session", domain.CreateMediaUploadInput{ConsentID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a11", Purpose: domain.MediaPurposeAvatarSourcePreparation, ContentType: domain.MediaContentTypeJPEG, ByteSize: 1024, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
 	if err != nil || upload.URL == "" || upload.Media.ID != "media-id" || upload.ExpiresAt.Sub(now) != domain.UploadIntentLifetime {
 		t.Fatalf("unexpected upload result: %+v err=%v", upload, err)
+	}
+}
+
+func TestDiaryImageDoesNotReusePersonPhotoConsentGate(t *testing.T) {
+	repository := &mediaRepositoryStub{adult: false, media: domain.MediaAsset{ID: "media-id", Purpose: domain.MediaPurposeDiaryImage, Category: domain.MediaCategoryOrdinaryImage}}
+	objects := &mediaObjectStoreStub{upload: domain.SignedUpload{Method: "PUT", URL: "http://127.0.0.1/signed"}}
+	service, err := NewMediaService(&mediaAuthenticatorStub{user: domain.User{ID: "owner"}}, repository, objects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.CreateMediaUpload(context.Background(), "session", domain.CreateMediaUploadInput{Purpose: domain.MediaPurposeDiaryImage, ContentType: domain.MediaContentTypeJPEG, ByteSize: 1024, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.adultCalls != 0 || repository.mediaInput.ConsentID != "" {
+		t.Fatalf("diary image reused person-photo gate: adult_calls=%d input=%+v", repository.adultCalls, repository.mediaInput)
 	}
 }

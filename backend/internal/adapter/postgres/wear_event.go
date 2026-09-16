@@ -22,7 +22,7 @@ func NewWearEventRepository(database *gorm.DB) *WearEventRepository {
 
 type wearEventRecord struct {
 	OwnerID            string                `gorm:"column:owner_id;type:uuid;primaryKey;index:wear_events_owner_order_idx,priority:1"`
-	ID                 string                `gorm:"column:id;type:uuid;primaryKey"`
+	ID                 string                `gorm:"column:id;type:uuid;primaryKey;uniqueIndex:wear_events_id_unique"`
 	LocalDate          time.Time             `gorm:"column:local_date;type:date;not null;index:wear_events_owner_order_idx,priority:2,sort:desc"`
 	TimeZone           string                `gorm:"column:time_zone;type:text;not null;check:wear_events_time_zone_check,char_length(time_zone) BETWEEN 1 AND 255"`
 	Completeness       string                `gorm:"column:completeness;type:text;not null;check:wear_events_completeness_check,completeness IN ('partial','complete')"`
@@ -173,6 +173,9 @@ func (r *WearEventRepository) DeleteWearEvent(ctx context.Context, ownerID, even
 			return domain.ErrWearEventConflict
 		}
 		if err := createWearEventTombstone(tx, ownerID, eventID, at); err != nil {
+			return err
+		}
+		if err := tx.Model(&diaryEntryRecord{}).Where("owner_id = ? AND wear_event_id = ?", ownerID, eventID).Update("wear_event_id", nil).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("owner_id = ? AND id = ?", ownerID, eventID).Delete(&wearEventRecord{}).Error; err != nil {

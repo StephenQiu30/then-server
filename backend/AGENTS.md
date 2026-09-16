@@ -4,7 +4,7 @@
 
 ## 当前工程形态
 
-- 一个 Go module、一个 `cmd/then-server` 命令、一个二进制和一个 OCI 镜像；`APP_ROLE=api|worker|all` 选择已实现角色。
+- 一个 Go module、一个 `cmd` 命令、一个二进制和一个 OCI 镜像；`APP_ROLE=api|worker|all` 选择已实现角色。
 - 不增加没有真实交付程序的命令目录、微服务、依赖注入框架或通用 BaseRepository。
 - PostgreSQL 由 GORM 访问；当前开发阶段没有历史数据，进程启动时调用 GORM `AutoMigrate` 对齐表结构。
 - Gin 承担 HTTP 运行时，Huma operation 与 Go struct tag 是接口声明源；OpenAPI 在运行时生成，不提交 YAML/JSON 物化文件。
@@ -14,7 +14,7 @@
 
 ```text
 backend/
-├── cmd/then-server/main.go         # 极薄命令入口
+├── cmd/main.go                     # 极薄命令入口
 ├── go.mod / go.sum                 # 唯一 Go module
 ├── internal/
 │   ├── domain/                     # 纯领域类型、不变量与稳定错误
@@ -44,7 +44,7 @@ backend/
 ## 依赖方向
 
 ```text
-cmd/then-server -> bootstrap
+cmd -> bootstrap
 bootstrap -> application, adapter, platform
 adapter -> domain
 application -> domain
@@ -52,7 +52,7 @@ application -> domain
 
 | 包 | 负责 | 禁止 |
 | --- | --- | --- |
-| `cmd/then-server` | 创建 logger 并委托 bootstrap | 业务规则、数据库和 HTTP 组装 |
+| `cmd` | 创建 logger 并委托 bootstrap | 业务规则、数据库和 HTTP 组装 |
 | `bootstrap` | 配置、具体依赖组装、启动迁移、信号与关闭 | 业务规则、SQL、HTTP DTO |
 | `domain` | 领域值、不变量、领域错误 | Gin、Huma、GORM、SQL、外部 SDK |
 | `application` | 用例规则；定义自己需要的最小端口 | `gin.Context`、GORM record、SQL、外部 SDK |
