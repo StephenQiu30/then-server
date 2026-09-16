@@ -77,4 +77,4 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 
 ## 完成判定
 
-代码、规范与运行证据都只保留两份事实源：HTTP adapter 的运行时接口声明和 PostgreSQL adapter 的 GORM schema 声明。当前本机运行时 OpenAPI 为 API 0.14.0 / 48 个 operation，路径无版本前缀；19-03 变更后已从实际 `/openapi.json` 重新生成 `src/api/` 下的 diary client，并通过 TypeScript、请求层测试和生产构建。本切片保持 `completed`；远程 CI 和生产数据迁移仍按各自切片验收。
+代码、规范与运行证据都只保留两份事实源：HTTP adapter 的运行时接口声明和 PostgreSQL adapter 的 GORM schema 声明。当前本机运行时 OpenAPI 为 API 0.15.0 / 70 个 operation，路径无版本前缀；19-04 变更后已从实际 `/openapi.json` 重新生成 `src/api/` 下的社区与治理 client，并通过 TypeScript、请求层测试和生产构建。本切片保持 `completed`；远程 CI 和生产数据迁移仍按各自切片验收。

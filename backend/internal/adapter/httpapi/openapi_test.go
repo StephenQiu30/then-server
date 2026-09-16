@@ -88,6 +88,26 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"getDiaryEntryDeletionImpact":  true,
 		"deleteDiaryEntry":             true,
 		"getCalendarMonth":             true,
+		"createPost":                   true,
+		"listOwnPosts":                 true,
+		"getOwnPost":                   true,
+		"updatePost":                   true,
+		"submitPost":                   true,
+		"withdrawPost":                 true,
+		"deletePost":                   true,
+		"listPostModerationCandidates": true,
+		"getPostModerationCandidate":   true,
+		"getPostModerationImage":       true,
+		"decidePostModeration":         true,
+		"removePublishedPost":          true,
+		"createPostReport":             true,
+		"listOwnReports":               true,
+		"listCommunityReports":         true,
+		"resolveCommunityReport":       true,
+		"listModerationActions":        true,
+		"listAdminUsers":               true,
+		"suspendUser":                  true,
+		"restoreUser":                  true,
 	}
 	versionedPath := regexp.MustCompile(`^/v[0-9]+(?:/|$)`)
 	for path, item := range spec.Paths {
@@ -129,10 +149,10 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.14.0" || operations != 48 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.15.0" || operations != 70 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
-	for _, operationID := range []string{"getCurrentProfile", "putCurrentProfile", "getPublicProfile", "createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent", "createDiaryEntry", "listDiaryEntries", "getDiaryEntry", "updateDiaryEntry", "getDiaryEntryDeletionImpact", "deleteDiaryEntry", "getCalendarMonth"} {
+	for _, operationID := range []string{"getCurrentProfile", "putCurrentProfile", "getPublicProfile", "createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent", "createDiaryEntry", "listDiaryEntries", "getDiaryEntry", "updateDiaryEntry", "getDiaryEntryDeletionImpact", "deleteDiaryEntry", "getCalendarMonth", "createPost", "listOwnPosts", "getOwnPost", "updatePost", "submitPost", "withdrawPost", "deletePost", "getPublicPost", "getPublicPostImage", "listPostModerationCandidates", "getPostModerationCandidate", "getPostModerationImage", "decidePostModeration", "removePublishedPost", "createPostReport", "listOwnReports", "listCommunityReports", "resolveCommunityReport", "listModerationActions", "listAdminUsers", "suspendUser", "restoreUser"} {
 		if !identifiers[operationID] {
 			t.Fatalf("generated contract is missing %s", operationID)
 		}

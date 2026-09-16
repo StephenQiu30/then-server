@@ -28,6 +28,9 @@ import (
 	"github.com/StephenQiu30/then-server/backend/tests/internal/testcontainer"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
@@ -96,7 +99,13 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 	}
 	client := &http.Client{Timeout: 10 * time.Second, Jar: jar}
 	baseURL := "http://" + address
-	postJSON(t, client, http.MethodPost, baseURL+"/auth/registrations", map[string]any{"email": "integration@example.test", "display_name": "Integration", "password": "correct-password-integration"}, http.StatusCreated, nil)
+	var authorRegistration struct {
+		User struct {
+			ID       string `json:"id"`
+			Revision int    `json:"revision"`
+		} `json:"user"`
+	}
+	postJSON(t, client, http.MethodPost, baseURL+"/auth/registrations", map[string]any{"email": "integration@example.test", "display_name": "Integration", "password": "correct-password-integration"}, http.StatusCreated, &authorRegistration)
 	postJSON(t, client, http.MethodPut, baseURL+"/privacy/self-adult-declaration", map[string]any{"policy_version": "self-adult-v1", "confirms_self_and_adult": true}, http.StatusOK, nil)
 	var consent struct {
 		ID string `json:"id"`
@@ -201,6 +210,106 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 	postJSON(t, client, http.MethodDelete, baseURL+"/diary-entries/"+entryID+"?expected_revision=1", nil, http.StatusNoContent, nil)
 	postJSON(t, client, http.MethodDelete, baseURL+"/media/"+diaryUpload.Media.ID, nil, http.StatusAccepted, &deletion)
 	waitForHTTPStatus(t, ctx, client, baseURL+"/deletion-requests/"+deletion.ID, "complete")
+
+	postJSON(t, client, http.MethodPut, baseURL+"/users/me/profile", map[string]any{"handle": "integration_author", "expected_revision": 0}, http.StatusOK, nil)
+	moderatorJar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moderatorClient := &http.Client{Timeout: 10 * time.Second, Jar: moderatorJar}
+	var moderatorRegistration struct {
+		User struct {
+			ID string `json:"id"`
+		} `json:"user"`
+	}
+	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/auth/registrations", map[string]any{"email": "moderator@example.test", "display_name": "Moderator", "password": "correct-password-moderator"}, http.StatusCreated, &moderatorRegistration)
+	databaseURL := "postgres://then_test:" + url.QueryEscape(postgresPassword) + "@" + postgresAddress + "/then_test?sslmode=disable"
+	database, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatal("open integration governance database")
+	}
+	if err := database.WithContext(ctx).Exec("UPDATE users SET role = 'moderator' WHERE id = ?", moderatorRegistration.User.ID).Error; err != nil {
+		t.Fatal("grant integration moderator role")
+	}
+
+	var communityUpload struct {
+		Media struct {
+			ID string `json:"id"`
+		} `json:"media"`
+		URL     string            `json:"url"`
+		Headers map[string]string `json:"headers"`
+	}
+	postJSON(t, client, http.MethodPost, baseURL+"/media/uploads", map[string]any{"purpose": "community_publish", "content_type": "image/jpeg", "byte_size": len(photo), "sha256": digest}, http.StatusCreated, &communityUpload)
+	put, err = http.NewRequestWithContext(ctx, http.MethodPut, communityUpload.URL, bytes.NewReader(photo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	put.ContentLength = int64(len(photo))
+	for key, value := range communityUpload.Headers {
+		if key != "Content-Length" {
+			put.Header.Set(key, value)
+		}
+	}
+	putResponse, err = client.Do(put)
+	if err != nil {
+		t.Fatal("community signed PUT failed")
+	}
+	putResponse.Body.Close()
+	versionID = putResponse.Header.Get("X-Amz-Version-Id")
+	if putResponse.StatusCode != http.StatusOK || versionID == "" {
+		t.Fatal("community signed PUT did not produce a version")
+	}
+	postJSON(t, client, http.MethodPost, baseURL+"/media/"+communityUpload.Media.ID+"/complete", map[string]any{"version_id": versionID}, http.StatusOK, nil)
+	waitForHTTPStatus(t, ctx, client, baseURL+"/media/"+communityUpload.Media.ID, "ready")
+
+	postID := "30000000-0000-4000-8000-000000000001"
+	var draft struct {
+		Revision int `json:"revision"`
+	}
+	postJSON(t, client, http.MethodPost, baseURL+"/posts", map[string]any{"id": postID, "title": "Integration Look", "body": "Synthetic public outfit note.", "media_ids": []string{communityUpload.Media.ID}, "tags": []string{"ootd"}}, http.StatusCreated, &draft)
+	var pending struct {
+		Revision       int  `json:"revision"`
+		PendingVersion *int `json:"pending_version"`
+		ReviewRound    int  `json:"review_round"`
+	}
+	postJSON(t, client, http.MethodPost, baseURL+"/posts/"+postID+"/submit", map[string]any{"expected_revision": draft.Revision}, http.StatusAccepted, &pending)
+	if pending.PendingVersion == nil || pending.ReviewRound != 1 {
+		t.Fatal("actual post did not enter moderation")
+	}
+	var queue struct {
+		Candidates []struct {
+			PostID string `json:"post_id"`
+		} `json:"candidates"`
+	}
+	postJSON(t, moderatorClient, http.MethodGet, baseURL+"/admin/moderation/posts?limit=20", nil, http.StatusOK, &queue)
+	if len(queue.Candidates) != 1 || queue.Candidates[0].PostID != postID {
+		t.Fatal("actual moderation queue did not include submitted post")
+	}
+	var approved struct {
+		Revision int    `json:"revision"`
+		State    string `json:"state"`
+	}
+	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/admin/moderation/posts/"+postID+"/decisions", map[string]any{"version": *pending.PendingVersion, "review_round": pending.ReviewRound, "expected_revision": pending.Revision, "decision": "approve", "reason_code": "content_approved"}, http.StatusOK, &approved)
+	if approved.State != "published" {
+		t.Fatal("actual moderation decision did not publish post")
+	}
+	postJSON(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet, baseURL+"/posts/"+postID, nil, http.StatusOK, nil)
+	imageResponse, err := http.Get(baseURL + "/posts/" + postID + "/images/0")
+	if err != nil {
+		t.Fatal("read actual public community image")
+	}
+	imageBytes, imageErr := io.ReadAll(io.LimitReader(imageResponse.Body, 1<<20))
+	imageResponse.Body.Close()
+	if imageErr != nil || imageResponse.StatusCode != http.StatusOK || imageResponse.Header.Get("Content-Type") != "image/jpeg" || len(imageBytes) == 0 {
+		t.Fatal("actual public community image was not served from the fixed derived version")
+	}
+
+	reportID := "30000000-0000-4000-8000-000000000002"
+	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/reports", map[string]any{"id": reportID, "post_id": postID, "reason_code": "other"}, http.StatusCreated, nil)
+	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/admin/reports/"+reportID+"/resolve", map[string]any{"status": "resolved", "resolution_code": "reviewed_no_action"}, http.StatusOK, nil)
+	postJSON(t, moderatorClient, http.MethodPost, baseURL+"/admin/posts/"+postID+"/remove", map[string]any{"expected_revision": approved.Revision, "reason_code": "policy_violation"}, http.StatusNoContent, nil)
+	postJSON(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet, baseURL+"/posts/"+postID, nil, http.StatusNotFound, nil)
+	postJSON(t, client, http.MethodDelete, baseURL+"/media/"+communityUpload.Media.ID, nil, http.StatusConflict, nil)
 	if err := process.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}

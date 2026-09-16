@@ -59,7 +59,7 @@ type ConsentResponse struct {
 
 type CreateMediaUploadRequest struct {
 	ConsentID   *string `json:"consent_id,omitempty" format:"uuid"`
-	Purpose     string  `json:"purpose" enum:"avatar_source_preparation,diary_image"`
+	Purpose     string  `json:"purpose" enum:"avatar_source_preparation,diary_image,community_publish"`
 	ContentType string  `json:"content_type" enum:"image/jpeg"`
 	ByteSize    int64   `json:"byte_size" minimum:"1"`
 	SHA256      string  `json:"sha256" pattern:"^[a-f0-9]{64}$"`
@@ -68,7 +68,7 @@ type CreateMediaUploadRequest struct {
 type MediaResponse struct {
 	ID          string               `json:"id" format:"uuid"`
 	ConsentID   *string              `json:"consent_id,omitempty" format:"uuid"`
-	Purpose     string               `json:"purpose" enum:"avatar_source_preparation,diary_image"`
+	Purpose     string               `json:"purpose" enum:"avatar_source_preparation,diary_image,community_publish"`
 	Category    string               `json:"category" enum:"person_photo,ordinary_image"`
 	ContentType string               `json:"content_type" enum:"image/jpeg"`
 	ByteSize    int64                `json:"byte_size" minimum:"1"`

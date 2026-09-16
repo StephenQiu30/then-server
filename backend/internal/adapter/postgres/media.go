@@ -40,7 +40,7 @@ type mediaAssetRecord struct {
 	ID              string                  `gorm:"column:id;type:uuid;primaryKey"`
 	OwnerID         string                  `gorm:"column:owner_id;type:uuid;not null;index:media_assets_owner_idx"`
 	ConsentID       *string                 `gorm:"column:consent_id;type:uuid;index:media_assets_consent_idx"`
-	Purpose         string                  `gorm:"column:purpose;type:text;not null;check:media_assets_purpose_check,purpose IN ('avatar_source_preparation','diary_image');check:media_assets_purpose_category_check,(purpose = 'avatar_source_preparation' AND category = 'person_photo' AND consent_id IS NOT NULL) OR (purpose = 'diary_image' AND category = 'ordinary_image' AND consent_id IS NULL)"`
+	Purpose         string                  `gorm:"column:purpose;type:text;not null;check:media_assets_purpose_check,purpose IN ('avatar_source_preparation','diary_image','community_publish');check:media_assets_purpose_category_check,(purpose = 'avatar_source_preparation' AND category = 'person_photo' AND consent_id IS NOT NULL) OR (purpose IN ('diary_image','community_publish') AND category = 'ordinary_image' AND consent_id IS NULL)"`
 	Category        string                  `gorm:"column:category;type:text;not null;check:media_assets_category_check,category IN ('person_photo','ordinary_image')"`
 	ContentType     string                  `gorm:"column:content_type;type:text;not null;check:media_assets_content_type_check,content_type = 'image/jpeg'"`
 	ByteSize        int64                   `gorm:"column:byte_size;not null;check:media_assets_byte_size_check,byte_size BETWEEN 1 AND 12582912"`
@@ -249,6 +249,13 @@ func (r *MediaRepository) DeleteMedia(ctx context.Context, ownerID, mediaID stri
 			return err
 		}
 		if media.Status == string(mediaapp.MediaDeleted) {
+			return mediaapp.ErrMediaConflict
+		}
+		var publishedReferences int64
+		if err := tx.Table("post_revision_media prm").Joins("JOIN posts p ON p.id = prm.post_id").Where("prm.media_id = ? AND p.state <> ?", mediaID, "deleted").Count(&publishedReferences).Error; err != nil {
+			return err
+		}
+		if publishedReferences != 0 {
 			return mediaapp.ErrMediaConflict
 		}
 		if err := unlinkMediaFromDiaries(tx, ownerID, mediaID, at); err != nil {
