@@ -112,7 +112,7 @@ func fixtureUser() model.User {
 func TestRegisterSetsProtectedSessionCookie(t *testing.T) {
 	service := &accountServiceStub{user: fixtureUser(), token: strings.Repeat("a", 43)}
 	router := accountRouter(t, service, true)
-	request := httptest.NewRequest(http.MethodPost, "/v1/auth/registrations", strings.NewReader(`{"email":"person@example.test","display_name":"示例用户","password":"correct-password"}`))
+	request := httptest.NewRequest(http.MethodPost, "/auth/registrations", strings.NewReader(`{"email":"person@example.test","display_name":"示例用户","password":"correct-password"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
@@ -120,7 +120,7 @@ func TestRegisterSetsProtectedSessionCookie(t *testing.T) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 	cookies := response.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != sessionCookieName || !cookies[0].HttpOnly || !cookies[0].Secure || cookies[0].SameSite != http.SameSiteStrictMode || cookies[0].Path != "/v1" {
+	if len(cookies) != 1 || cookies[0].Name != sessionCookieName || !cookies[0].HttpOnly || !cookies[0].Secure || cookies[0].SameSite != http.SameSiteStrictMode || cookies[0].Path != "/" {
 		t.Fatal("registration cookie does not satisfy the security contract")
 	}
 	if service.registered.Password != "correct-password" || strings.Contains(response.Body.String(), service.registered.Password) {
@@ -131,7 +131,7 @@ func TestRegisterSetsProtectedSessionCookie(t *testing.T) {
 func TestContractRejectsUnknownAccountFieldsBeforeService(t *testing.T) {
 	service := &accountServiceStub{user: fixtureUser(), token: strings.Repeat("a", 43)}
 	router := accountRouter(t, service, false)
-	request := httptest.NewRequest(http.MethodPost, "/v1/auth/registrations", strings.NewReader(`{"email":"person@example.test","display_name":"Name","password":"correct-password","role":"admin"}`))
+	request := httptest.NewRequest(http.MethodPost, "/auth/registrations", strings.NewReader(`{"email":"person@example.test","display_name":"Name","password":"correct-password","role":"admin"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
@@ -144,7 +144,7 @@ func TestCurrentUserRequiresSession(t *testing.T) {
 	service := &accountServiceStub{user: fixtureUser()}
 	router := accountRouter(t, service, false)
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/users/me", nil))
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/users/me", nil))
 	if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), "AUTHENTICATION_FAILED") {
 		t.Fatalf("missing session did not fail closed: status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -153,7 +153,7 @@ func TestCurrentUserRequiresSession(t *testing.T) {
 func TestRejectedAuthenticatedSessionClearsStaleCookie(t *testing.T) {
 	service := &accountServiceStub{user: fixtureUser(), err: model.ErrAuthentication}
 	router := accountRouter(t, service, true)
-	request := httptest.NewRequest(http.MethodGet, "/v1/users/me", nil)
+	request := httptest.NewRequest(http.MethodGet, "/users/me", nil)
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
@@ -161,7 +161,7 @@ func TestRejectedAuthenticatedSessionClearsStaleCookie(t *testing.T) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 	cookies := response.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != sessionCookieName || cookies[0].Value != "" || cookies[0].MaxAge != -1 || cookies[0].Path != "/v1" || !cookies[0].HttpOnly || !cookies[0].Secure || cookies[0].SameSite != http.SameSiteStrictMode {
+	if len(cookies) != 1 || cookies[0].Name != sessionCookieName || cookies[0].Value != "" || cookies[0].MaxAge != -1 || cookies[0].Path != "/" || !cookies[0].HttpOnly || !cookies[0].Secure || cookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatal("rejected authenticated session did not clear the stale cookie with matching security attributes")
 	}
 }
@@ -169,7 +169,7 @@ func TestRejectedAuthenticatedSessionClearsStaleCookie(t *testing.T) {
 func TestFailedLoginDoesNotClearExistingSessionCookie(t *testing.T) {
 	service := &accountServiceStub{user: fixtureUser(), err: model.ErrAuthentication}
 	router := accountRouter(t, service, true)
-	request := httptest.NewRequest(http.MethodPost, "/v1/auth/sessions", strings.NewReader(`{"email":"person@example.test","password":"wrong-password"}`))
+	request := httptest.NewRequest(http.MethodPost, "/auth/sessions", strings.NewReader(`{"email":"person@example.test","password":"wrong-password"}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()
@@ -188,7 +188,7 @@ func TestRegistrationRateLimitStopsBeforeAccountService(t *testing.T) {
 	body := `{"email":"person@example.test","display_name":"示例用户","password":"correct-password"}`
 	for attempt := 1; attempt <= 6; attempt++ {
 		response := httptest.NewRecorder()
-		request := authRequest(http.MethodPost, "/v1/auth/registrations", body, "192.0.2.10:4321")
+		request := authRequest(http.MethodPost, "/auth/registrations", body, "192.0.2.10:4321")
 		router.ServeHTTP(response, request)
 		if attempt <= 5 && response.Code != http.StatusCreated {
 			t.Fatalf("attempt %d status=%d body=%s", attempt, response.Code, response.Body.String())
@@ -231,7 +231,7 @@ func TestLoginRateLimitIsolatedByDirectSourceIP(t *testing.T) {
 	body := `{"email":"person@example.test","password":"correct-password"}`
 	for attempt := 1; attempt <= 11; attempt++ {
 		response := httptest.NewRecorder()
-		request := authRequest(http.MethodPost, "/v1/auth/sessions", body, "192.0.2.20:4321")
+		request := authRequest(http.MethodPost, "/auth/sessions", body, "192.0.2.20:4321")
 		request.Header.Set("X-Forwarded-For", "198.51.100.77")
 		router.ServeHTTP(response, request)
 		expected := http.StatusOK
@@ -243,7 +243,7 @@ func TestLoginRateLimitIsolatedByDirectSourceIP(t *testing.T) {
 		}
 	}
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, authRequest(http.MethodPost, "/v1/auth/sessions", body, "198.51.100.77:4321"))
+	router.ServeHTTP(response, authRequest(http.MethodPost, "/auth/sessions", body, "198.51.100.77:4321"))
 	if response.Code != http.StatusOK {
 		t.Fatalf("different direct IP shared a rate-limit bucket: status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -256,7 +256,7 @@ func TestAuthenticationRateLimiterFailureStopsBeforeAccountService(t *testing.T)
 	service := &accountServiceStub{user: fixtureUser(), token: strings.Repeat("a", 43)}
 	router := accountRouterWithLimiter(t, service, false, &authRateLimiterStub{err: errors.New("synthetic-secret")})
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, authRequest(http.MethodPost, "/v1/auth/sessions", `{"email":"person@example.test","password":"correct-password"}`, "192.0.2.30:4321"))
+	router.ServeHTTP(response, authRequest(http.MethodPost, "/auth/sessions", `{"email":"person@example.test","password":"correct-password"}`, "192.0.2.30:4321"))
 	if response.Code != http.StatusServiceUnavailable || response.Header().Get("Retry-After") != "1" || !strings.Contains(response.Body.String(), `"code":"NOT_READY"`) || service.logins != 0 {
 		t.Fatalf("limiter failure did not fail closed: status=%d headers=%v body=%s calls=%d", response.Code, response.Header(), response.Body.String(), service.logins)
 	}
@@ -266,7 +266,7 @@ func TestAuthenticationWithInvalidDirectSourceFailsClosed(t *testing.T) {
 	service := &accountServiceStub{user: fixtureUser(), token: strings.Repeat("a", 43)}
 	router := accountRouterWithLimiter(t, service, false, &authRateLimiterStub{})
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, authRequest(http.MethodPost, "/v1/auth/sessions", `{"email":"person@example.test","password":"correct-password"}`, "not-an-address"))
+	router.ServeHTTP(response, authRequest(http.MethodPost, "/auth/sessions", `{"email":"person@example.test","password":"correct-password"}`, "not-an-address"))
 	if response.Code != http.StatusServiceUnavailable || service.logins != 0 {
 		t.Fatalf("invalid direct source did not fail closed: status=%d calls=%d", response.Code, service.logins)
 	}
@@ -275,7 +275,7 @@ func TestAuthenticationWithInvalidDirectSourceFailsClosed(t *testing.T) {
 func TestLogoutClearsOnlyCurrentCookie(t *testing.T) {
 	service := &accountServiceStub{user: fixtureUser()}
 	router := accountRouter(t, service, false)
-	request := httptest.NewRequest(http.MethodDelete, "/v1/auth/session", nil)
+	request := httptest.NewRequest(http.MethodDelete, "/auth/session", nil)
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
@@ -291,7 +291,7 @@ func TestLogoutClearsOnlyCurrentCookie(t *testing.T) {
 func TestAccountDeletionRequiresPrivateMediaDeletionFirst(t *testing.T) {
 	service := &accountServiceStub{user: fixtureUser(), err: model.ErrAccountMediaConflict}
 	router := accountRouter(t, service, false)
-	request := httptest.NewRequest(http.MethodDelete, "/v1/users/me", nil)
+	request := httptest.NewRequest(http.MethodDelete, "/users/me", nil)
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
@@ -319,12 +319,12 @@ func TestAccountSuccessResponsesMatchOpenAPI(t *testing.T) {
 		status                   int
 		auth                     bool
 	}{
-		{"register", http.MethodPost, "/v1/auth/registrations", `{"email":"person@example.test","display_name":"示例用户","password":"correct-password"}`, http.StatusCreated, false},
-		{"login", http.MethodPost, "/v1/auth/sessions", `{"email":"person@example.test","password":"correct-password"}`, http.StatusOK, false},
-		{"current", http.MethodGet, "/v1/users/me", "", http.StatusOK, true},
-		{"update", http.MethodPatch, "/v1/users/me", `{"display_name":"新名称"}`, http.StatusOK, true},
-		{"logout", http.MethodDelete, "/v1/auth/session", "", http.StatusNoContent, true},
-		{"delete", http.MethodDelete, "/v1/users/me", "", http.StatusNoContent, true},
+		{"register", http.MethodPost, "/auth/registrations", `{"email":"person@example.test","display_name":"示例用户","password":"correct-password"}`, http.StatusCreated, false},
+		{"login", http.MethodPost, "/auth/sessions", `{"email":"person@example.test","password":"correct-password"}`, http.StatusOK, false},
+		{"current", http.MethodGet, "/users/me", "", http.StatusOK, true},
+		{"update", http.MethodPatch, "/users/me", `{"display_name":"新名称"}`, http.StatusOK, true},
+		{"logout", http.MethodDelete, "/auth/session", "", http.StatusNoContent, true},
+		{"delete", http.MethodDelete, "/users/me", "", http.StatusNoContent, true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

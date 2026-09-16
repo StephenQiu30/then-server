@@ -174,12 +174,12 @@ flowchart LR
 
 | Operation | 用途 | MVP |
 | --- | --- | --- |
-| `GET /v1/avatar-presets` | 返回可用人物与 revision | 必须 |
-| `GET /v1/catalog/garments` | 返回可用内置衣物 | 必须 |
-| `POST /v1/look-render-sets:resolve` | 用稳定 ID 解析已发布三视图资产 | 必须 |
-| `POST /v1/look-render-sets/{id}/turntable-jobs` | 创建 Create 360° 任务 | 后续 |
-| `GET /v1/generation-jobs/{id}` | 查询异步状态和结果 | 后续 |
-| `DELETE /v1/generation-jobs/{id}` | 取消/删除派生媒体 | 后续 |
+| `GET /avatar-presets` | 返回可用人物与 revision | 必须 |
+| `GET /catalog/garments` | 返回可用内置衣物 | 必须 |
+| `POST /look-render-sets:resolve` | 用稳定 ID 解析已发布三视图资产 | 必须 |
+| `POST /look-render-sets/{id}/turntable-jobs` | 创建 Create 360° 任务 | 后续 |
+| `GET /generation-jobs/{id}` | 查询异步状态和结果 | 后续 |
+| `DELETE /generation-jobs/{id}` | 取消/删除派生媒体 | 后续 |
 
 Go 服务继续使用 Gin + Huma operation/Go struct tag 生成运行时 OpenAPI，并通过 Swagger 门户给前端/Umi 使用；不新增手工 YAML、生成脚本或第二套文档服务。
 

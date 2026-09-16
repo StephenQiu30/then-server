@@ -78,7 +78,7 @@ func TestOutfitPlanCreateRejectsClientSnapshotAndReturnsServerSnapshot(t *testin
 	service := new(outfitPlanTransportStub)
 	router := outfitPlanRouter(t, service)
 	valid := `{"id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400d11","local_date":"2026-09-17","time_zone":"Asia/Shanghai","context_summary":"Lunch","items":[{"item_id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400a12","revision":2}],"confirmed_unavailable_ids":[]}`
-	request := httptest.NewRequest(http.MethodPost, "/v1/outfit-plans", strings.NewReader(valid))
+	request := httptest.NewRequest(http.MethodPost, "/outfit-plans", strings.NewReader(valid))
 	request.Header.Set("Content-Type", "application/json")
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()
@@ -94,7 +94,7 @@ func TestOutfitPlanCreateRejectsClientSnapshotAndReturnsServerSnapshot(t *testin
 		"snapshot": strings.Replace(valid, `"revision":2`, `"revision":2,"name":"Injected"`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, "/v1/outfit-plans", strings.NewReader(body))
+			request := httptest.NewRequest(http.MethodPost, "/outfit-plans", strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 			response := httptest.NewRecorder()
@@ -111,12 +111,12 @@ func TestOutfitPlanListUpdateCancelDeleteHTTPContract(t *testing.T) {
 	router := outfitPlanRouter(t, service)
 	planID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400d11"
 	requests := []*http.Request{
-		httptest.NewRequest(http.MethodGet, "/v1/outfit-plans?limit=20&local_date=2026-09-17", nil),
-		httptest.NewRequest(http.MethodPut, "/v1/outfit-plans/"+planID, strings.NewReader(`{"expected_revision":1,"local_date":"2026-09-18","time_zone":"Asia/Shanghai","context_summary":null,"items":[{"item_id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400a12","revision":2}],"confirmed_unavailable_ids":[]}`)),
-		httptest.NewRequest(http.MethodPost, "/v1/outfit-plans/"+planID+"/cancel", strings.NewReader(`{"expected_revision":2}`)),
-		httptest.NewRequest(http.MethodPost, "/v1/outfit-plans/"+planID+"/not-worn", strings.NewReader(`{"expected_revision":3}`)),
-		httptest.NewRequest(http.MethodPost, "/v1/outfit-plans/"+planID+"/restore", strings.NewReader(`{"expected_revision":4}`)),
-		httptest.NewRequest(http.MethodDelete, "/v1/outfit-plans/"+planID+"?expected_revision=5", nil),
+		httptest.NewRequest(http.MethodGet, "/outfit-plans?limit=20&local_date=2026-09-17", nil),
+		httptest.NewRequest(http.MethodPut, "/outfit-plans/"+planID, strings.NewReader(`{"expected_revision":1,"local_date":"2026-09-18","time_zone":"Asia/Shanghai","context_summary":null,"items":[{"item_id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400a12","revision":2}],"confirmed_unavailable_ids":[]}`)),
+		httptest.NewRequest(http.MethodPost, "/outfit-plans/"+planID+"/cancel", strings.NewReader(`{"expected_revision":2}`)),
+		httptest.NewRequest(http.MethodPost, "/outfit-plans/"+planID+"/not-worn", strings.NewReader(`{"expected_revision":3}`)),
+		httptest.NewRequest(http.MethodPost, "/outfit-plans/"+planID+"/restore", strings.NewReader(`{"expected_revision":4}`)),
+		httptest.NewRequest(http.MethodDelete, "/outfit-plans/"+planID+"?expected_revision=5", nil),
 	}
 	for _, request := range requests {
 		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
@@ -144,7 +144,7 @@ func TestOutfitPlanMapsDomainFailures(t *testing.T) {
 		status int
 	}{{model.ErrInvalidOutfitPlanInput, http.StatusBadRequest}, {model.ErrOutfitPlanNotFound, http.StatusNotFound}, {model.ErrOutfitPlanConflict, http.StatusConflict}, {model.ErrOutfitItemsUnavailable, http.StatusConflict}, {model.ErrAuthentication, http.StatusUnauthorized}} {
 		router := outfitPlanRouter(t, &outfitPlanTransportStub{err: test.err})
-		request := httptest.NewRequest(http.MethodGet, "/v1/outfit-plans/018f1f74-a2d0-7c6d-9c17-4a0ea2400d11", nil)
+		request := httptest.NewRequest(http.MethodGet, "/outfit-plans/018f1f74-a2d0-7c6d-9c17-4a0ea2400d11", nil)
 		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, request)

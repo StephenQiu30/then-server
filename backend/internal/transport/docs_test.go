@@ -84,7 +84,7 @@ func TestDocumentationRoutesAndContractOwnership(t *testing.T) {
 				t.Fatalf("POST JSON contract: got %d, want %d", w.Code, want)
 			}
 			w = httptest.NewRecorder()
-			router.ServeHTTP(w, httptest.NewRequest("GET", "/v1/health/live", nil))
+			router.ServeHTTP(w, httptest.NewRequest("GET", "/health/live", nil))
 			if w.Code != 200 {
 				t.Fatal("documentation changed health behavior")
 			}

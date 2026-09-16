@@ -50,7 +50,7 @@ func TestMediaStatusRequiresCookieAndHidesObjectReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := "/v1/media/018f1f74-a2d0-7c6d-9c17-4a0ea2400a11"
+	path := "/media/018f1f74-a2d0-7c6d-9c17-4a0ea2400a11"
 	withoutSession := httptest.NewRecorder()
 	router.ServeHTTP(withoutSession, httptest.NewRequest(http.MethodGet, path, nil))
 	if withoutSession.Code != http.StatusUnauthorized {
@@ -75,7 +75,7 @@ func TestMediaDeclaredSizeLimitReturns413(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := `{"consent_id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400a12","purpose":"avatar_source_preparation","content_type":"image/jpeg","byte_size":12582913,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`
-	request := httptest.NewRequest(http.MethodPost, "/v1/media/uploads", strings.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "/media/uploads", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "synthetic-session"})
 	response := httptest.NewRecorder()

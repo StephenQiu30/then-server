@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"regexp"
 	"slices"
 	"testing"
 )
@@ -81,8 +82,12 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"updateWearEvent":              true,
 		"deleteWearEvent":              true,
 	}
-	for _, path := range spec.Paths {
-		for method, operation := range path {
+	versionedPath := regexp.MustCompile(`^/v[0-9]+(?:/|$)`)
+	for path, item := range spec.Paths {
+		if versionedPath.MatchString(path) {
+			t.Fatalf("generated contract exposes a path-version prefix: %s", path)
+		}
+		for method, operation := range item {
 			if method == "parameters" {
 				continue
 			}
@@ -117,7 +122,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.11.0" || operations != 38 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.12.0" || operations != 38 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
 	for _, operationID := range []string{"createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent"} {

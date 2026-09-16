@@ -62,7 +62,7 @@ func TestWardrobeCreateUsesSessionAndRejectsOwnerField(t *testing.T) {
 	service := new(wardrobeTransportStub)
 	router := wardrobeRouter(t, service)
 	valid := `{"id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400a12","name":"Blue Shirt","category":"top","availability":"wearable","source":"wardrobe","attributes":{"formality_band":"smart_casual","walking_use":"suitable"}}`
-	request := httptest.NewRequest(http.MethodPost, "/v1/wardrobe/items", strings.NewReader(valid))
+	request := httptest.NewRequest(http.MethodPost, "/wardrobe/items", strings.NewReader(valid))
 	request.Header.Set("Content-Type", "application/json")
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()
@@ -74,7 +74,7 @@ func TestWardrobeCreateUsesSessionAndRejectsOwnerField(t *testing.T) {
 		t.Fatal("wardrobe create transport lost confirmed attributes")
 	}
 
-	request = httptest.NewRequest(http.MethodPost, "/v1/wardrobe/items", strings.NewReader(strings.TrimSuffix(valid, "}")+`,"owner_id":"other"}`))
+	request = httptest.NewRequest(http.MethodPost, "/wardrobe/items", strings.NewReader(strings.TrimSuffix(valid, "}")+`,"owner_id":"other"}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response = httptest.NewRecorder()
@@ -83,7 +83,7 @@ func TestWardrobeCreateUsesSessionAndRejectsOwnerField(t *testing.T) {
 		t.Fatalf("owner injection was accepted: status=%d body=%s", response.Code, response.Body.String())
 	}
 
-	request = httptest.NewRequest(http.MethodPost, "/v1/wardrobe/items", strings.NewReader(strings.Replace(valid, `"formality_band":"smart_casual"`, `"formality_band":"smart_casual","source":"user_confirmed"`, 1)))
+	request = httptest.NewRequest(http.MethodPost, "/wardrobe/items", strings.NewReader(strings.Replace(valid, `"formality_band":"smart_casual"`, `"formality_band":"smart_casual","source":"user_confirmed"`, 1)))
 	request.Header.Set("Content-Type", "application/json")
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response = httptest.NewRecorder()
@@ -97,7 +97,7 @@ func TestWardrobeCreateUsesSessionAndRejectsOwnerField(t *testing.T) {
 		"invalid attribute":  strings.Replace(valid, `"smart_casual"`, `"business"`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, "/v1/wardrobe/items", strings.NewReader(body))
+			request := httptest.NewRequest(http.MethodPost, "/wardrobe/items", strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 			response := httptest.NewRecorder()
@@ -120,7 +120,7 @@ func TestWardrobeMapsNotFoundConflictAndAuthentication(t *testing.T) {
 	} {
 		service := &wardrobeTransportStub{err: test.err}
 		router := wardrobeRouter(t, service)
-		request := httptest.NewRequest(http.MethodGet, "/v1/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", nil)
+		request := httptest.NewRequest(http.MethodGet, "/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", nil)
 		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, request)
@@ -137,9 +137,9 @@ func TestWardrobeListUpdateAndDeleteHTTPContract(t *testing.T) {
 	service := new(wardrobeTransportStub)
 	router := wardrobeRouter(t, service)
 	for _, request := range []*http.Request{
-		httptest.NewRequest(http.MethodGet, "/v1/wardrobe/items?limit=25", nil),
-		httptest.NewRequest(http.MethodPut, "/v1/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", strings.NewReader(`{"expected_revision":1,"name":"Updated Shirt","category":"top","availability":"laundry","attributes":{"warmth_band":"warm","rain_use":null}}`)),
-		httptest.NewRequest(http.MethodDelete, "/v1/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12?expected_revision=1&history_policy=redact_snapshots&expected_impact="+emptyTransportImpact, nil),
+		httptest.NewRequest(http.MethodGet, "/wardrobe/items?limit=25", nil),
+		httptest.NewRequest(http.MethodPut, "/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", strings.NewReader(`{"expected_revision":1,"name":"Updated Shirt","category":"top","availability":"laundry","attributes":{"warmth_band":"warm","rain_use":null}}`)),
+		httptest.NewRequest(http.MethodDelete, "/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12?expected_revision=1&history_policy=redact_snapshots&expected_impact="+emptyTransportImpact, nil),
 	} {
 		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 		if request.Method == http.MethodPut {

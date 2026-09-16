@@ -108,30 +108,30 @@ type emptySessionOutput struct {
 
 func registerAccountOperations(api huma.API, handler *AccountHandler) {
 	huma.Register(api, huma.Operation{
-		OperationID: "registerAccount", Method: http.MethodPost, Path: "/v1/auth/registrations", Tags: []string{"Authentication"},
+		OperationID: "registerAccount", Method: http.MethodPost, Path: "/auth/registrations", Tags: []string{"Authentication"},
 		Summary: "注册账户并建立会话", DefaultStatus: http.StatusCreated, MaxBodyBytes: 8 * 1024,
 		Errors: []int{http.StatusBadRequest, http.StatusConflict, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusInternalServerError},
 	}, handler.register)
 	huma.Register(api, huma.Operation{
-		OperationID: "createSession", Method: http.MethodPost, Path: "/v1/auth/sessions", Tags: []string{"Authentication"},
+		OperationID: "createSession", Method: http.MethodPost, Path: "/auth/sessions", Tags: []string{"Authentication"},
 		Summary: "使用邮箱密码登录", MaxBodyBytes: 8 * 1024,
 		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusInternalServerError},
 	}, handler.login)
 	huma.Register(api, authenticatedOperation(huma.Operation{
-		OperationID: "deleteSession", Method: http.MethodDelete, Path: "/v1/auth/session", Tags: []string{"Authentication"},
+		OperationID: "deleteSession", Method: http.MethodDelete, Path: "/auth/session", Tags: []string{"Authentication"},
 		Summary: "退出当前会话", Errors: []int{http.StatusUnauthorized, http.StatusInternalServerError},
 	}), handler.logout)
 	huma.Register(api, authenticatedOperation(huma.Operation{
-		OperationID: "getCurrentUser", Method: http.MethodGet, Path: "/v1/users/me", Tags: []string{"Account"},
+		OperationID: "getCurrentUser", Method: http.MethodGet, Path: "/users/me", Tags: []string{"Account"},
 		Summary: "获取本人账户", Errors: []int{http.StatusUnauthorized, http.StatusInternalServerError},
 	}), handler.current)
 	huma.Register(api, authenticatedOperation(huma.Operation{
-		OperationID: "updateCurrentUser", Method: http.MethodPatch, Path: "/v1/users/me", Tags: []string{"Account"},
+		OperationID: "updateCurrentUser", Method: http.MethodPatch, Path: "/users/me", Tags: []string{"Account"},
 		Summary: "修改本人邮箱或显示名称", MaxBodyBytes: 8 * 1024,
 		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusConflict, http.StatusInternalServerError},
 	}), handler.update)
 	huma.Register(api, authenticatedOperation(huma.Operation{
-		OperationID: "deleteCurrentUser", Method: http.MethodDelete, Path: "/v1/users/me", Tags: []string{"Account"},
+		OperationID: "deleteCurrentUser", Method: http.MethodDelete, Path: "/users/me", Tags: []string{"Account"},
 		Summary: "删除本人账户及全部会话", Description: "存在未完成删除的私有媒体时返回 409，避免数据库级联留下孤立对象。", Errors: []int{http.StatusUnauthorized, http.StatusConflict, http.StatusInternalServerError},
 	}), handler.deleteCurrent)
 }
@@ -259,11 +259,11 @@ func (h *AccountHandler) deleteCurrent(ctx context.Context, input *authenticated
 }
 
 func (h *AccountHandler) sessionCookie(token string, expiresAt time.Time) http.Cookie {
-	return http.Cookie{Name: sessionCookieName, Value: token, Path: "/v1", Expires: expiresAt, HttpOnly: true, Secure: h.secureCookie, SameSite: http.SameSiteStrictMode}
+	return http.Cookie{Name: sessionCookieName, Value: token, Path: "/", Expires: expiresAt, HttpOnly: true, Secure: h.secureCookie, SameSite: http.SameSiteStrictMode}
 }
 
 func (h *AccountHandler) expiredSessionCookie() http.Cookie {
-	return http.Cookie{Name: sessionCookieName, Path: "/v1", Expires: time.Unix(1, 0), MaxAge: -1, HttpOnly: true, Secure: h.secureCookie, SameSite: http.SameSiteStrictMode}
+	return http.Cookie{Name: sessionCookieName, Path: "/", Expires: time.Unix(1, 0), MaxAge: -1, HttpOnly: true, Secure: h.secureCookie, SameSite: http.SameSiteStrictMode}
 }
 
 func accountError(ctx context.Context, err error) error {
@@ -292,7 +292,7 @@ func (h *AccountHandler) authenticatedError(ctx context.Context, err error) erro
 }
 
 func authenticatedSessionError(ctx context.Context, secureCookie bool) error {
-	cookie := http.Cookie{Name: sessionCookieName, Path: "/v1", Expires: time.Unix(1, 0), MaxAge: -1, HttpOnly: true, Secure: secureCookie, SameSite: http.SameSiteStrictMode}
+	cookie := http.Cookie{Name: sessionCookieName, Path: "/", Expires: time.Unix(1, 0), MaxAge: -1, HttpOnly: true, Secure: secureCookie, SameSite: http.SameSiteStrictMode}
 	return huma.ErrorWithHeaders(newErrorResponse(http.StatusUnauthorized, requestID(ctx)), http.Header{"Set-Cookie": []string{cookie.String()}})
 }
 

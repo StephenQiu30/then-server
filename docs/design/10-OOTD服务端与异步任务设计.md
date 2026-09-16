@@ -169,7 +169,7 @@ stateDiagram-v2
 ### OpenAPI 3.1
 
 - Go transport 的 Huma operation、请求/响应类型与 struct tag 是接口定义源；API 运行时从同一对象提供 `/openapi.json` 与 `/openapi.yaml`，仓库不保存物化规格或生成工具。Swagger 和未来 Umi/客户端生成都读取运行时 JSON。
-- 固定 OpenAPI 3.1.2；每个 operation 使用唯一稳定的 `operationId`，公开业务路径继续使用 `/v1`。
+- 固定 OpenAPI 3.1.2；每个 operation 使用唯一稳定的 `operationId`，公开业务接口直接使用语义根路径，不配置路径版本前缀。
 - 长任务创建返回 `202 Accepted`、稳定任务 ID、状态 URL 和建议轮询间隔；结果未完成时不返回虚假成功。
 - 创建、finalize、生成、取消、删除和供应商回调全部定义幂等语义。
 - schema 明确 required、nullable、枚举、格式、单位、长度、上传限制和安全示例。

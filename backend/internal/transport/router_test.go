@@ -52,12 +52,12 @@ func TestHealthContractAndFailureIsolation(t *testing.T) {
 		drain      bool
 		status     int
 	}{
-		{"live ignores database", "/v1/health/live", func(context.Context) error { t.Fatal("liveness contacted database"); return nil }, false, 200},
-		{"ready", "/v1/health/ready", func(context.Context) error { return nil }, false, 200},
-		{"database unavailable", "/v1/health/ready", func(context.Context) error { return errors.New("synthetic-secret") }, false, 503},
-		{"timeout", "/v1/health/ready", func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }, false, 503},
-		{"draining", "/v1/health/ready", func(context.Context) error { t.Fatal("draining contacted database"); return nil }, true, 503},
-		{"panic redaction", "/v1/health/ready", func(context.Context) error { panic("synthetic-secret") }, false, 500},
+		{"live ignores database", "/health/live", func(context.Context) error { t.Fatal("liveness contacted database"); return nil }, false, 200},
+		{"ready", "/health/ready", func(context.Context) error { return nil }, false, 200},
+		{"database unavailable", "/health/ready", func(context.Context) error { return errors.New("synthetic-secret") }, false, 503},
+		{"timeout", "/health/ready", func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }, false, 503},
+		{"draining", "/health/ready", func(context.Context) error { t.Fatal("draining contacted database"); return nil }, true, 503},
+		{"panic redaction", "/health/ready", func(context.Context) error { panic("synthetic-secret") }, false, 500},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -111,14 +111,14 @@ func TestOnlyExplicitHealthRequestsAreAccepted(t *testing.T) {
 		method, path, body, allow string
 		status                    int
 	}{
-		{"GET", "/v1/health/live?token=synthetic-secret", "", "", 400},
-		{"GET", "/v1/health/live", "synthetic-secret", "", 400},
-		{"POST", "/v1/health/live", "", "GET", 405},
-		{"GET", "/v1/auth/registrations", "", "POST", 405},
-		{"GET", "/v1/v1/health/live", "", "", 404},
-		{"GET", "/v1/health/live/", "", "", 404},
+		{"GET", "/health/live?token=synthetic-secret", "", "", 400},
+		{"GET", "/health/live", "synthetic-secret", "", 400},
+		{"POST", "/health/live", "", "GET", 405},
+		{"GET", "/auth/registrations", "", "POST", 405},
+		{"GET", "/legacy/health/live", "", "", 404},
+		{"GET", "/health/live/", "", "", 404},
 		{"GET", "/synthetic-secret", "", "", 404},
-		{"POST", "/v1/jobs", "", "", 404},
+		{"POST", "/jobs", "", "", 404},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+tt.path, func(t *testing.T) {
@@ -142,7 +142,7 @@ func TestDrainDuringProbeDoesNotReturnReady(t *testing.T) {
 	var r *Router
 	r, _ = newTestRouter(t, func(context.Context) error { r.Drain(); return nil })
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest("GET", "/v1/health/ready", nil))
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/health/ready", nil))
 	if w.Code != 503 {
 		t.Fatal("reported ready after drain")
 	}

@@ -38,54 +38,54 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 
 ## 账号 API
 
-- `POST /v1/auth/registrations`
-- `POST /v1/auth/sessions`
-- `DELETE /v1/auth/session`
-- `GET /v1/users/me`
-- `PATCH /v1/users/me`
-- `DELETE /v1/users/me`
+- `POST /auth/registrations`
+- `POST /auth/sessions`
+- `DELETE /auth/session`
+- `GET /users/me`
+- `PATCH /users/me`
+- `DELETE /users/me`
 
 浏览器会话使用 HttpOnly、SameSite=Strict Cookie。本机回环开发可设置 `SESSION_COOKIE_SECURE=false`；非回环监听必须使用安全 Cookie。注册按直连源 IP 每小时 5 次、登录每 15 分钟 10 次，Redis 原子计数超限返回 429 与 `Retry-After`；Redis 不可用时认证失败关闭且 readiness 返回 503。邮件验证、找回密码、可信代理/边缘防护和生产审计尚未完成，因此当前端点只用于开发 MVP。
 
 ## 隐私前置 API
 
-- `GET /v1/privacy/self-adult-declaration`
-- `PUT /v1/privacy/self-adult-declaration`
-- `DELETE /v1/privacy/self-adult-declaration`
+- `GET /privacy/self-adult-declaration`
+- `PUT /privacy/self-adult-declaration`
+- `DELETE /privacy/self-adult-declaration`
 
 该 API 只记录当前账号对 `self-adult-v1` 的确认或撤回，不收集出生日期或证件。它不是第三方 AI 逐次同意。
 
 ## 结构化衣橱 API
 
-- `POST /v1/wardrobe/items`
-- `GET /v1/wardrobe/items`
-- `GET /v1/wardrobe/items/{item_id}`
-- `GET /v1/wardrobe/items/{item_id}/deletion-impact`
-- `PUT /v1/wardrobe/items/{item_id}`
-- `DELETE /v1/wardrobe/items/{item_id}`
+- `POST /wardrobe/items`
+- `GET /wardrobe/items`
+- `GET /wardrobe/items/{item_id}`
+- `GET /wardrobe/items/{item_id}/deletion-impact`
+- `PUT /wardrobe/items/{item_id}`
+- `DELETE /wardrobe/items/{item_id}`
 
-OpenAPI 0.11.0 在无图最小结构上提供正式度、保暖感受、雨天和步行适用四项 nullable 用户确认属性。POST/PUT 必须提交 `attributes` 对象；空项表示未知，非空响应携带 `user_confirmed`，请求不能提交来源。会话决定 owner；属性参与幂等比较和完整 revision 更新。删除前读取计划与实际事件的共同影响摘要，删除时明确选择清空全部历史快照或删除受影响历史。
+OpenAPI 0.12.0 在无图最小结构上提供正式度、保暖感受、雨天和步行适用四项 nullable 用户确认属性，并移除业务路径版本前缀。POST/PUT 必须提交 `attributes` 对象；空项表示未知，非空响应携带 `user_confirmed`，请求不能提交来源。会话决定 owner；属性参与幂等比较和完整 revision 更新。删除前读取计划与实际事件的共同影响摘要，删除时明确选择清空全部历史快照或删除受影响历史。
 
 ## 账号穿搭计划 API
 
-- `POST /v1/outfit-plans`
-- `GET /v1/outfit-plans`
-- `GET /v1/outfit-plans/{plan_id}`
-- `PUT /v1/outfit-plans/{plan_id}`
-- `POST /v1/outfit-plans/{plan_id}/cancel`
-- `DELETE /v1/outfit-plans/{plan_id}`
+- `POST /outfit-plans`
+- `GET /outfit-plans`
+- `GET /outfit-plans/{plan_id}`
+- `PUT /outfit-plans/{plan_id}`
+- `POST /outfit-plans/{plan_id}/cancel`
+- `DELETE /outfit-plans/{plan_id}`
 
 请求只提交计划日期、IANA 时区、可选摘要及有序的衣物 ID/revision；名称、类别、可用状态和确认属性由服务端在同一 PostgreSQL 事务中生成快照。创建按客户端 UUID 幂等，更新/状态/删除使用 revision，永久删除写入 tombstone 防止迟到请求复活。计划保存不会自行创建实际穿着；App 主动同步、反馈、推荐与提醒仍未启用。
 
 ## 账号实际穿着 API
 
-- `POST /v1/wear-events`
-- `GET /v1/wear-events`
-- `GET /v1/wear-events/{wear_event_id}`
-- `PUT /v1/wear-events/{wear_event_id}`
-- `DELETE /v1/wear-events/{wear_event_id}`
-- `POST /v1/outfit-plans/{plan_id}/not-worn`
-- `POST /v1/outfit-plans/{plan_id}/restore`
+- `POST /wear-events`
+- `GET /wear-events`
+- `GET /wear-events/{wear_event_id}`
+- `PUT /wear-events/{wear_event_id}`
+- `DELETE /wear-events/{wear_event_id}`
+- `POST /outfit-plans/{plan_id}/not-worn`
+- `POST /outfit-plans/{plan_id}/restore`
 
 实际事件只接受衣物 ID/revision 和用户明确确认，服务端生成快照。同日高度相似记录返回当前候选供再次确认；保存与待洗状态、计划 completed 状态在同一 PostgreSQL 事务完成。纠正/删除使用 revision，永久删除写 tombstone；删除最后一条关联事件后计划恢复 active。
 

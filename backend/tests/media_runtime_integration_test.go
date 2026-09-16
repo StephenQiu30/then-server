@@ -95,12 +95,12 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 	}
 	client := &http.Client{Timeout: 10 * time.Second, Jar: jar}
 	baseURL := "http://" + address
-	postJSON(t, client, http.MethodPost, baseURL+"/v1/auth/registrations", map[string]any{"email": "integration@example.test", "display_name": "Integration", "password": "correct-password-integration"}, http.StatusCreated, nil)
-	postJSON(t, client, http.MethodPut, baseURL+"/v1/privacy/self-adult-declaration", map[string]any{"policy_version": "self-adult-v1", "confirms_self_and_adult": true}, http.StatusOK, nil)
+	postJSON(t, client, http.MethodPost, baseURL+"/auth/registrations", map[string]any{"email": "integration@example.test", "display_name": "Integration", "password": "correct-password-integration"}, http.StatusCreated, nil)
+	postJSON(t, client, http.MethodPut, baseURL+"/privacy/self-adult-declaration", map[string]any{"policy_version": "self-adult-v1", "confirms_self_and_adult": true}, http.StatusOK, nil)
 	var consent struct {
 		ID string `json:"id"`
 	}
-	postJSON(t, client, http.MethodPost, baseURL+"/v1/consents", map[string]any{"purpose": "avatar_source_preparation", "category": "person_photo", "processor": "then", "region": "local-development", "policy_version": "person-photo-v1", "max_retention_hours": 24, "actively_agreed": true, "training_allowed": false}, http.StatusCreated, &consent)
+	postJSON(t, client, http.MethodPost, baseURL+"/consents", map[string]any{"purpose": "avatar_source_preparation", "category": "person_photo", "processor": "then", "region": "local-development", "policy_version": "person-photo-v1", "max_retention_hours": 24, "actively_agreed": true, "training_allowed": false}, http.StatusCreated, &consent)
 	photo := runtimeSyntheticJPEG(t)
 	digest := fmt.Sprintf("%x", sha256.Sum256(photo))
 	var upload struct {
@@ -110,7 +110,7 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 		URL     string            `json:"url"`
 		Headers map[string]string `json:"headers"`
 	}
-	postJSON(t, client, http.MethodPost, baseURL+"/v1/media/uploads", map[string]any{"consent_id": consent.ID, "purpose": "avatar_source_preparation", "content_type": "image/jpeg", "byte_size": len(photo), "sha256": digest}, http.StatusCreated, &upload)
+	postJSON(t, client, http.MethodPost, baseURL+"/media/uploads", map[string]any{"consent_id": consent.ID, "purpose": "avatar_source_preparation", "content_type": "image/jpeg", "byte_size": len(photo), "sha256": digest}, http.StatusCreated, &upload)
 	put, err := http.NewRequestWithContext(ctx, http.MethodPut, upload.URL, bytes.NewReader(photo))
 	if err != nil {
 		t.Fatal(err)
@@ -130,13 +130,13 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 	if putResponse.StatusCode != http.StatusOK || versionID == "" {
 		t.Fatal("signed PUT did not produce a version")
 	}
-	postJSON(t, client, http.MethodPost, baseURL+"/v1/media/"+upload.Media.ID+"/complete", map[string]any{"version_id": versionID}, http.StatusOK, nil)
-	waitForHTTPStatus(t, ctx, client, baseURL+"/v1/media/"+upload.Media.ID, "ready")
+	postJSON(t, client, http.MethodPost, baseURL+"/media/"+upload.Media.ID+"/complete", map[string]any{"version_id": versionID}, http.StatusOK, nil)
+	waitForHTTPStatus(t, ctx, client, baseURL+"/media/"+upload.Media.ID, "ready")
 	var deletion struct {
 		ID string `json:"id"`
 	}
-	postJSON(t, client, http.MethodDelete, baseURL+"/v1/media/"+upload.Media.ID, nil, http.StatusAccepted, &deletion)
-	waitForHTTPStatus(t, ctx, client, baseURL+"/v1/deletion-requests/"+deletion.ID, "complete")
+	postJSON(t, client, http.MethodDelete, baseURL+"/media/"+upload.Media.ID, nil, http.StatusAccepted, &deletion)
+	waitForHTTPStatus(t, ctx, client, baseURL+"/deletion-requests/"+deletion.ID, "complete")
 	if err := process.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}

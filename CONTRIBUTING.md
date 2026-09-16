@@ -102,7 +102,7 @@ fix(ios,backend): 修复同步         # 包含多个 scope
 - 用户可见项目名使用“于是”；本仓库名使用 `then-server`；iOS 仓库名使用 `then-app`，技术标识使用 `ThenApp`；本地统一放在 `Then/` 父目录。
 - 工具链、依赖、供应商或最低系统版本变更必须先更新 `docs/design/01-技术选型.md` 并说明迁移与回滚。
 - 接口变更必须先修改 Huma operation、请求/响应类型与 tag，并验证运行时 `/openapi.json`；不得提交第二份 OpenAPI 契约。
-- Web 接口调用必须由同一 OpenAPI 生成到 `frontend/src/api/generated/`，不得手写第二份请求模型。
+- Web 接口调用必须由同一 OpenAPI 生成到 `frontend/src/lib/api/generated/`，不得手写第二份请求模型。
 - 当前无历史数据的开发 schema 只由 Repository 内 GORM record 定义，并由 Main 启动时集中 `AutoMigrate`；需要保留数据或进入生产前另立版本化迁移计划。
 - 产品或架构行为变化时，同步更新 `docs/` 中的对应文档。
 - 交付按 design → PRD → execution plan → implementation → acceptance 推进。执行计划仅为已排期的可独立交付切片创建，并在同一文件中统一范围契约、任务、依赖与完成证据；不得用任务表反向替代产品或设计决策。

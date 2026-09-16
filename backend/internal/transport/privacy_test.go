@@ -41,7 +41,7 @@ func TestPrivacyDeclarationHTTPContract(t *testing.T) {
 		PolicyVersion: model.CurrentSelfAdultPolicyVersion, Confirmed: true, ConfirmedAt: &confirmedAt,
 	}}
 	router := privacyRouter(t, service)
-	request := httptest.NewRequest(http.MethodPut, "/v1/privacy/self-adult-declaration", strings.NewReader(`{"policy_version":"self-adult-v1","confirms_self_and_adult":true}`))
+	request := httptest.NewRequest(http.MethodPut, "/privacy/self-adult-declaration", strings.NewReader(`{"policy_version":"self-adult-v1","confirms_self_and_adult":true}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()
@@ -58,12 +58,12 @@ func TestPrivacyDeclarationRequiresSessionAndRejectsFalseConfirmation(t *testing
 	service := &privacyServiceStub{}
 	router := privacyRouter(t, service)
 	missing := httptest.NewRecorder()
-	router.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/v1/privacy/self-adult-declaration", nil))
+	router.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/privacy/self-adult-declaration", nil))
 	if missing.Code != http.StatusUnauthorized {
 		t.Fatalf("missing session status=%d", missing.Code)
 	}
 
-	request := httptest.NewRequest(http.MethodPut, "/v1/privacy/self-adult-declaration", strings.NewReader(`{"policy_version":"self-adult-v1","confirms_self_and_adult":false}`))
+	request := httptest.NewRequest(http.MethodPut, "/privacy/self-adult-declaration", strings.NewReader(`{"policy_version":"self-adult-v1","confirms_self_and_adult":false}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	rejected := httptest.NewRecorder()

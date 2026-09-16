@@ -138,7 +138,7 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 			return newErrorResponse(status, requestID(ctx.Context()))
 		}
 	})
-	config := huma.DefaultConfig("于是 OOTD API", "0.11.0")
+	config := huma.DefaultConfig("于是 OOTD API", "0.12.0")
 	config.OpenAPI.OpenAPI = "3.1.2"
 	config.Info.Description = "“于是”OOTD 产品后端接口。OpenAPI 由 Go operation 与类型字段标签生成。"
 	config.OpenAPIPath = ""
@@ -164,7 +164,7 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 
 func registerHealthOperations(api huma.API, router *Router, probe DependencyProbe, timeout time.Duration) {
 	huma.Register(api, huma.Operation{
-		OperationID: "getLiveness", Method: http.MethodGet, Path: "/v1/health/live", Tags: []string{"Health"},
+		OperationID: "getLiveness", Method: http.MethodGet, Path: "/health/live", Tags: []string{"Health"},
 		Summary: "检查 API 进程存活", Description: "仅供受限运维访问，不查询数据库，不代表云业务已启用。", Errors: []int{http.StatusBadRequest, http.StatusInternalServerError},
 	}, func(ctx context.Context, _ *struct{}) (*livenessOutput, error) {
 		if err := rejectHealthPayload(ctx); err != nil {
@@ -175,7 +175,7 @@ func registerHealthOperations(api huma.API, router *Router, probe DependencyProb
 	})
 
 	huma.Register(api, huma.Operation{
-		OperationID: "getReadiness", Method: http.MethodGet, Path: "/v1/health/ready", Tags: []string{"Health"},
+		OperationID: "getReadiness", Method: http.MethodGet, Path: "/health/ready", Tags: []string{"Health"},
 		Summary: "检查 API 接纳就绪状态", Description: "在同一有界上下文中探测 PostgreSQL 与认证 Redis；退出或任一依赖故障时返回 503，不输出连接详情。", Errors: []int{http.StatusBadRequest, http.StatusServiceUnavailable, http.StatusInternalServerError},
 	}, func(ctx context.Context, _ *struct{}) (*readinessOutput, error) {
 		if err := rejectHealthPayload(ctx); err != nil {
@@ -232,7 +232,7 @@ func normalizeGeneratedOpenAPI(spec *huma.OpenAPI) {
 			}
 		}
 	}
-	if readiness := spec.Paths["/v1/health/ready"].Get.Responses["503"]; readiness != nil {
+	if readiness := spec.Paths["/health/ready"].Get.Responses["503"]; readiness != nil {
 		if readiness.Headers == nil {
 			readiness.Headers = map[string]*huma.Header{}
 		}

@@ -1,0 +1,33 @@
+.shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding-block: 4rem;
+}
+
+.stackList {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+}
+
+.stackList div {
+  display: grid;
+  gap: 0.25rem;
+  grid-template-columns: minmax(7rem, 0.6fr) minmax(0, 1.4fr);
+}
+
+.stackList dt {
+  color: var(--gray-11);
+  font-weight: 600;
+}
+
+.stackList dd {
+  margin: 0;
+}
+
+@media (max-width: 32rem) {
+  .stackList div {
+    grid-template-columns: 1fr;
+  }
+}

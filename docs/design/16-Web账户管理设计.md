@@ -2,9 +2,9 @@
 
 ## 状态与实施边界
 
-- 状态：`draft`。
+- 状态：基础工程 `approved / implemented`；账户页面与完整旅程仍为 `draft`。
 - 用户目标：仓库新增语义化顶层目录 `frontend/`，提供注册、登录和本人账户 CRUD 页面。
-- 当前决定：2026-09-14 用户要求先不实施前端服务；当前仓库不保留试做页面、生成物、依赖目录或 lockfile。
+- 当前决定：2026-09-16 用户明确要求 Web 使用 Next.js 及其 App Router，不使用 Vite 或 React Router；Radix UI、TypeScript、ESLint、Prettier、Umi OpenAPI、Axios 与 TanStack Query 继续保留。本切片不越过页面稿与状态矩阵门禁实现账户业务页面。
 - 上游合同：[Design 15](15-账号认证与账户数据设计.md)、[PRD 17](../prd/17-云端生成与任务管理需求.md#账号认证与web账户管理)、Go API 运行时 `/openapi.json`。
 - 待批准计划：[17-13 Web 账户管理](../plan/17-13-Web账户管理执行计划.md)。
 
@@ -22,20 +22,24 @@ Woo 参考没有展示认证页面，因此这些页面只能沿用“于是”�
 
 ## 技术边界
 
-- 使用 React、TypeScript、Vite；React Router 管理页面路由，TanStack Query 管理服务端状态。精确版本只认 [Design 01](01-技术选型.md#web-frontend)。
-- `@umijs/openapi` 只读取本机 Go API 的 `/openapi.json`，生成到 `src/api/generated/`。`openapi2ts.config.ts` 固定 `schemaPath`、`serversPath`、`projectName`、`mock: false` 和项目请求适配器；页面不得手写 URL、DTO 或第二份 schema。
-- 本地 Vite 只代理同源 `/v1`；生产静态文件与 API 由同一站点入口提供，不新增 Node BFF、跨源凭据 CORS 或前端直连 PostgreSQL/Redis/RabbitMQ/MinIO。
+- 使用 React、TypeScript、Next.js App Router 与 Radix UI Themes；Next.js 文件路由管理页面，TanStack Query 管理需要的客户端服务状态，Axios 作为 Umi 生成请求的唯一适配器。精确版本只认 [Design 01](01-技术选型.md#web-frontend)。
+- 目录采用职责分层：`src/app` 只保存 App Router 路由入口和路由自有样式，跨路由 UI/Client Provider 放在 `src/components`，通用技术基础设施放在 `src/lib`，单元测试放在 `tests/unit`。业务切片获批前不预建空的 `features`、`public` 或 `assets`。
+- `@umijs/openapi` 只读取本机 Go API 的 `/openapi.json`，生成到 `src/lib/api/generated/`。`openapi2ts.config.ts` 固定 `schemaPath`、`serversPath`、`projectName` 和项目请求适配器，并通过不设置 `mockFolder` 禁止 mock 产物；页面不得手写 URL、DTO 或第二份 schema。
+- Next.js rewrites 只代理 OpenAPI 已注册的语义根路径；页面与 API 从同一站点入口提供，不新增业务 BFF、跨源凭据 CORS 或前端直连 PostgreSQL/Redis/RabbitMQ/MinIO。
 - Cookie 由浏览器管理，JavaScript 不读取会话令牌，不把认证信息写入 Local Storage、Session Storage 或日志。
 - 账户删除沿用服务端硬删除合同；前端二次确认不替代服务端授权。
+- Axios 只在 `src/lib/api/request.ts` 创建一个实例并统一合并请求配置、发送请求和返回响应正文；生成代码和页面不得创建第二个 Axios 实例。请求 URL 来自运行时 OpenAPI，不在 Axios 或 Next.js rewrites 中拼接路径版本前缀。
 
 ## 生成器预检结论
 
 2026-09-14 用户进一步确认 Web 使用 Umi OpenAPI 生成 API 文件，替代此前 Hey API 候选。仅做了可撤销的本地生成预检，未保留 `frontend/` 代码：
 
-- `@umijs/openapi` 1.14.1 + TypeScript 6.0.3 已验证可消费运行时 OpenAPI 3.1.2；当前 API 0.11.0 共 38 个 operation，并包含衣橱确认属性、覆盖计划/实际事件的删除影响、账号计划与实际穿着请求/响应。17-13 恢复时必须从实际 `/openapi.json` 重新生成并验证函数数量，不复用旧产物。
+- `@umijs/openapi` 1.14.1 + TypeScript 6.0.3 已验证可消费运行时 OpenAPI 3.1.2；当前 API 0.12.0 共 38 个 operation，并包含衣橱确认属性、覆盖计划/实际事件的删除影响、账号计划与实际穿着请求/响应。每次合同变化必须从实际 `/openapi.json` 重新生成并验证函数数量，不复用旧产物。
 - 该 CLI 对 HTTP `schemaPath` 使用 JSON 解析，不能直接消费 `/openapi.yaml`；Go API 因此直接暴露由 Huma operation 与标注类型生成并校验的 `/openapi.json`。
 - 会话 Cookie 只通过 OpenAPI security scheme 表达，不生成函数参数；Umi 产物中没有 `then_session` 参数，浏览器随同源请求自动发送 HttpOnly Cookie。
 - 生成器包没有声明其 CLI 实际需要的 `tslib`，前端正式安装时将 `tslib` 2.8.1 作为显式开发依赖；这不是生成后修补。当前完整开发依赖审计因生成器固定依赖的 `mockjs` 原型污染公告报告 2 个 high 且无上游修复，`npm audit --omit=dev` 为 0。前端开工时必须复核；生成器不进入生产 bundle，`mock` 固定关闭。
+
+2026-09-16 基础工程已从实际本机 API 重新生成 API 0.12.0 的 38 个函数，生成目录为 `src/lib/api/generated/`，请求适配器为 `src/lib/api/request.ts`。生成时不设置 `mockFolder`，因此不产出 mock；完整开发依赖审计仍为上述 2 个 high 且无可用修复，生产依赖审计为 0。
 
 ## 页面状态与可访问性清单
 
@@ -58,4 +62,4 @@ Woo 参考没有展示认证页面，因此这些页面只能沿用“于是”�
 1. 审核三张页面稿以及手机宽度版本，确认颜色和品牌资产。
 2. 审核路由跳转、401、409、网络错误、退出和删除后的状态矩阵。
 3. 确认正式锁版仍能从 `/openapi.json` 生成当前 OpenAPI，生产依赖审计为 0，并复核开发生成器公告。
-4. 将 [17-13](../plan/17-13-Web账户管理执行计划.md) 契约状态从 `draft` 改为 `approved` 后才创建 `frontend/`。
+4. 基础工程已按本轮明确指令批准并创建；账户页面合同仍须在页面稿与状态矩阵审核后从 `draft` 改为 `approved`。

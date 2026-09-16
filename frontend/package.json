@@ -1,0 +1,42 @@
+{
+  "name": "then-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "npm@12.0.2",
+  "engines": {
+    "node": "24.19.0",
+    "npm": "12.0.2"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "openapi": "openapi2ts",
+    "test": "node --test tests/unit/lib/api/request.test.ts"
+  },
+  "dependencies": {
+    "@radix-ui/themes": "3.3.0",
+    "@tanstack/react-query": "5.102.8",
+    "axios": "1.20.0",
+    "next": "16.3.5",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@umijs/openapi": "1.14.1",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.5",
+    "eslint-config-prettier": "10.1.8",
+    "prettier": "3.9.6",
+    "tslib": "2.8.1",
+    "typescript": "6.0.3"
+  }
+}

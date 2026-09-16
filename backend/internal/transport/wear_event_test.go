@@ -62,7 +62,7 @@ func TestWearEventHTTPContractRejectsInjectedFacts(t *testing.T) {
 	service := new(wearEventTransportStub)
 	router := wearEventRouter(t, service)
 	valid := `{"id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400e11","local_date":"2026-09-16","time_zone":"Asia/Shanghai","completeness":"complete","context_summary":null,"items":[{"item_id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400a12","revision":2}],"laundry_item_ids":[],"confirmed_unavailable_ids":[],"source_plan_id":null,"source_plan_revision":null,"source_kind":"unplanned","duplicate_confirmations":[]}`
-	request := httptest.NewRequest(http.MethodPost, "/v1/wear-events", strings.NewReader(valid))
+	request := httptest.NewRequest(http.MethodPost, "/wear-events", strings.NewReader(valid))
 	request.Header.Set("Content-Type", "application/json")
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()
@@ -75,7 +75,7 @@ func TestWearEventHTTPContractRejectsInjectedFacts(t *testing.T) {
 		"snapshot": strings.Replace(valid, `"revision":2`, `"revision":2,"name":"Injected"`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, "/v1/wear-events", strings.NewReader(body))
+			request := httptest.NewRequest(http.MethodPost, "/wear-events", strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 			response := httptest.NewRecorder()
@@ -92,10 +92,10 @@ func TestWearEventHTTPCommandsAndDuplicateCandidates(t *testing.T) {
 	router := wearEventRouter(t, service)
 	eventID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400e11"
 	for _, request := range []*http.Request{
-		httptest.NewRequest(http.MethodGet, "/v1/wear-events?limit=20&local_date=2026-09-16", nil),
-		httptest.NewRequest(http.MethodGet, "/v1/wear-events/"+eventID, nil),
-		httptest.NewRequest(http.MethodPut, "/v1/wear-events/"+eventID, strings.NewReader(`{"expected_revision":1,"local_date":"2026-09-16","time_zone":"Asia/Shanghai","completeness":"partial","context_summary":null,"items":[{"item_id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400a12","revision":2}],"laundry_item_ids":[],"confirmed_unavailable_ids":[],"source_plan_id":null,"source_plan_revision":null,"source_kind":"unplanned","duplicate_confirmations":[]}`)),
-		httptest.NewRequest(http.MethodDelete, "/v1/wear-events/"+eventID+"?expected_revision=2", nil),
+		httptest.NewRequest(http.MethodGet, "/wear-events?limit=20&local_date=2026-09-16", nil),
+		httptest.NewRequest(http.MethodGet, "/wear-events/"+eventID, nil),
+		httptest.NewRequest(http.MethodPut, "/wear-events/"+eventID, strings.NewReader(`{"expected_revision":1,"local_date":"2026-09-16","time_zone":"Asia/Shanghai","completeness":"partial","context_summary":null,"items":[{"item_id":"018f1f74-a2d0-7c6d-9c17-4a0ea2400a12","revision":2}],"laundry_item_ids":[],"confirmed_unavailable_ids":[],"source_plan_id":null,"source_plan_revision":null,"source_kind":"unplanned","duplicate_confirmations":[]}`)),
+		httptest.NewRequest(http.MethodDelete, "/wear-events/"+eventID+"?expected_revision=2", nil),
 	} {
 		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 		if request.Body != nil {
@@ -113,7 +113,7 @@ func TestWearEventHTTPCommandsAndDuplicateCandidates(t *testing.T) {
 	}
 	candidate := model.WearEventCandidate{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400e22", Revision: 4}
 	service.err = &model.WearEventDuplicateError{Candidates: []model.WearEventCandidate{candidate}}
-	request := httptest.NewRequest(http.MethodGet, "/v1/wear-events/"+eventID, nil)
+	request := httptest.NewRequest(http.MethodGet, "/wear-events/"+eventID, nil)
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
