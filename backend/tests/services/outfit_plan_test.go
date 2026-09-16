@@ -210,7 +210,8 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 		t.Fatal("PostgreSQL accepted an invalid outfit plan status")
 	}
 
-	serviceOK(t, "delete outfit plan owner", accounts.DeleteCurrentUser(ctx, owner.Token))
+	_, err = accounts.DeleteCurrentUser(ctx, owner.Token)
+	serviceOK(t, "delete outfit plan owner", err)
 	for _, table := range []string{"outfit_plans", "outfit_plan_items", "outfit_plan_deletions", "wardrobe_items"} {
 		var count int64
 		serviceOK(t, "count account-owned "+table, database.WithContext(ctx).Table(table).Where("owner_id = ?", owner.User.ID).Count(&count).Error)

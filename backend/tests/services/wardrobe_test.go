@@ -126,7 +126,8 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 		t.Fatal("deleted wardrobe item remained readable")
 	}
 
-	serviceOK(t, "delete first wardrobe owner", accounts.DeleteCurrentUser(ctx, first.Token))
+	_, err = accounts.DeleteCurrentUser(ctx, first.Token)
+	serviceOK(t, "delete first wardrobe owner", err)
 	var firstCount, secondCount int64
 	serviceOK(t, "count first owner wardrobe", database.WithContext(ctx).Raw("SELECT count(*) FROM wardrobe_items WHERE owner_id = ?", first.User.ID).Scan(&firstCount).Error)
 	serviceOK(t, "count second owner wardrobe", database.WithContext(ctx).Raw("SELECT count(*) FROM wardrobe_items WHERE owner_id = ?", second.User.ID).Scan(&secondCount).Error)

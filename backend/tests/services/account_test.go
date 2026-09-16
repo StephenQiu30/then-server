@@ -219,7 +219,8 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 
 	loggedIn, err := accounts.Login(ctx, accountapp.CreateSessionInput{Email: first.User.Email, Password: "correct-password-one"})
 	serviceOK(t, "login persisted account", err)
-	if err := accounts.DeleteCurrentUser(ctx, loggedIn.Token); err != nil {
+	deletion, err := accounts.DeleteCurrentUser(ctx, loggedIn.Token)
+	if err != nil || deletion.Status != accountapp.AccountDeletionComplete {
 		t.Fatal("delete persisted account failed")
 	}
 	for table, expected := range map[string]int64{"users": 1, "user_credentials": 1, "user_sessions": 1, "self_adult_declarations": 1, "user_profiles": 1} {

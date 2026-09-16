@@ -26,6 +26,7 @@ type accountServiceStub struct {
 	user       accountapp.User
 	profile    accountapp.PublicProfile
 	profilePut accountapp.PutProfileInput
+	deletion   accountapp.AccountDeletionRequest
 	token      string
 	err        error
 	registers  int
@@ -93,9 +94,9 @@ func (s *accountServiceStub) Logout(_ context.Context, token string) error {
 	return s.err
 }
 
-func (s *accountServiceStub) DeleteCurrentUser(_ context.Context, token string) error {
+func (s *accountServiceStub) DeleteCurrentUser(_ context.Context, token string) (accountapp.AccountDeletionRequest, error) {
 	s.token = token
-	return s.err
+	return s.deletion, s.err
 }
 
 func accountRouter(t *testing.T, service AccountService, secure bool) *Router {
@@ -324,15 +325,20 @@ func TestLogoutClearsOnlyCurrentCookie(t *testing.T) {
 	}
 }
 
-func TestAccountDeletionRequiresPrivateMediaDeletionFirst(t *testing.T) {
-	service := &accountServiceStub{user: fixtureUser(), err: accountapp.ErrAccountMediaConflict}
+func TestAccountDeletionIsAcceptedAndClearsSession(t *testing.T) {
+	requestedAt := time.Date(2026, 9, 16, 10, 0, 0, 0, time.UTC)
+	service := &accountServiceStub{user: fixtureUser(), deletion: accountapp.AccountDeletionRequest{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a17", Status: accountapp.AccountDeletionPending, MediaCount: 2, RequestedAt: requestedAt}}
 	router := accountRouter(t, service, false)
 	request := httptest.NewRequest(http.MethodDelete, "/users/me", nil)
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"CONFLICT"`) {
-		t.Fatalf("active private media did not block account deletion: status=%d body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusAccepted || !strings.Contains(response.Body.String(), `"status":"pending"`) || !strings.Contains(response.Body.String(), `"media_count":2`) {
+		t.Fatalf("account deletion was not accepted: status=%d body=%s", response.Code, response.Body.String())
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatal("accepted account deletion did not clear the session cookie")
 	}
 }
 
@@ -360,11 +366,11 @@ func TestAccountSuccessResponsesMatchOpenAPI(t *testing.T) {
 		{"current", http.MethodGet, "/users/me", "", http.StatusOK, true},
 		{"update", http.MethodPatch, "/users/me", `{"display_name":"新名称","expected_revision":1}`, http.StatusOK, true},
 		{"logout", http.MethodDelete, "/auth/session", "", http.StatusNoContent, true},
-		{"delete", http.MethodDelete, "/users/me", "", http.StatusNoContent, true},
+		{"delete", http.MethodDelete, "/users/me", "", http.StatusAccepted, true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			service := &accountServiceStub{user: fixtureUser(), token: token}
+			service := &accountServiceStub{user: fixtureUser(), token: token, deletion: accountapp.AccountDeletionRequest{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a17", Status: accountapp.AccountDeletionPending, RequestedAt: fixtureUser().UpdatedAt}}
 			router := accountRouter(t, service, true)
 			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
 			if test.body != "" {

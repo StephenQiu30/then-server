@@ -9,6 +9,7 @@ import (
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -63,6 +64,18 @@ type sessionRecord struct {
 }
 
 func (sessionRecord) TableName() string { return "user_sessions" }
+
+type accountDeletionRequestRecord struct {
+	ID          string     `gorm:"column:id;type:uuid;primaryKey"`
+	UserID      string     `gorm:"column:user_id;type:uuid;not null;uniqueIndex:account_deletion_requests_user_unique"`
+	Status      string     `gorm:"column:status;type:text;not null;index:account_deletion_requests_status_idx;check:account_deletion_requests_status_check,status IN ('pending','complete')"`
+	MediaCount  int        `gorm:"column:media_count;not null;check:account_deletion_requests_media_count_check,media_count >= 0"`
+	RequestedAt time.Time  `gorm:"column:requested_at;type:timestamptz;not null"`
+	CompletedAt *time.Time `gorm:"column:completed_at;type:timestamptz;check:account_deletion_requests_completion_check,(status = 'pending' AND completed_at IS NULL) OR (status = 'complete' AND completed_at IS NOT NULL)"`
+	UpdatedAt   time.Time  `gorm:"column:updated_at;type:timestamptz;not null;check:account_deletion_requests_timestamps_check,updated_at >= requested_at"`
+}
+
+func (accountDeletionRequestRecord) TableName() string { return "account_deletion_requests" }
 
 type accountRow struct {
 	ID           string    `gorm:"column:id"`
@@ -200,38 +213,116 @@ func (r *AccountRepository) DeleteSession(ctx context.Context, tokenHash []byte)
 	return nil
 }
 
-func (r *AccountRepository) DeleteUser(ctx context.Context, userID string) error {
+func (r *AccountRepository) BeginAccountDeletion(ctx context.Context, userID string, at time.Time) (accountapp.AccountDeletionRequest, error) {
+	var request accountDeletionRequestRecord
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user userRecord
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", userID).First(&user).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", userID).First(&user).Error; err != nil {
 			return err
 		}
-		var activeMedia int64
-		if err := tx.Model(&mediaAssetRecord{}).Where("owner_id = ? AND status <> ?", userID, string(mediaapp.MediaDeleted)).Count(&activeMedia).Error; err != nil {
-			return err
+		if user.Status == string(accountapp.AccountDeleting) {
+			return tx.Where("user_id = ?", userID).First(&request).Error
 		}
-		if activeMedia != 0 {
-			return accountapp.ErrAccountMediaConflict
+		if user.Status != string(accountapp.AccountActive) {
+			return accountapp.ErrAuthentication
 		}
 		if err := tx.Model(&postRecord{}).Where("source_diary_owner_id = ?", userID).Updates(map[string]any{"source_diary_owner_id": nil, "source_diary_id": nil}).Error; err != nil {
 			return err
 		}
-		if err := tx.Exec("DELETE FROM inbox_receipts WHERE event_id IN (SELECT id FROM outbox_events WHERE aggregate_id IN (SELECT id FROM media_assets WHERE owner_id = ?))", userID).Error; err != nil {
+		if err := tx.Model(&postRecord{}).Where("owner_id = ? AND state <> ?", userID, "deleted").Updates(map[string]any{
+			"state": "deleted", "draft_version": nil, "pending_version": nil, "published_version": nil,
+			"source_diary_owner_id": nil, "source_diary_id": nil, "published_at": nil, "withdrawn_at": at,
+			"deleted_at": at, "updated_at": at,
+		}).Error; err != nil {
 			return err
 		}
-		if err := tx.Exec("DELETE FROM outbox_events WHERE aggregate_id IN (SELECT id FROM media_assets WHERE owner_id = ?)", userID).Error; err != nil {
+		var mediaRecords []mediaAssetRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND status <> ?", userID, string(mediaapp.MediaDeleted)).Order("id ASC").Find(&mediaRecords).Error; err != nil {
 			return err
 		}
-		rows, err := gorm.G[userRecord](tx).Where("id = ?", userID).Delete(ctx)
-		if err != nil {
+		request = accountDeletionRequestRecord{ID: uuid.NewString(), UserID: userID, Status: string(accountapp.AccountDeletionPending), MediaCount: len(mediaRecords), RequestedAt: at, UpdatedAt: at}
+		if err := tx.Create(&request).Error; err != nil {
 			return err
 		}
-		if rows != 1 {
-			return accountapp.ErrAuthentication
+		userUpdate := tx.Model(&userRecord{}).Where("id = ? AND status = ?", userID, string(accountapp.AccountActive)).Updates(map[string]any{"status": string(accountapp.AccountDeleting), "revision": user.Revision + 1, "updated_at": at})
+		if userUpdate.Error != nil {
+			return userUpdate.Error
+		}
+		if userUpdate.RowsAffected != 1 {
+			return accountapp.ErrAccountConflict
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&sessionRecord{}).Error; err != nil {
+			return err
+		}
+		for index := range mediaRecords {
+			media := &mediaRecords[index]
+			var existing deletionRequestRecord
+			if err := tx.Where("media_id = ?", media.ID).First(&existing).Error; err == nil {
+				if media.Status != string(mediaapp.MediaDeleting) {
+					if err := tx.Model(&mediaAssetRecord{}).Where("id = ?", media.ID).Updates(map[string]any{"status": string(mediaapp.MediaDeleting), "updated_at": at}).Error; err != nil {
+						return err
+					}
+				}
+				continue
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			deletion := deletionRequestRecord{ID: uuid.NewString(), OwnerID: userID, MediaID: media.ID, Status: string(mediaapp.DeletionPending), ReadRevokedAt: at, BackupExpiresAt: at, NextAttemptAt: at, CreatedAt: at, UpdatedAt: at}
+			if err := tx.Model(&mediaAssetRecord{}).Where("id = ?", media.ID).Updates(map[string]any{"status": string(mediaapp.MediaDeleting), "updated_at": at}).Error; err != nil {
+				return err
+			}
+			if err := tx.Create(&deletion).Error; err != nil {
+				return err
+			}
+			if err := tx.Create(&outboxEventRecord{ID: uuid.NewString(), EventType: "media.deletion_requested", AggregateID: media.ID, Payload: []byte(`{"media_id":"` + media.ID + `"}`), CreatedAt: at}).Error; err != nil {
+				return err
+			}
+		}
+		if len(mediaRecords) == 0 {
+			if err := finalizeAccountDeletionIfReady(ctx, tx, userID, at); err != nil {
+				return err
+			}
+			request.Status, request.CompletedAt = string(accountapp.AccountDeletionComplete), &at
 		}
 		return nil
 	})
-	return mapDatabaseError(err)
+	if err != nil {
+		return accountapp.AccountDeletionRequest{}, mapDatabaseError(err)
+	}
+	return accountDeletionFromRecord(request), nil
+}
+
+func finalizeAccountDeletionIfReady(ctx context.Context, tx *gorm.DB, userID string, at time.Time) error {
+	var request accountDeletionRequestRecord
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND status = ?", userID, string(accountapp.AccountDeletionPending)).First(&request).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	var remaining int64
+	if err := tx.Model(&mediaAssetRecord{}).Where("owner_id = ? AND status <> ?", userID, string(mediaapp.MediaDeleted)).Count(&remaining).Error; err != nil {
+		return err
+	}
+	if remaining != 0 {
+		return nil
+	}
+	rows, err := gorm.G[userRecord](tx).Where("id = ? AND status = ?", userID, string(accountapp.AccountDeleting)).Delete(ctx)
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return accountapp.ErrAuthentication
+	}
+	result := tx.Model(&accountDeletionRequestRecord{}).Where("id = ? AND status = ?", request.ID, string(accountapp.AccountDeletionPending)).Updates(map[string]any{"status": string(accountapp.AccountDeletionComplete), "completed_at": at, "updated_at": at})
+	if result.Error != nil || result.RowsAffected != 1 {
+		return accountapp.ErrAccountUnavailable
+	}
+	return nil
+}
+
+func accountDeletionFromRecord(record accountDeletionRequestRecord) accountapp.AccountDeletionRequest {
+	return accountapp.AccountDeletionRequest{ID: record.ID, Status: accountapp.AccountDeletionStatus(record.Status), MediaCount: record.MediaCount, RequestedAt: record.RequestedAt, CompletedAt: record.CompletedAt}
 }
 
 func findAccount(ctx context.Context, database *gorm.DB, userID string) (accountapp.User, error) {
@@ -274,9 +365,6 @@ func mapDatabaseError(err error) error {
 		if errors.Is(err, domainError) {
 			return domainError
 		}
-	}
-	if errors.Is(err, accountapp.ErrAccountMediaConflict) {
-		return accountapp.ErrAccountMediaConflict
 	}
 	var postgresError *pgconn.PgError
 	if errors.As(err, &postgresError) && postgresError.Code == "23505" && postgresError.ConstraintName == "user_credentials_email_unique" {

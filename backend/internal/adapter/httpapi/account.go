@@ -33,7 +33,7 @@ type AccountService interface {
 	PublicProfile(context.Context, string) (accountapp.PublicProfile, error)
 	PutCurrentProfile(context.Context, string, accountapp.PutProfileInput) (accountapp.PublicProfile, error)
 	Logout(context.Context, string) error
-	DeleteCurrentUser(context.Context, string) error
+	DeleteCurrentUser(context.Context, string) (accountapp.AccountDeletionRequest, error)
 }
 
 type AuthenticationRateLimiter interface {
@@ -90,6 +90,14 @@ type AuthenticatedUserResponse struct {
 	User UserResponse `json:"user"`
 }
 
+type AccountDeletionResponse struct {
+	ID          string     `json:"id" format:"uuid"`
+	Status      string     `json:"status" enum:"pending,complete"`
+	MediaCount  int        `json:"media_count" minimum:"0"`
+	RequestedAt time.Time  `json:"requested_at" format:"date-time"`
+	CompletedAt *time.Time `json:"completed_at,omitempty" format:"date-time"`
+}
+
 type registerAccountInput struct{ Body RegisterAccountRequest }
 type createSessionInput struct{ Body CreateSessionRequest }
 type updateCurrentUserInput struct {
@@ -112,6 +120,11 @@ type userOutput struct {
 type emptySessionOutput struct {
 	RequestID string      `header:"X-Request-ID" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" doc:"服务端生成的请求关联标识，不采纳客户端原始值"`
 	SetCookie http.Cookie `header:"Set-Cookie" doc:"清除当前会话 Cookie"`
+}
+type accountDeletionOutput struct {
+	RequestID string                  `header:"X-Request-ID" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" doc:"服务端生成的请求关联标识，不采纳客户端原始值"`
+	SetCookie http.Cookie             `header:"Set-Cookie" doc:"清除当前会话 Cookie"`
+	Body      AccountDeletionResponse `json:"body"`
 }
 
 func registerAccountOperations(api huma.API, handler *AccountHandler) {
@@ -140,7 +153,8 @@ func registerAccountOperations(api huma.API, handler *AccountHandler) {
 	}), handler.update)
 	huma.Register(api, authenticatedOperation(huma.Operation{
 		OperationID: "deleteCurrentUser", Method: http.MethodDelete, Path: "/users/me", Tags: []string{"Account"},
-		Summary: "删除本人账户及全部会话", Description: "存在未完成删除的私有媒体时返回 409，避免数据库级联留下孤立对象。", Errors: []int{http.StatusUnauthorized, http.StatusConflict, http.StatusInternalServerError},
+		Summary: "受理本人账户删除", Description: "立即撤销全部会话并关闭公开内容；对象存储清理完成后物理删除账户。", DefaultStatus: http.StatusAccepted,
+		Errors: []int{http.StatusUnauthorized, http.StatusInternalServerError},
 	}), handler.deleteCurrent)
 	registerProfileOperations(api, handler)
 }
@@ -256,17 +270,20 @@ func (h *AccountHandler) logout(ctx context.Context, input *authenticatedInput) 
 	return &emptySessionOutput{RequestID: requestID(ctx), SetCookie: h.expiredSessionCookie()}, nil
 }
 
-func (h *AccountHandler) deleteCurrent(ctx context.Context, input *authenticatedInput) (*emptySessionOutput, error) {
+func (h *AccountHandler) deleteCurrent(ctx context.Context, input *authenticatedInput) (*accountDeletionOutput, error) {
 	if h == nil || h.service == nil {
 		return nil, newErrorResponse(http.StatusInternalServerError, requestID(ctx))
 	}
 	if input.Session == "" {
 		return nil, newErrorResponse(http.StatusUnauthorized, requestID(ctx))
 	}
-	if err := h.service.DeleteCurrentUser(ctx, input.Session); err != nil {
+	deletion, err := h.service.DeleteCurrentUser(ctx, input.Session)
+	if err != nil {
 		return nil, h.authenticatedError(ctx, err)
 	}
-	return &emptySessionOutput{RequestID: requestID(ctx), SetCookie: h.expiredSessionCookie()}, nil
+	return &accountDeletionOutput{RequestID: requestID(ctx), SetCookie: h.expiredSessionCookie(), Body: AccountDeletionResponse{
+		ID: deletion.ID, Status: string(deletion.Status), MediaCount: deletion.MediaCount, RequestedAt: deletion.RequestedAt, CompletedAt: deletion.CompletedAt,
+	}}, nil
 }
 
 func (h *AccountHandler) sessionCookie(token string, expiresAt time.Time) http.Cookie {
@@ -286,10 +303,6 @@ func accountError(ctx context.Context, err error) error {
 	case errors.Is(err, accountapp.ErrAccountConflict):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "REVISION_CONFLICT", "Account changed since it was read."
-		return response
-	case errors.Is(err, accountapp.ErrAccountMediaConflict):
-		response := newErrorResponse(http.StatusConflict, requestID(ctx))
-		response.Code, response.Message = "CONFLICT", "Delete private media before deleting the account."
 		return response
 	case errors.Is(err, accountapp.ErrAuthentication):
 		return newErrorResponse(http.StatusUnauthorized, requestID(ctx))

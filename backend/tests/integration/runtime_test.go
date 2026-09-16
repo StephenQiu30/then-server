@@ -219,7 +219,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 						Version string `json:"version"`
 					} `json:"info"`
 				}
-				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.16.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) || !strings.Contains(string(body), `"operationId":"createDiaryEntry"`) || !strings.Contains(string(body), `"operationId":"decidePostModeration"`) || !strings.Contains(string(body), `"operationId":"listCommunityFeed"`) {
+				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.17.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) || !strings.Contains(string(body), `"operationId":"createDiaryEntry"`) || !strings.Contains(string(body), `"operationId":"decidePostModeration"`) || !strings.Contains(string(body), `"operationId":"listCommunityFeed"`) {
 					t.Fatal("binary did not serve a valid JSON representation of its compiled contract")
 				}
 			}
@@ -384,7 +384,10 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 		t.Fatal("actual login response did not establish a session")
 	}
 	secondSession := loginCookies[0]
-	deletion, _ := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/users/me", "", secondSession, http.StatusNoContent)
+	deletion, deletionBody := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/users/me", "", secondSession, http.StatusAccepted)
+	if !strings.Contains(string(deletionBody), `"status":"complete"`) || !strings.Contains(string(deletionBody), `"media_count":0`) {
+		t.Fatal("actual account deletion did not return its durable completion receipt")
+	}
 	assertExpiredSessionCookie(t, deletion)
 	deletedReplay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/users/me", "", secondSession, http.StatusUnauthorized)
 	assertAuthenticationFailure(t, body)
