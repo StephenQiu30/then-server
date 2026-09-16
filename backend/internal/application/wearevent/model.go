@@ -1,8 +1,10 @@
-package domain
+package wearevent
 
 import (
 	"errors"
 	"time"
+
+	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
 )
 
 var (
@@ -40,7 +42,7 @@ type WearEventInput struct {
 	TimeZone                string
 	Completeness            WearEventCompleteness
 	ContextSummary          *string
-	Items                   []OutfitSelection
+	Items                   []outfitplanapp.OutfitSelection
 	LaundryItemIDs          []string
 	ConfirmedUnavailableIDs []string
 	SourcePlanID            *string
@@ -62,7 +64,7 @@ type WearEvent struct {
 	Revision           int
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
-	Items              []OutfitPlanItemSnapshot
+	Items              []outfitplanapp.OutfitPlanItemSnapshot
 }
 
 type WearEventPage struct {

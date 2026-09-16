@@ -6,18 +6,20 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
+
 	"github.com/danielgtaylor/huma/v2"
 )
 
 type DiaryHTTPService interface {
-	Create(context.Context, string, string, domain.DiaryEntryInput) (domain.DiaryEntry, error)
-	List(context.Context, string, int, *string, *string, *string) (domain.DiaryEntryPage, error)
-	Get(context.Context, string, string) (domain.DiaryEntry, error)
-	Update(context.Context, string, string, int, domain.DiaryEntryInput) (domain.DiaryEntry, error)
-	DeletionImpact(context.Context, string, string) (domain.DiaryDeletionImpact, error)
+	Create(context.Context, string, string, diaryapp.DiaryEntryInput) (diaryapp.DiaryEntry, error)
+	List(context.Context, string, int, *string, *string, *string) (diaryapp.DiaryEntryPage, error)
+	Get(context.Context, string, string) (diaryapp.DiaryEntry, error)
+	Update(context.Context, string, string, int, diaryapp.DiaryEntryInput) (diaryapp.DiaryEntry, error)
+	DeletionImpact(context.Context, string, string) (diaryapp.DiaryDeletionImpact, error)
 	Delete(context.Context, string, string, int) error
-	Calendar(context.Context, string, string) (domain.CalendarMonth, error)
+	Calendar(context.Context, string, string) (diaryapp.CalendarMonth, error)
 }
 
 type DiaryHandler struct {
@@ -249,13 +251,13 @@ func (h *DiaryHandler) available(ctx context.Context, session string) error {
 
 func (h *DiaryHandler) mapError(ctx context.Context, err error) error {
 	switch {
-	case errors.Is(err, domain.ErrAuthentication):
+	case errors.Is(err, accountapp.ErrAuthentication):
 		return authenticatedSessionError(ctx, h.secureCookie)
-	case errors.Is(err, domain.ErrInvalidDiaryInput):
+	case errors.Is(err, diaryapp.ErrInvalidDiaryInput):
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
-	case errors.Is(err, domain.ErrDiaryNotFound):
+	case errors.Is(err, diaryapp.ErrDiaryNotFound):
 		return newErrorResponse(http.StatusNotFound, requestID(ctx))
-	case errors.Is(err, domain.ErrDiaryConflict):
+	case errors.Is(err, diaryapp.ErrDiaryConflict):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Request conflicts with current diary state."
 		return response
@@ -264,11 +266,11 @@ func (h *DiaryHandler) mapError(ctx context.Context, err error) error {
 	}
 }
 
-func diaryInput(request DiaryEntryRequest) domain.DiaryEntryInput {
-	return domain.DiaryEntryInput{LocalDate: request.LocalDate, TimeZone: request.TimeZone, Title: request.Title, Body: request.Body, Mood: request.Mood, Occasion: request.Occasion, PlanID: request.PlanID, WearEventID: request.WearEventID, MediaIDs: append([]string(nil), request.MediaIDs...)}
+func diaryInput(request DiaryEntryRequest) diaryapp.DiaryEntryInput {
+	return diaryapp.DiaryEntryInput{LocalDate: request.LocalDate, TimeZone: request.TimeZone, Title: request.Title, Body: request.Body, Mood: request.Mood, Occasion: request.Occasion, PlanID: request.PlanID, WearEventID: request.WearEventID, MediaIDs: append([]string(nil), request.MediaIDs...)}
 }
 
-func diaryResponse(entry domain.DiaryEntry) DiaryEntryResponse {
+func diaryResponse(entry diaryapp.DiaryEntry) DiaryEntryResponse {
 	return DiaryEntryResponse{ID: entry.ID, LocalDate: entry.LocalDate, TimeZone: entry.TimeZone, Title: entry.Title, Body: entry.Body, Mood: entry.Mood, Occasion: entry.Occasion, PlanID: entry.PlanID, WearEventID: entry.WearEventID, MediaIDs: append([]string(nil), entry.MediaIDs...), Revision: entry.Revision, CreatedAt: entry.CreatedAt, UpdatedAt: entry.UpdatedAt}
 }
 

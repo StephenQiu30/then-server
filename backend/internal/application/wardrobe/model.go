@@ -1,4 +1,4 @@
-package domain
+package wardrobe
 
 import (
 	"errors"
@@ -106,4 +106,17 @@ type UpdateWardrobeItemInput struct {
 type WardrobePage struct {
 	Items       []WardrobeItem
 	NextAfterID *string
+}
+
+type WardrobeHistoryPolicy string
+
+const (
+	WardrobeHistoryRedactSnapshots       WardrobeHistoryPolicy = "redact_snapshots"
+	WardrobeHistoryDeleteAffectedHistory WardrobeHistoryPolicy = "delete_affected_history"
+)
+
+type WardrobeDeletionImpact struct {
+	AffectedPlanCount      int
+	AffectedWearEventCount int
+	ExpectedImpact         string
 }

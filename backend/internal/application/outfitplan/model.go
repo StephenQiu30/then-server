@@ -1,8 +1,10 @@
-package domain
+package outfitplan
 
 import (
 	"errors"
 	"time"
+
+	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
 )
 
 var (
@@ -39,9 +41,9 @@ type OutfitItemContent struct {
 	ItemID       string
 	ItemRevision int
 	Name         string
-	Category     WardrobeCategory
-	Availability WardrobeAvailability
-	Attributes   WardrobeAttributes
+	Category     wardrobeapp.WardrobeCategory
+	Availability wardrobeapp.WardrobeAvailability
+	Attributes   wardrobeapp.WardrobeAttributes
 }
 
 type OutfitPlanItemSnapshot struct {
@@ -65,17 +67,4 @@ type OutfitPlan struct {
 type OutfitPlanPage struct {
 	Plans       []OutfitPlan
 	NextAfterID *string
-}
-
-type WardrobeHistoryPolicy string
-
-const (
-	WardrobeHistoryRedactSnapshots       WardrobeHistoryPolicy = "redact_snapshots"
-	WardrobeHistoryDeleteAffectedHistory WardrobeHistoryPolicy = "delete_affected_history"
-)
-
-type WardrobeDeletionImpact struct {
-	AffectedPlanCount      int
-	AffectedWearEventCount int
-	ExpectedImpact         string
 }

@@ -6,19 +6,21 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+
 	"github.com/danielgtaylor/huma/v2"
 )
 
 type MediaService interface {
-	CreateConsent(context.Context, string, domain.CreateConsentInput) (domain.ConsentRecord, error)
-	GetConsent(context.Context, string, string) (domain.ConsentRecord, error)
-	WithdrawConsent(context.Context, string, string) (domain.ConsentRecord, error)
-	CreateMediaUpload(context.Context, string, domain.CreateMediaUploadInput) (domain.MediaUpload, error)
-	CompleteMediaUpload(context.Context, string, string, domain.CompleteMediaUploadInput) (domain.MediaAsset, error)
-	GetMedia(context.Context, string, string) (domain.MediaAsset, error)
-	DeleteMedia(context.Context, string, string) (domain.DeletionRequest, error)
-	GetDeletionRequest(context.Context, string, string) (domain.DeletionRequest, error)
+	CreateConsent(context.Context, string, mediaapp.CreateConsentInput) (mediaapp.ConsentRecord, error)
+	GetConsent(context.Context, string, string) (mediaapp.ConsentRecord, error)
+	WithdrawConsent(context.Context, string, string) (mediaapp.ConsentRecord, error)
+	CreateMediaUpload(context.Context, string, mediaapp.CreateMediaUploadInput) (mediaapp.MediaUpload, error)
+	CompleteMediaUpload(context.Context, string, string, mediaapp.CompleteMediaUploadInput) (mediaapp.MediaAsset, error)
+	GetMedia(context.Context, string, string) (mediaapp.MediaAsset, error)
+	DeleteMedia(context.Context, string, string) (mediaapp.DeletionRequest, error)
+	GetDeletionRequest(context.Context, string, string) (mediaapp.DeletionRequest, error)
 }
 
 type MediaHandler struct {
@@ -42,17 +44,17 @@ type CreateConsentRequest struct {
 }
 
 type ConsentResponse struct {
-	ID                string               `json:"id" format:"uuid"`
-	Purpose           string               `json:"purpose" enum:"avatar_source_preparation"`
-	Category          string               `json:"category" enum:"person_photo"`
-	Processor         string               `json:"processor" enum:"then"`
-	Region            string               `json:"region" enum:"local-development"`
-	PolicyVersion     string               `json:"policy_version" enum:"person-photo-v1"`
-	MaxRetentionHours int                  `json:"max_retention_hours" enum:"24"`
-	TrainingAllowed   bool                 `json:"training_allowed" enum:"false"`
-	Status            domain.ConsentStatus `json:"status" enum:"active,withdrawn"`
-	AgreedAt          time.Time            `json:"agreed_at" format:"date-time"`
-	WithdrawnAt       *time.Time           `json:"withdrawn_at,omitempty" format:"date-time"`
+	ID                string                 `json:"id" format:"uuid"`
+	Purpose           string                 `json:"purpose" enum:"avatar_source_preparation"`
+	Category          string                 `json:"category" enum:"person_photo"`
+	Processor         string                 `json:"processor" enum:"then"`
+	Region            string                 `json:"region" enum:"local-development"`
+	PolicyVersion     string                 `json:"policy_version" enum:"person-photo-v1"`
+	MaxRetentionHours int                    `json:"max_retention_hours" enum:"24"`
+	TrainingAllowed   bool                   `json:"training_allowed" enum:"false"`
+	Status            mediaapp.ConsentStatus `json:"status" enum:"active,withdrawn"`
+	AgreedAt          time.Time              `json:"agreed_at" format:"date-time"`
+	WithdrawnAt       *time.Time             `json:"withdrawn_at,omitempty" format:"date-time"`
 }
 
 type CreateMediaUploadRequest struct {
@@ -64,18 +66,18 @@ type CreateMediaUploadRequest struct {
 }
 
 type MediaResponse struct {
-	ID          string             `json:"id" format:"uuid"`
-	ConsentID   *string            `json:"consent_id,omitempty" format:"uuid"`
-	Purpose     string             `json:"purpose" enum:"avatar_source_preparation,diary_image"`
-	Category    string             `json:"category" enum:"person_photo,ordinary_image"`
-	ContentType string             `json:"content_type" enum:"image/jpeg"`
-	ByteSize    int64              `json:"byte_size" minimum:"1"`
-	Status      domain.MediaStatus `json:"status" enum:"pending_upload,uploaded,checking,ready,rejected,deleting,deleted"`
-	Reason      string             `json:"reason,omitempty" maxLength:"80"`
-	PixelWidth  int                `json:"pixel_width,omitempty" minimum:"0"`
-	PixelHeight int                `json:"pixel_height,omitempty" minimum:"0"`
-	CreatedAt   time.Time          `json:"created_at" format:"date-time"`
-	UpdatedAt   time.Time          `json:"updated_at" format:"date-time"`
+	ID          string               `json:"id" format:"uuid"`
+	ConsentID   *string              `json:"consent_id,omitempty" format:"uuid"`
+	Purpose     string               `json:"purpose" enum:"avatar_source_preparation,diary_image"`
+	Category    string               `json:"category" enum:"person_photo,ordinary_image"`
+	ContentType string               `json:"content_type" enum:"image/jpeg"`
+	ByteSize    int64                `json:"byte_size" minimum:"1"`
+	Status      mediaapp.MediaStatus `json:"status" enum:"pending_upload,uploaded,checking,ready,rejected,deleting,deleted"`
+	Reason      string               `json:"reason,omitempty" maxLength:"80"`
+	PixelWidth  int                  `json:"pixel_width,omitempty" minimum:"0"`
+	PixelHeight int                  `json:"pixel_height,omitempty" minimum:"0"`
+	CreatedAt   time.Time            `json:"created_at" format:"date-time"`
+	UpdatedAt   time.Time            `json:"updated_at" format:"date-time"`
 }
 
 type MediaUploadResponse struct {
@@ -91,16 +93,16 @@ type CompleteMediaUploadRequest struct {
 }
 
 type DeletionRequestResponse struct {
-	ID              string                `json:"id" format:"uuid"`
-	MediaID         string                `json:"media_id" format:"uuid"`
-	Status          domain.DeletionStatus `json:"status" enum:"pending,running,complete,failed"`
-	ReadRevokedAt   time.Time             `json:"read_revoked_at" format:"date-time"`
-	CompletedAt     *time.Time            `json:"completed_at,omitempty" format:"date-time"`
-	BackupExpiresAt time.Time             `json:"backup_expires_at" format:"date-time"`
-	Error           string                `json:"error,omitempty" maxLength:"80"`
-	Attempts        int                   `json:"attempts" minimum:"0"`
-	CreatedAt       time.Time             `json:"created_at" format:"date-time"`
-	UpdatedAt       time.Time             `json:"updated_at" format:"date-time"`
+	ID              string                  `json:"id" format:"uuid"`
+	MediaID         string                  `json:"media_id" format:"uuid"`
+	Status          mediaapp.DeletionStatus `json:"status" enum:"pending,running,complete,failed"`
+	ReadRevokedAt   time.Time               `json:"read_revoked_at" format:"date-time"`
+	CompletedAt     *time.Time              `json:"completed_at,omitempty" format:"date-time"`
+	BackupExpiresAt time.Time               `json:"backup_expires_at" format:"date-time"`
+	Error           string                  `json:"error,omitempty" maxLength:"80"`
+	Attempts        int                     `json:"attempts" minimum:"0"`
+	CreatedAt       time.Time               `json:"created_at" format:"date-time"`
+	UpdatedAt       time.Time               `json:"updated_at" format:"date-time"`
 }
 
 type createConsentInput struct {
@@ -166,10 +168,10 @@ func (h *MediaHandler) createConsent(ctx context.Context, input *createConsentIn
 		return nil, err
 	}
 	r := input.Body
-	if r.Processor != domain.MediaProcessorThen || r.Region != domain.MediaRegionLocalDevelopment || r.MaxRetentionHours != 24 {
+	if r.Processor != mediaapp.MediaProcessorThen || r.Region != mediaapp.MediaRegionLocalDevelopment || r.MaxRetentionHours != 24 {
 		return nil, newErrorResponse(http.StatusBadRequest, requestID(ctx))
 	}
-	consent, err := h.service.CreateConsent(ctx, input.Session, domain.CreateConsentInput{Purpose: r.Purpose, Category: r.Category, PolicyVersion: r.PolicyVersion, ActivelyAgreed: r.ActivelyAgreed, TrainingAllowed: r.TrainingAllowed})
+	consent, err := h.service.CreateConsent(ctx, input.Session, mediaapp.CreateConsentInput{Purpose: r.Purpose, Category: r.Category, PolicyVersion: r.PolicyVersion, ActivelyAgreed: r.ActivelyAgreed, TrainingAllowed: r.TrainingAllowed})
 	if err != nil {
 		return nil, h.mediaError(ctx, err)
 	}
@@ -207,7 +209,7 @@ func (h *MediaHandler) createUpload(ctx context.Context, input *createMediaUploa
 	if r.ConsentID != nil {
 		consentID = *r.ConsentID
 	}
-	upload, err := h.service.CreateMediaUpload(ctx, input.Session, domain.CreateMediaUploadInput{ConsentID: consentID, Purpose: r.Purpose, ContentType: r.ContentType, ByteSize: r.ByteSize, SHA256: r.SHA256})
+	upload, err := h.service.CreateMediaUpload(ctx, input.Session, mediaapp.CreateMediaUploadInput{ConsentID: consentID, Purpose: r.Purpose, ContentType: r.ContentType, ByteSize: r.ByteSize, SHA256: r.SHA256})
 	if err != nil {
 		return nil, h.mediaError(ctx, err)
 	}
@@ -218,7 +220,7 @@ func (h *MediaHandler) completeUpload(ctx context.Context, input *completeMediaU
 	if err := h.available(ctx, input.Session); err != nil {
 		return nil, err
 	}
-	media, err := h.service.CompleteMediaUpload(ctx, input.Session, input.ID, domain.CompleteMediaUploadInput{VersionID: input.Body.VersionID})
+	media, err := h.service.CompleteMediaUpload(ctx, input.Session, input.ID, mediaapp.CompleteMediaUploadInput{VersionID: input.Body.VersionID})
 	if err != nil {
 		return nil, h.mediaError(ctx, err)
 	}
@@ -270,15 +272,15 @@ func (h *MediaHandler) available(ctx context.Context, session string) error {
 
 func (h *MediaHandler) mediaError(ctx context.Context, err error) error {
 	switch {
-	case errors.Is(err, domain.ErrAuthentication):
+	case errors.Is(err, accountapp.ErrAuthentication):
 		return authenticatedSessionError(ctx, h.secureCookie)
-	case errors.Is(err, domain.ErrInvalidMediaInput):
+	case errors.Is(err, mediaapp.ErrInvalidMediaInput):
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
-	case errors.Is(err, domain.ErrMediaTooLarge):
+	case errors.Is(err, mediaapp.ErrMediaTooLarge):
 		return newErrorResponse(http.StatusRequestEntityTooLarge, requestID(ctx))
-	case errors.Is(err, domain.ErrMediaNotFound):
+	case errors.Is(err, mediaapp.ErrMediaNotFound):
 		return newErrorResponse(http.StatusNotFound, requestID(ctx))
-	case errors.Is(err, domain.ErrConsentRequired), errors.Is(err, domain.ErrMediaConflict):
+	case errors.Is(err, mediaapp.ErrConsentRequired), errors.Is(err, mediaapp.ErrMediaConflict):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Request conflicts with current media state."
 		return response
@@ -287,10 +289,10 @@ func (h *MediaHandler) mediaError(ctx context.Context, err error) error {
 	}
 }
 
-func consentResponse(c domain.ConsentRecord) ConsentResponse {
+func consentResponse(c mediaapp.ConsentRecord) ConsentResponse {
 	return ConsentResponse{ID: c.ID, Purpose: c.Purpose, Category: c.Category, Processor: c.Processor, Region: c.Region, PolicyVersion: c.PolicyVersion, MaxRetentionHours: c.MaxRetentionHours, TrainingAllowed: c.TrainingAllowed, Status: c.Status, AgreedAt: c.AgreedAt, WithdrawnAt: c.WithdrawnAt}
 }
-func mediaResponse(m domain.MediaAsset) MediaResponse {
+func mediaResponse(m mediaapp.MediaAsset) MediaResponse {
 	var consentID *string
 	if m.ConsentID != "" {
 		value := m.ConsentID
@@ -298,6 +300,6 @@ func mediaResponse(m domain.MediaAsset) MediaResponse {
 	}
 	return MediaResponse{ID: m.ID, ConsentID: consentID, Purpose: m.Purpose, Category: m.Category, ContentType: m.ContentType, ByteSize: m.ByteSize, Status: m.Status, Reason: m.StableReason, PixelWidth: m.PixelWidth, PixelHeight: m.PixelHeight, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt}
 }
-func deletionResponse(d domain.DeletionRequest) DeletionRequestResponse {
+func deletionResponse(d mediaapp.DeletionRequest) DeletionRequestResponse {
 	return DeletionRequestResponse{ID: d.ID, MediaID: d.MediaID, Status: d.Status, ReadRevokedAt: d.ReadRevokedAt, CompletedAt: d.CompletedAt, BackupExpiresAt: d.BackupExpiresAt, Error: d.StableError, Attempts: d.Attempts, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt}
 }

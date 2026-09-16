@@ -5,7 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -25,20 +26,20 @@ type selfAdultDeclarationRecord struct {
 
 func (selfAdultDeclarationRecord) TableName() string { return "self_adult_declarations" }
 
-func (r *PrivacyRepository) GetSelfAdultDeclaration(ctx context.Context, userID, version string) (domain.SelfAdultDeclaration, error) {
+func (r *PrivacyRepository) GetSelfAdultDeclaration(ctx context.Context, userID, version string) (privacyapp.SelfAdultDeclaration, error) {
 	var record selfAdultDeclarationRecord
 	err := r.database.WithContext(ctx).Where("user_id = ? AND policy_version = ?", userID, version).First(&record).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return emptySelfAdultDeclaration(version), nil
 	}
 	if err != nil {
-		return domain.SelfAdultDeclaration{}, domain.ErrPrivacyUnavailable
+		return privacyapp.SelfAdultDeclaration{}, privacyapp.ErrPrivacyUnavailable
 	}
 	return selfAdultDeclarationFromRecord(record), nil
 }
 
-func (r *PrivacyRepository) ConfirmSelfAdultDeclaration(ctx context.Context, userID, version string, at time.Time) (domain.SelfAdultDeclaration, error) {
-	var result domain.SelfAdultDeclaration
+func (r *PrivacyRepository) ConfirmSelfAdultDeclaration(ctx context.Context, userID, version string, at time.Time) (privacyapp.SelfAdultDeclaration, error) {
+	var result privacyapp.SelfAdultDeclaration
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		record, found, err := lockSelfAdultDeclaration(ctx, tx, userID, version)
 		if err != nil {
@@ -67,13 +68,13 @@ func (r *PrivacyRepository) ConfirmSelfAdultDeclaration(ctx context.Context, use
 		return nil
 	})
 	if err != nil {
-		return domain.SelfAdultDeclaration{}, domain.ErrPrivacyUnavailable
+		return privacyapp.SelfAdultDeclaration{}, privacyapp.ErrPrivacyUnavailable
 	}
 	return result, nil
 }
 
-func (r *PrivacyRepository) WithdrawSelfAdultDeclaration(ctx context.Context, userID, version string, at time.Time) (domain.SelfAdultDeclaration, error) {
-	var result domain.SelfAdultDeclaration
+func (r *PrivacyRepository) WithdrawSelfAdultDeclaration(ctx context.Context, userID, version string, at time.Time) (privacyapp.SelfAdultDeclaration, error) {
+	var result privacyapp.SelfAdultDeclaration
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		record, found, err := lockSelfAdultDeclaration(ctx, tx, userID, version)
 		if err != nil {
@@ -93,7 +94,7 @@ func (r *PrivacyRepository) WithdrawSelfAdultDeclaration(ctx context.Context, us
 		return nil
 	})
 	if err != nil {
-		return domain.SelfAdultDeclaration{}, domain.ErrPrivacyUnavailable
+		return privacyapp.SelfAdultDeclaration{}, privacyapp.ErrPrivacyUnavailable
 	}
 	return result, nil
 }
@@ -107,13 +108,13 @@ func lockSelfAdultDeclaration(ctx context.Context, database *gorm.DB, userID, ve
 	return record, err == nil, err
 }
 
-func emptySelfAdultDeclaration(version string) domain.SelfAdultDeclaration {
-	return domain.SelfAdultDeclaration{PolicyVersion: version}
+func emptySelfAdultDeclaration(version string) privacyapp.SelfAdultDeclaration {
+	return privacyapp.SelfAdultDeclaration{PolicyVersion: version}
 }
 
-func selfAdultDeclarationFromRecord(record selfAdultDeclarationRecord) domain.SelfAdultDeclaration {
+func selfAdultDeclarationFromRecord(record selfAdultDeclarationRecord) privacyapp.SelfAdultDeclaration {
 	confirmedAt := record.ConfirmedAt
-	return domain.SelfAdultDeclaration{
+	return privacyapp.SelfAdultDeclaration{
 		PolicyVersion: record.PolicyVersion,
 		Confirmed:     record.WithdrawnAt == nil,
 		ConfirmedAt:   &confirmedAt,

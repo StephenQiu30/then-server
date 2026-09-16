@@ -10,42 +10,42 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 )
 
 type mediaTransportStub struct {
-	media domain.MediaAsset
+	media mediaapp.MediaAsset
 	err   error
 }
 
-func (s *mediaTransportStub) CreateConsent(context.Context, string, domain.CreateConsentInput) (domain.ConsentRecord, error) {
-	return domain.ConsentRecord{}, s.err
+func (s *mediaTransportStub) CreateConsent(context.Context, string, mediaapp.CreateConsentInput) (mediaapp.ConsentRecord, error) {
+	return mediaapp.ConsentRecord{}, s.err
 }
-func (s *mediaTransportStub) GetConsent(context.Context, string, string) (domain.ConsentRecord, error) {
-	return domain.ConsentRecord{}, s.err
+func (s *mediaTransportStub) GetConsent(context.Context, string, string) (mediaapp.ConsentRecord, error) {
+	return mediaapp.ConsentRecord{}, s.err
 }
-func (s *mediaTransportStub) WithdrawConsent(context.Context, string, string) (domain.ConsentRecord, error) {
-	return domain.ConsentRecord{}, s.err
+func (s *mediaTransportStub) WithdrawConsent(context.Context, string, string) (mediaapp.ConsentRecord, error) {
+	return mediaapp.ConsentRecord{}, s.err
 }
-func (s *mediaTransportStub) CreateMediaUpload(context.Context, string, domain.CreateMediaUploadInput) (domain.MediaUpload, error) {
-	return domain.MediaUpload{}, s.err
+func (s *mediaTransportStub) CreateMediaUpload(context.Context, string, mediaapp.CreateMediaUploadInput) (mediaapp.MediaUpload, error) {
+	return mediaapp.MediaUpload{}, s.err
 }
-func (s *mediaTransportStub) CompleteMediaUpload(context.Context, string, string, domain.CompleteMediaUploadInput) (domain.MediaAsset, error) {
+func (s *mediaTransportStub) CompleteMediaUpload(context.Context, string, string, mediaapp.CompleteMediaUploadInput) (mediaapp.MediaAsset, error) {
 	return s.media, s.err
 }
-func (s *mediaTransportStub) GetMedia(context.Context, string, string) (domain.MediaAsset, error) {
+func (s *mediaTransportStub) GetMedia(context.Context, string, string) (mediaapp.MediaAsset, error) {
 	return s.media, s.err
 }
-func (s *mediaTransportStub) DeleteMedia(context.Context, string, string) (domain.DeletionRequest, error) {
-	return domain.DeletionRequest{}, s.err
+func (s *mediaTransportStub) DeleteMedia(context.Context, string, string) (mediaapp.DeletionRequest, error) {
+	return mediaapp.DeletionRequest{}, s.err
 }
-func (s *mediaTransportStub) GetDeletionRequest(context.Context, string, string) (domain.DeletionRequest, error) {
-	return domain.DeletionRequest{}, s.err
+func (s *mediaTransportStub) GetDeletionRequest(context.Context, string, string) (mediaapp.DeletionRequest, error) {
+	return mediaapp.DeletionRequest{}, s.err
 }
 
 func TestMediaStatusRequiresCookieAndHidesObjectReferences(t *testing.T) {
 	now := time.Date(2026, 9, 15, 8, 0, 0, 0, time.UTC)
-	service := &mediaTransportStub{media: domain.MediaAsset{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a11", ConsentID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Purpose: domain.MediaPurposeAvatarSourcePreparation, Category: domain.MediaCategoryPersonPhoto, ContentType: domain.MediaContentTypeJPEG, ByteSize: 1024, SHA256: strings.Repeat("a", 64), RawObjectKey: "synthetic-secret-key", ObjectVersionID: "synthetic-secret-version", Status: domain.MediaReady, CreatedAt: now, UpdatedAt: now}}
+	service := &mediaTransportStub{media: mediaapp.MediaAsset{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a11", ConsentID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Purpose: mediaapp.MediaPurposeAvatarSourcePreparation, Category: mediaapp.MediaCategoryPersonPhoto, ContentType: mediaapp.MediaContentTypeJPEG, ByteSize: 1024, SHA256: strings.Repeat("a", 64), RawObjectKey: "synthetic-secret-key", ObjectVersionID: "synthetic-secret-version", Status: mediaapp.MediaReady, CreatedAt: now, UpdatedAt: now}}
 	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)), NewMediaHandler(service, true))
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestMediaStatusRequiresCookieAndHidesObjectReferences(t *testing.T) {
 }
 
 func TestMediaDeclaredSizeLimitReturns413(t *testing.T) {
-	service := &mediaTransportStub{err: domain.ErrMediaTooLarge}
+	service := &mediaTransportStub{err: mediaapp.ErrMediaTooLarge}
 	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)), NewMediaHandler(service, true))
 	if err != nil {
 		t.Fatal(err)

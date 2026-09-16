@@ -6,18 +6,21 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
+	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+
 	"github.com/danielgtaylor/huma/v2"
 )
 
 type OutfitPlanHTTPService interface {
-	CreateOutfitPlan(context.Context, string, string, domain.OutfitPlanInput) (domain.OutfitPlan, error)
-	ListOutfitPlans(context.Context, string, int, *string, *string) (domain.OutfitPlanPage, error)
-	GetOutfitPlan(context.Context, string, string) (domain.OutfitPlan, error)
-	UpdateOutfitPlan(context.Context, string, string, int, domain.OutfitPlanInput) (domain.OutfitPlan, error)
-	CancelOutfitPlan(context.Context, string, string, int) (domain.OutfitPlan, error)
-	MarkOutfitPlanNotWorn(context.Context, string, string, int) (domain.OutfitPlan, error)
-	RestoreOutfitPlan(context.Context, string, string, int) (domain.OutfitPlan, error)
+	CreateOutfitPlan(context.Context, string, string, outfitplanapp.OutfitPlanInput) (outfitplanapp.OutfitPlan, error)
+	ListOutfitPlans(context.Context, string, int, *string, *string) (outfitplanapp.OutfitPlanPage, error)
+	GetOutfitPlan(context.Context, string, string) (outfitplanapp.OutfitPlan, error)
+	UpdateOutfitPlan(context.Context, string, string, int, outfitplanapp.OutfitPlanInput) (outfitplanapp.OutfitPlan, error)
+	CancelOutfitPlan(context.Context, string, string, int) (outfitplanapp.OutfitPlan, error)
+	MarkOutfitPlanNotWorn(context.Context, string, string, int) (outfitplanapp.OutfitPlan, error)
+	RestoreOutfitPlan(context.Context, string, string, int) (outfitplanapp.OutfitPlan, error)
 	DeleteOutfitPlan(context.Context, string, string, int) error
 }
 
@@ -62,12 +65,12 @@ type TransitionOutfitPlanRequest struct {
 }
 
 type OutfitPlanItemContentResponse struct {
-	ItemID       string                      `json:"item_id" format:"uuid"`
-	ItemRevision int                         `json:"item_revision" minimum:"1"`
-	Name         string                      `json:"name" minLength:"1" maxLength:"80"`
-	Category     domain.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
-	Availability domain.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
-	Attributes   WardrobeAttributesResponse  `json:"attributes"`
+	ItemID       string                           `json:"item_id" format:"uuid"`
+	ItemRevision int                              `json:"item_revision" minimum:"1"`
+	Name         string                           `json:"name" minLength:"1" maxLength:"80"`
+	Category     wardrobeapp.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
+	Availability wardrobeapp.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
+	Attributes   WardrobeAttributesResponse       `json:"attributes"`
 }
 
 type OutfitPlanItemResponse struct {
@@ -76,15 +79,15 @@ type OutfitPlanItemResponse struct {
 }
 
 type OutfitPlanResponse struct {
-	ID             string                   `json:"id" format:"uuid"`
-	LocalDate      string                   `json:"local_date" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
-	TimeZone       string                   `json:"time_zone" minLength:"1" maxLength:"255"`
-	ContextSummary *string                  `json:"context_summary,omitempty" maxLength:"120"`
-	Status         domain.OutfitPlanStatus  `json:"status" enum:"active,completed,not_worn,cancelled"`
-	Revision       int                      `json:"revision" minimum:"1"`
-	CreatedAt      time.Time                `json:"created_at" format:"date-time"`
-	UpdatedAt      time.Time                `json:"updated_at" format:"date-time"`
-	Items          []OutfitPlanItemResponse `json:"items" minItems:"1" maxItems:"20"`
+	ID             string                         `json:"id" format:"uuid"`
+	LocalDate      string                         `json:"local_date" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
+	TimeZone       string                         `json:"time_zone" minLength:"1" maxLength:"255"`
+	ContextSummary *string                        `json:"context_summary,omitempty" maxLength:"120"`
+	Status         outfitplanapp.OutfitPlanStatus `json:"status" enum:"active,completed,not_worn,cancelled"`
+	Revision       int                            `json:"revision" minimum:"1"`
+	CreatedAt      time.Time                      `json:"created_at" format:"date-time"`
+	UpdatedAt      time.Time                      `json:"updated_at" format:"date-time"`
+	Items          []OutfitPlanItemResponse       `json:"items" minItems:"1" maxItems:"20"`
 }
 
 type OutfitPlanPageResponse struct {
@@ -270,42 +273,42 @@ func (h *OutfitPlanHandler) delete(ctx context.Context, input *deleteOutfitPlanI
 
 func (h *OutfitPlanHandler) error(ctx context.Context, err error) error {
 	switch {
-	case errors.Is(err, domain.ErrInvalidOutfitPlanInput):
+	case errors.Is(err, outfitplanapp.ErrInvalidOutfitPlanInput):
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
-	case errors.Is(err, domain.ErrOutfitPlanNotFound):
+	case errors.Is(err, outfitplanapp.ErrOutfitPlanNotFound):
 		return newErrorResponse(http.StatusNotFound, requestID(ctx))
-	case errors.Is(err, domain.ErrOutfitPlanConflict):
+	case errors.Is(err, outfitplanapp.ErrOutfitPlanConflict):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Outfit plan or wardrobe facts changed."
 		return response
-	case errors.Is(err, domain.ErrOutfitItemsUnavailable):
+	case errors.Is(err, outfitplanapp.ErrOutfitItemsUnavailable):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Confirm every currently unavailable wardrobe item."
 		return response
-	case errors.Is(err, domain.ErrAuthentication):
+	case errors.Is(err, accountapp.ErrAuthentication):
 		return authenticatedSessionError(ctx, h.secureCookie)
 	default:
 		return newErrorResponse(http.StatusInternalServerError, requestID(ctx))
 	}
 }
 
-func outfitPlanCreateInput(request CreateOutfitPlanRequest) domain.OutfitPlanInput {
+func outfitPlanCreateInput(request CreateOutfitPlanRequest) outfitplanapp.OutfitPlanInput {
 	return outfitPlanFields(request.LocalDate, request.TimeZone, request.ContextSummary, request.Items, request.ConfirmedUnavailableIDs)
 }
 
-func outfitPlanUpdateInput(request UpdateOutfitPlanRequest) domain.OutfitPlanInput {
+func outfitPlanUpdateInput(request UpdateOutfitPlanRequest) outfitplanapp.OutfitPlanInput {
 	return outfitPlanFields(request.LocalDate, request.TimeZone, request.ContextSummary, request.Items, request.ConfirmedUnavailableIDs)
 }
 
-func outfitPlanFields(localDate, timeZone string, summary *string, items []OutfitSelectionRequest, confirmed []string) domain.OutfitPlanInput {
-	selections := make([]domain.OutfitSelection, 0, len(items))
+func outfitPlanFields(localDate, timeZone string, summary *string, items []OutfitSelectionRequest, confirmed []string) outfitplanapp.OutfitPlanInput {
+	selections := make([]outfitplanapp.OutfitSelection, 0, len(items))
 	for _, item := range items {
-		selections = append(selections, domain.OutfitSelection{ItemID: item.ItemID, Revision: item.Revision})
+		selections = append(selections, outfitplanapp.OutfitSelection{ItemID: item.ItemID, Revision: item.Revision})
 	}
-	return domain.OutfitPlanInput{LocalDate: localDate, TimeZone: timeZone, ContextSummary: summary, Items: selections, ConfirmedUnavailableIDs: confirmed}
+	return outfitplanapp.OutfitPlanInput{LocalDate: localDate, TimeZone: timeZone, ContextSummary: summary, Items: selections, ConfirmedUnavailableIDs: confirmed}
 }
 
-func outfitPlanResponse(plan domain.OutfitPlan) OutfitPlanResponse {
+func outfitPlanResponse(plan outfitplanapp.OutfitPlan) OutfitPlanResponse {
 	items := make([]OutfitPlanItemResponse, 0, len(plan.Items))
 	for _, item := range plan.Items {
 		response := OutfitPlanItemResponse{Ordinal: item.Ordinal}

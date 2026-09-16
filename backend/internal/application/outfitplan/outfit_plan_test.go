@@ -6,55 +6,55 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 )
 
 type authenticatorStub struct {
-	user domain.User
+	user accountapp.User
 	err  error
 }
 
-func (s authenticatorStub) CurrentUser(context.Context, string) (domain.User, error) {
+func (s authenticatorStub) CurrentUser(context.Context, string) (accountapp.User, error) {
 	return s.user, s.err
 }
 
 type outfitPlanRepositoryStub struct {
 	ownerID  string
 	planID   string
-	input    domain.OutfitPlanInput
+	input    OutfitPlanInput
 	expected int
 	afterID  *string
 	date     *string
 	err      error
 }
 
-func (s *outfitPlanRepositoryStub) CreateOutfitPlan(_ context.Context, ownerID, planID string, input domain.OutfitPlanInput, _ time.Time) (domain.OutfitPlan, error) {
+func (s *outfitPlanRepositoryStub) CreateOutfitPlan(_ context.Context, ownerID, planID string, input OutfitPlanInput, _ time.Time) (OutfitPlan, error) {
 	s.ownerID, s.planID, s.input = ownerID, planID, input
-	return domain.OutfitPlan{ID: planID, OwnerID: ownerID, LocalDate: input.LocalDate, TimeZone: input.TimeZone, ContextSummary: input.ContextSummary, Revision: 1}, s.err
+	return OutfitPlan{ID: planID, OwnerID: ownerID, LocalDate: input.LocalDate, TimeZone: input.TimeZone, ContextSummary: input.ContextSummary, Revision: 1}, s.err
 }
-func (s *outfitPlanRepositoryStub) ListOutfitPlans(_ context.Context, ownerID string, _ int, afterID, date *string) (domain.OutfitPlanPage, error) {
+func (s *outfitPlanRepositoryStub) ListOutfitPlans(_ context.Context, ownerID string, _ int, afterID, date *string) (OutfitPlanPage, error) {
 	s.ownerID, s.afterID, s.date = ownerID, afterID, date
-	return domain.OutfitPlanPage{}, s.err
+	return OutfitPlanPage{}, s.err
 }
-func (s *outfitPlanRepositoryStub) GetOutfitPlan(_ context.Context, ownerID, planID string) (domain.OutfitPlan, error) {
+func (s *outfitPlanRepositoryStub) GetOutfitPlan(_ context.Context, ownerID, planID string) (OutfitPlan, error) {
 	s.ownerID, s.planID = ownerID, planID
-	return domain.OutfitPlan{ID: planID, OwnerID: ownerID}, s.err
+	return OutfitPlan{ID: planID, OwnerID: ownerID}, s.err
 }
-func (s *outfitPlanRepositoryStub) UpdateOutfitPlan(_ context.Context, ownerID, planID string, expected int, input domain.OutfitPlanInput, _ time.Time) (domain.OutfitPlan, error) {
+func (s *outfitPlanRepositoryStub) UpdateOutfitPlan(_ context.Context, ownerID, planID string, expected int, input OutfitPlanInput, _ time.Time) (OutfitPlan, error) {
 	s.ownerID, s.planID, s.expected, s.input = ownerID, planID, expected, input
-	return domain.OutfitPlan{ID: planID, OwnerID: ownerID, Revision: expected + 1}, s.err
+	return OutfitPlan{ID: planID, OwnerID: ownerID, Revision: expected + 1}, s.err
 }
-func (s *outfitPlanRepositoryStub) CancelOutfitPlan(_ context.Context, ownerID, planID string, expected int, _ time.Time) (domain.OutfitPlan, error) {
+func (s *outfitPlanRepositoryStub) CancelOutfitPlan(_ context.Context, ownerID, planID string, expected int, _ time.Time) (OutfitPlan, error) {
 	s.ownerID, s.planID, s.expected = ownerID, planID, expected
-	return domain.OutfitPlan{ID: planID, OwnerID: ownerID, Revision: expected + 1, Status: domain.OutfitPlanCancelled}, s.err
+	return OutfitPlan{ID: planID, OwnerID: ownerID, Revision: expected + 1, Status: OutfitPlanCancelled}, s.err
 }
-func (s *outfitPlanRepositoryStub) MarkOutfitPlanNotWorn(_ context.Context, ownerID, planID string, expected int, _ time.Time) (domain.OutfitPlan, error) {
+func (s *outfitPlanRepositoryStub) MarkOutfitPlanNotWorn(_ context.Context, ownerID, planID string, expected int, _ time.Time) (OutfitPlan, error) {
 	s.ownerID, s.planID, s.expected = ownerID, planID, expected
-	return domain.OutfitPlan{ID: planID, OwnerID: ownerID, Revision: expected + 1, Status: domain.OutfitPlanNotWorn}, s.err
+	return OutfitPlan{ID: planID, OwnerID: ownerID, Revision: expected + 1, Status: OutfitPlanNotWorn}, s.err
 }
-func (s *outfitPlanRepositoryStub) RestoreOutfitPlan(_ context.Context, ownerID, planID string, expected int, _ time.Time) (domain.OutfitPlan, error) {
+func (s *outfitPlanRepositoryStub) RestoreOutfitPlan(_ context.Context, ownerID, planID string, expected int, _ time.Time) (OutfitPlan, error) {
 	s.ownerID, s.planID, s.expected = ownerID, planID, expected
-	return domain.OutfitPlan{ID: planID, OwnerID: ownerID, Revision: expected + 1, Status: domain.OutfitPlanActive}, s.err
+	return OutfitPlan{ID: planID, OwnerID: ownerID, Revision: expected + 1, Status: OutfitPlanActive}, s.err
 }
 func (s *outfitPlanRepositoryStub) DeleteOutfitPlan(_ context.Context, ownerID, planID string, expected int, _ time.Time) error {
 	s.ownerID, s.planID, s.expected = ownerID, planID, expected
@@ -63,7 +63,7 @@ func (s *outfitPlanRepositoryStub) DeleteOutfitPlan(_ context.Context, ownerID, 
 
 func newOutfitPlanServiceForTest(t *testing.T, repository *outfitPlanRepositoryStub) *OutfitPlanService {
 	t.Helper()
-	service, err := NewOutfitPlanService(authenticatorStub{user: domain.User{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a11"}}, repository)
+	service, err := NewOutfitPlanService(authenticatorStub{user: accountapp.User{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a11"}}, repository)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,9 +71,9 @@ func newOutfitPlanServiceForTest(t *testing.T, repository *outfitPlanRepositoryS
 	return service
 }
 
-func validOutfitPlanInput() domain.OutfitPlanInput {
+func validOutfitPlanInput() OutfitPlanInput {
 	summary := "  Work lunch  "
-	return domain.OutfitPlanInput{LocalDate: "2026-09-16", TimeZone: "Asia/Shanghai", ContextSummary: &summary, Items: []domain.OutfitSelection{{ItemID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Revision: 2}}, ConfirmedUnavailableIDs: []string{}}
+	return OutfitPlanInput{LocalDate: "2026-09-16", TimeZone: "Asia/Shanghai", ContextSummary: &summary, Items: []OutfitSelection{{ItemID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Revision: 2}}, ConfirmedUnavailableIDs: []string{}}
 }
 
 func TestOutfitPlanCreateNormalizesAndUsesAuthenticatedOwner(t *testing.T) {
@@ -91,14 +91,14 @@ func TestOutfitPlanCreateNormalizesAndUsesAuthenticatedOwner(t *testing.T) {
 
 func TestOutfitPlanRejectsInvalidInputBeforeRepository(t *testing.T) {
 	planID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400a13"
-	tests := map[string]func(*domain.OutfitPlanInput){
-		"past date":        func(value *domain.OutfitPlanInput) { value.LocalDate = "2026-09-15" },
-		"invalid date":     func(value *domain.OutfitPlanInput) { value.LocalDate = "2026-02-30" },
-		"invalid timezone": func(value *domain.OutfitPlanInput) { value.TimeZone = "Mars/Olympus" },
-		"local timezone":   func(value *domain.OutfitPlanInput) { value.TimeZone = "Local" },
-		"duplicate item":   func(value *domain.OutfitPlanInput) { value.Items = append(value.Items, value.Items[0]) },
-		"zero revision":    func(value *domain.OutfitPlanInput) { value.Items[0].Revision = 0 },
-		"unknown confirmation": func(value *domain.OutfitPlanInput) {
+	tests := map[string]func(*OutfitPlanInput){
+		"past date":        func(value *OutfitPlanInput) { value.LocalDate = "2026-09-15" },
+		"invalid date":     func(value *OutfitPlanInput) { value.LocalDate = "2026-02-30" },
+		"invalid timezone": func(value *OutfitPlanInput) { value.TimeZone = "Mars/Olympus" },
+		"local timezone":   func(value *OutfitPlanInput) { value.TimeZone = "Local" },
+		"duplicate item":   func(value *OutfitPlanInput) { value.Items = append(value.Items, value.Items[0]) },
+		"zero revision":    func(value *OutfitPlanInput) { value.Items[0].Revision = 0 },
+		"unknown confirmation": func(value *OutfitPlanInput) {
 			value.ConfirmedUnavailableIDs = []string{"018f1f74-a2d0-7c6d-9c17-4a0ea2400a99"}
 		},
 	}
@@ -107,7 +107,7 @@ func TestOutfitPlanRejectsInvalidInputBeforeRepository(t *testing.T) {
 			repository := new(outfitPlanRepositoryStub)
 			input := validOutfitPlanInput()
 			mutate(&input)
-			if _, err := newOutfitPlanServiceForTest(t, repository).CreateOutfitPlan(context.Background(), "session", planID, input); !errors.Is(err, domain.ErrInvalidOutfitPlanInput) || repository.ownerID != "" {
+			if _, err := newOutfitPlanServiceForTest(t, repository).CreateOutfitPlan(context.Background(), "session", planID, input); !errors.Is(err, ErrInvalidOutfitPlanInput) || repository.ownerID != "" {
 				t.Fatal("invalid plan input reached repository")
 			}
 		})
@@ -119,7 +119,7 @@ func TestOutfitPlanDateBoundaryUsesSubmittedTimezone(t *testing.T) {
 	service := newOutfitPlanServiceForTest(t, repository)
 	service.now = func() time.Time { return time.Date(2026, 9, 16, 23, 30, 0, 0, time.UTC) }
 	input := validOutfitPlanInput()
-	if _, err := service.CreateOutfitPlan(context.Background(), "session", "018f1f74-a2d0-7c6d-9c17-4a0ea2400a13", input); !errors.Is(err, domain.ErrInvalidOutfitPlanInput) || repository.ownerID != "" {
+	if _, err := service.CreateOutfitPlan(context.Background(), "session", "018f1f74-a2d0-7c6d-9c17-4a0ea2400a13", input); !errors.Is(err, ErrInvalidOutfitPlanInput) || repository.ownerID != "" {
 		t.Fatal("date already past in submitted timezone reached repository")
 	}
 	input.LocalDate = "2026-09-17"
@@ -148,15 +148,15 @@ func TestOutfitPlanCommandsAndListValidation(t *testing.T) {
 		t.Fatal("valid deletion did not reach repository")
 	}
 	for _, limit := range []int{0, 51} {
-		if _, err := service.ListOutfitPlans(context.Background(), "session", limit, nil, nil); !errors.Is(err, domain.ErrInvalidOutfitPlanInput) {
+		if _, err := service.ListOutfitPlans(context.Background(), "session", limit, nil, nil); !errors.Is(err, ErrInvalidOutfitPlanInput) {
 			t.Fatal("invalid plan list limit was accepted")
 		}
 	}
 	invalidDate := "2026-02-30"
-	if _, err := service.ListOutfitPlans(context.Background(), "session", 20, nil, &invalidDate); !errors.Is(err, domain.ErrInvalidOutfitPlanInput) {
+	if _, err := service.ListOutfitPlans(context.Background(), "session", 20, nil, &invalidDate); !errors.Is(err, ErrInvalidOutfitPlanInput) {
 		t.Fatal("invalid plan list date was accepted")
 	}
-	if _, err := service.CancelOutfitPlan(context.Background(), "session", planID, 0); !errors.Is(err, domain.ErrInvalidOutfitPlanInput) {
+	if _, err := service.CancelOutfitPlan(context.Background(), "session", planID, 0); !errors.Is(err, ErrInvalidOutfitPlanInput) {
 		t.Fatal("invalid plan revision was accepted")
 	}
 }

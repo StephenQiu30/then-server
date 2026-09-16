@@ -13,7 +13,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -26,14 +25,14 @@ const (
 )
 
 type AccountRepository interface {
-	CreateAccount(context.Context, domain.User, string, domain.Session) (domain.User, error)
-	FindCredentialByEmail(context.Context, string) (domain.Credential, error)
-	CreateSession(context.Context, domain.Session) error
-	FindUserBySession(context.Context, []byte, time.Time) (domain.User, error)
-	UpdateUser(context.Context, string, int, *string, *string, time.Time) (domain.User, error)
-	FindProfileByUserID(context.Context, string) (domain.PublicProfile, error)
-	FindProfileByHandle(context.Context, string) (domain.PublicProfile, error)
-	PutProfile(context.Context, string, domain.PutProfileInput, time.Time) (domain.PublicProfile, error)
+	CreateAccount(context.Context, User, string, Session) (User, error)
+	FindCredentialByEmail(context.Context, string) (Credential, error)
+	CreateSession(context.Context, Session) error
+	FindUserBySession(context.Context, []byte, time.Time) (User, error)
+	UpdateUser(context.Context, string, int, *string, *string, time.Time) (User, error)
+	FindProfileByUserID(context.Context, string) (PublicProfile, error)
+	FindProfileByHandle(context.Context, string) (PublicProfile, error)
+	PutProfile(context.Context, string, PutProfileInput, time.Time) (PublicProfile, error)
 	DeleteSession(context.Context, []byte) error
 	DeleteUser(context.Context, string) error
 }
@@ -48,11 +47,11 @@ type AccountService struct {
 
 func NewAccountService(repository AccountRepository) (*AccountService, error) {
 	if repository == nil {
-		return nil, domain.ErrAccountUnavailable
+		return nil, ErrAccountUnavailable
 	}
 	dummy, err := bcrypt.GenerateFromPassword([]byte("not-a-real-account-password"), passwordCost)
 	if err != nil {
-		return nil, domain.ErrAccountUnavailable
+		return nil, ErrAccountUnavailable
 	}
 	return &AccountService{
 		repository:        repository,
@@ -63,89 +62,89 @@ func NewAccountService(repository AccountRepository) (*AccountService, error) {
 	}, nil
 }
 
-func (s *AccountService) Register(ctx context.Context, input domain.RegisterAccountInput) (domain.AuthenticatedUser, error) {
+func (s *AccountService) Register(ctx context.Context, input RegisterAccountInput) (AuthenticatedUser, error) {
 	email, ok := normalizeEmail(input.Email)
 	displayName := strings.TrimSpace(input.DisplayName)
 	if !ok || !validDisplayName(displayName) || !validNewPassword(input.Password) {
-		return domain.AuthenticatedUser{}, domain.ErrInvalidAccountInput
+		return AuthenticatedUser{}, ErrInvalidAccountInput
 	}
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), s.passwordCost)
 	if err != nil {
-		return domain.AuthenticatedUser{}, domain.ErrAccountUnavailable
+		return AuthenticatedUser{}, ErrAccountUnavailable
 	}
 	now := s.now().UTC()
 	userID := uuid.NewString()
 	token, tokenHash, err := s.newToken()
 	if err != nil {
-		return domain.AuthenticatedUser{}, domain.ErrAccountUnavailable
+		return AuthenticatedUser{}, ErrAccountUnavailable
 	}
-	user, err := s.repository.CreateAccount(ctx, domain.User{
-		ID: userID, Email: email, DisplayName: displayName, Status: domain.AccountActive,
-		Role: domain.AccountUser, Revision: 1, CreatedAt: now, UpdatedAt: now,
-	}, string(passwordHash), domain.Session{
+	user, err := s.repository.CreateAccount(ctx, User{
+		ID: userID, Email: email, DisplayName: displayName, Status: AccountActive,
+		Role: AccountUser, Revision: 1, CreatedAt: now, UpdatedAt: now,
+	}, string(passwordHash), Session{
 		ID: uuid.NewString(), UserID: userID, TokenHash: tokenHash,
 		CreatedAt: now, ExpiresAt: now.Add(sessionTTL),
 	})
 	if err != nil {
-		return domain.AuthenticatedUser{}, err
+		return AuthenticatedUser{}, err
 	}
-	return domain.AuthenticatedUser{User: user, Token: token, ExpiresAt: now.Add(sessionTTL)}, nil
+	return AuthenticatedUser{User: user, Token: token, ExpiresAt: now.Add(sessionTTL)}, nil
 }
 
-func (s *AccountService) Login(ctx context.Context, input domain.CreateSessionInput) (domain.AuthenticatedUser, error) {
+func (s *AccountService) Login(ctx context.Context, input CreateSessionInput) (AuthenticatedUser, error) {
 	email, ok := normalizeEmail(input.Email)
 	if !ok || len(input.Password) == 0 || len([]byte(input.Password)) > 72 {
-		return domain.AuthenticatedUser{}, domain.ErrAuthentication
+		return AuthenticatedUser{}, ErrAuthentication
 	}
 	credential, err := s.repository.FindCredentialByEmail(ctx, email)
-	if errors.Is(err, domain.ErrAuthentication) {
+	if errors.Is(err, ErrAuthentication) {
 		_ = bcrypt.CompareHashAndPassword(s.dummyPasswordHash, []byte(input.Password))
-		return domain.AuthenticatedUser{}, domain.ErrAuthentication
+		return AuthenticatedUser{}, ErrAuthentication
 	}
 	if err != nil {
-		return domain.AuthenticatedUser{}, err
+		return AuthenticatedUser{}, err
 	}
 	if bcrypt.CompareHashAndPassword([]byte(credential.PasswordHash), []byte(input.Password)) != nil {
-		return domain.AuthenticatedUser{}, domain.ErrAuthentication
+		return AuthenticatedUser{}, ErrAuthentication
 	}
 	now := s.now().UTC()
 	token, tokenHash, err := s.newToken()
 	if err != nil {
-		return domain.AuthenticatedUser{}, domain.ErrAccountUnavailable
+		return AuthenticatedUser{}, ErrAccountUnavailable
 	}
-	if err = s.repository.CreateSession(ctx, domain.Session{
+	if err = s.repository.CreateSession(ctx, Session{
 		ID: uuid.NewString(), UserID: credential.User.ID, TokenHash: tokenHash,
 		CreatedAt: now, ExpiresAt: now.Add(sessionTTL),
 	}); err != nil {
-		return domain.AuthenticatedUser{}, err
+		return AuthenticatedUser{}, err
 	}
-	return domain.AuthenticatedUser{User: credential.User, Token: token, ExpiresAt: now.Add(sessionTTL)}, nil
+	return AuthenticatedUser{User: credential.User, Token: token, ExpiresAt: now.Add(sessionTTL)}, nil
 }
 
-func (s *AccountService) CurrentUser(ctx context.Context, token string) (domain.User, error) {
+func (s *AccountService) CurrentUser(ctx context.Context, token string) (User, error) {
 	hash, ok := hashToken(token)
 	if !ok {
-		return domain.User{}, domain.ErrAuthentication
+		return User{}, ErrAuthentication
 	}
 	return s.repository.FindUserBySession(ctx, hash, s.now().UTC())
 }
 
-func (s *AccountService) UpdateCurrentUser(ctx context.Context, token string, input domain.UpdateCurrentUserInput) (domain.User, error) {
+func (s *AccountService) UpdateCurrentUser(ctx context.Context, token string, input UpdateCurrentUserInput) (User, error) {
 	user, err := s.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.User{}, err
+		return User{}, err
 	}
 	if input.Email == nil && input.DisplayName == nil {
-		return domain.User{}, domain.ErrInvalidAccountInput
+		return User{}, ErrInvalidAccountInput
 	}
 	if input.ExpectedRevision < 1 || input.ExpectedRevision != user.Revision {
-		return domain.User{}, domain.ErrAccountConflict
+		return User{}, ErrAccountConflict
 	}
 	var email *string
 	if input.Email != nil {
 		normalized, ok := normalizeEmail(*input.Email)
 		if !ok {
-			return domain.User{}, domain.ErrInvalidAccountInput
+			return User{}, ErrInvalidAccountInput
 		}
 		email = &normalized
 	}
@@ -153,7 +152,7 @@ func (s *AccountService) UpdateCurrentUser(ctx context.Context, token string, in
 	if input.DisplayName != nil {
 		trimmed := strings.TrimSpace(*input.DisplayName)
 		if !validDisplayName(trimmed) {
-			return domain.User{}, domain.ErrInvalidAccountInput
+			return User{}, ErrInvalidAccountInput
 		}
 		displayName = &trimmed
 	}
@@ -163,7 +162,7 @@ func (s *AccountService) UpdateCurrentUser(ctx context.Context, token string, in
 func (s *AccountService) Logout(ctx context.Context, token string) error {
 	hash, ok := hashToken(token)
 	if !ok {
-		return domain.ErrAuthentication
+		return ErrAuthentication
 	}
 	return s.repository.DeleteSession(ctx, hash)
 }

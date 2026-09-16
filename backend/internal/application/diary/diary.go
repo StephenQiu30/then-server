@@ -7,22 +7,23 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+
 	"github.com/google/uuid"
 )
 
 type Authenticator interface {
-	CurrentUser(context.Context, string) (domain.User, error)
+	CurrentUser(context.Context, string) (accountapp.User, error)
 }
 
 type Repository interface {
-	CreateDiaryEntry(context.Context, string, string, domain.DiaryEntryInput, time.Time) (domain.DiaryEntry, error)
-	ListDiaryEntries(context.Context, string, int, *string, *string, *string) (domain.DiaryEntryPage, error)
-	GetDiaryEntry(context.Context, string, string) (domain.DiaryEntry, error)
-	UpdateDiaryEntry(context.Context, string, string, int, domain.DiaryEntryInput, time.Time) (domain.DiaryEntry, error)
-	DiaryDeletionImpact(context.Context, string, string) (domain.DiaryDeletionImpact, error)
+	CreateDiaryEntry(context.Context, string, string, DiaryEntryInput, time.Time) (DiaryEntry, error)
+	ListDiaryEntries(context.Context, string, int, *string, *string, *string) (DiaryEntryPage, error)
+	GetDiaryEntry(context.Context, string, string) (DiaryEntry, error)
+	UpdateDiaryEntry(context.Context, string, string, int, DiaryEntryInput, time.Time) (DiaryEntry, error)
+	DiaryDeletionImpact(context.Context, string, string) (DiaryDeletionImpact, error)
 	DeleteDiaryEntry(context.Context, string, string, int, time.Time) error
-	CalendarMonth(context.Context, string, string) (domain.CalendarMonth, error)
+	CalendarMonth(context.Context, string, string) (CalendarMonth, error)
 }
 
 type Service struct {
@@ -33,78 +34,78 @@ type Service struct {
 
 func NewService(authenticator Authenticator, repository Repository) (*Service, error) {
 	if authenticator == nil || repository == nil {
-		return nil, domain.ErrDiaryUnavailable
+		return nil, ErrDiaryUnavailable
 	}
 	return &Service{authenticator: authenticator, repository: repository, now: time.Now}, nil
 }
 
-func (s *Service) Create(ctx context.Context, token, entryID string, input domain.DiaryEntryInput) (domain.DiaryEntry, error) {
+func (s *Service) Create(ctx context.Context, token, entryID string, input DiaryEntryInput) (DiaryEntry, error) {
 	user, err := s.authenticator.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.DiaryEntry{}, err
+		return DiaryEntry{}, err
 	}
 	normalized, date, location, ok := normalizeInput(entryID, input)
 	if !ok || date.After(today(s.now().UTC(), location)) {
-		return domain.DiaryEntry{}, domain.ErrInvalidDiaryInput
+		return DiaryEntry{}, ErrInvalidDiaryInput
 	}
 	return s.repository.CreateDiaryEntry(ctx, user.ID, entryID, normalized, s.now().UTC())
 }
 
-func (s *Service) List(ctx context.Context, token string, limit int, afterID, dateFrom, dateTo *string) (domain.DiaryEntryPage, error) {
+func (s *Service) List(ctx context.Context, token string, limit int, afterID, dateFrom, dateTo *string) (DiaryEntryPage, error) {
 	user, err := s.authenticator.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.DiaryEntryPage{}, err
+		return DiaryEntryPage{}, err
 	}
 	if limit < 1 || limit > 50 || afterID != nil && !validUUID(*afterID) {
-		return domain.DiaryEntryPage{}, domain.ErrInvalidDiaryInput
+		return DiaryEntryPage{}, ErrInvalidDiaryInput
 	}
 	var from, to time.Time
 	if dateFrom != nil {
 		if from, err = parseDate(*dateFrom); err != nil {
-			return domain.DiaryEntryPage{}, domain.ErrInvalidDiaryInput
+			return DiaryEntryPage{}, ErrInvalidDiaryInput
 		}
 	}
 	if dateTo != nil {
 		if to, err = parseDate(*dateTo); err != nil {
-			return domain.DiaryEntryPage{}, domain.ErrInvalidDiaryInput
+			return DiaryEntryPage{}, ErrInvalidDiaryInput
 		}
 	}
 	if dateFrom != nil && dateTo != nil && (to.Before(from) || to.Sub(from) > 365*24*time.Hour) {
-		return domain.DiaryEntryPage{}, domain.ErrInvalidDiaryInput
+		return DiaryEntryPage{}, ErrInvalidDiaryInput
 	}
 	return s.repository.ListDiaryEntries(ctx, user.ID, limit, afterID, dateFrom, dateTo)
 }
 
-func (s *Service) Get(ctx context.Context, token, entryID string) (domain.DiaryEntry, error) {
+func (s *Service) Get(ctx context.Context, token, entryID string) (DiaryEntry, error) {
 	user, err := s.authenticator.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.DiaryEntry{}, err
+		return DiaryEntry{}, err
 	}
 	if !validUUID(entryID) {
-		return domain.DiaryEntry{}, domain.ErrInvalidDiaryInput
+		return DiaryEntry{}, ErrInvalidDiaryInput
 	}
 	return s.repository.GetDiaryEntry(ctx, user.ID, entryID)
 }
 
-func (s *Service) Update(ctx context.Context, token, entryID string, expectedRevision int, input domain.DiaryEntryInput) (domain.DiaryEntry, error) {
+func (s *Service) Update(ctx context.Context, token, entryID string, expectedRevision int, input DiaryEntryInput) (DiaryEntry, error) {
 	user, err := s.authenticator.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.DiaryEntry{}, err
+		return DiaryEntry{}, err
 	}
 	normalized, date, location, ok := normalizeInput(entryID, input)
 	if !ok || expectedRevision < 1 || date.After(today(s.now().UTC(), location)) {
-		return domain.DiaryEntry{}, domain.ErrInvalidDiaryInput
+		return DiaryEntry{}, ErrInvalidDiaryInput
 	}
 	return s.repository.UpdateDiaryEntry(ctx, user.ID, entryID, expectedRevision, normalized, s.now().UTC())
 }
 
-func (s *Service) DeletionImpact(ctx context.Context, token, entryID string) (domain.DiaryDeletionImpact, error) {
+func (s *Service) DeletionImpact(ctx context.Context, token, entryID string) (DiaryDeletionImpact, error) {
 	user, err := s.authenticator.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.DiaryDeletionImpact{}, err
+		return DiaryDeletionImpact{}, err
 	}
 	if !validUUID(entryID) {
-		return domain.DiaryDeletionImpact{}, domain.ErrInvalidDiaryInput
+		return DiaryDeletionImpact{}, ErrInvalidDiaryInput
 	}
 	return s.repository.DiaryDeletionImpact(ctx, user.ID, entryID)
 }
@@ -115,62 +116,62 @@ func (s *Service) Delete(ctx context.Context, token, entryID string, expectedRev
 		return err
 	}
 	if !validUUID(entryID) || expectedRevision < 1 {
-		return domain.ErrInvalidDiaryInput
+		return ErrInvalidDiaryInput
 	}
 	return s.repository.DeleteDiaryEntry(ctx, user.ID, entryID, expectedRevision, s.now().UTC())
 }
 
-func (s *Service) Calendar(ctx context.Context, token, month string) (domain.CalendarMonth, error) {
+func (s *Service) Calendar(ctx context.Context, token, month string) (CalendarMonth, error) {
 	user, err := s.authenticator.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.CalendarMonth{}, err
+		return CalendarMonth{}, err
 	}
 	if _, err := time.Parse("2006-01", month); err != nil || len(month) != 7 {
-		return domain.CalendarMonth{}, domain.ErrInvalidDiaryInput
+		return CalendarMonth{}, ErrInvalidDiaryInput
 	}
 	return s.repository.CalendarMonth(ctx, user.ID, month)
 }
 
-func normalizeInput(entryID string, input domain.DiaryEntryInput) (domain.DiaryEntryInput, time.Time, *time.Location, bool) {
+func normalizeInput(entryID string, input DiaryEntryInput) (DiaryEntryInput, time.Time, *time.Location, bool) {
 	if !validUUID(entryID) || len(input.TimeZone) < 1 || len(input.TimeZone) > 255 || len(input.MediaIDs) > 9 {
-		return domain.DiaryEntryInput{}, time.Time{}, nil, false
+		return DiaryEntryInput{}, time.Time{}, nil, false
 	}
 	date, err := parseDate(input.LocalDate)
 	if err != nil {
-		return domain.DiaryEntryInput{}, time.Time{}, nil, false
+		return DiaryEntryInput{}, time.Time{}, nil, false
 	}
 	location, err := time.LoadLocation(input.TimeZone)
 	if err != nil || input.TimeZone == "Local" || hasDisallowedControls(input.TimeZone, false) {
-		return domain.DiaryEntryInput{}, time.Time{}, nil, false
+		return DiaryEntryInput{}, time.Time{}, nil, false
 	}
 	title, ok := normalizeOptional(input.Title, 80, false)
 	if !ok {
-		return domain.DiaryEntryInput{}, time.Time{}, nil, false
+		return DiaryEntryInput{}, time.Time{}, nil, false
 	}
 	body, ok := normalizeOptional(input.Body, 5000, true)
 	if !ok {
-		return domain.DiaryEntryInput{}, time.Time{}, nil, false
+		return DiaryEntryInput{}, time.Time{}, nil, false
 	}
 	mood, ok := normalizeOptional(input.Mood, 40, false)
 	if !ok {
-		return domain.DiaryEntryInput{}, time.Time{}, nil, false
+		return DiaryEntryInput{}, time.Time{}, nil, false
 	}
 	occasion, ok := normalizeOptional(input.Occasion, 40, false)
 	if !ok {
-		return domain.DiaryEntryInput{}, time.Time{}, nil, false
+		return DiaryEntryInput{}, time.Time{}, nil, false
 	}
 	if body == nil && len(input.MediaIDs) == 0 {
-		return domain.DiaryEntryInput{}, time.Time{}, nil, false
+		return DiaryEntryInput{}, time.Time{}, nil, false
 	}
 	for _, reference := range []*string{input.PlanID, input.WearEventID} {
 		if reference != nil && !validUUID(*reference) {
-			return domain.DiaryEntryInput{}, time.Time{}, nil, false
+			return DiaryEntryInput{}, time.Time{}, nil, false
 		}
 	}
 	seen := make(map[string]bool, len(input.MediaIDs))
 	for _, mediaID := range input.MediaIDs {
 		if !validUUID(mediaID) || seen[mediaID] {
-			return domain.DiaryEntryInput{}, time.Time{}, nil, false
+			return DiaryEntryInput{}, time.Time{}, nil, false
 		}
 		seen[mediaID] = true
 	}
@@ -204,11 +205,11 @@ func hasDisallowedControls(value string, multiline bool) bool {
 
 func parseDate(value string) (time.Time, error) {
 	if len(value) != 10 || value[4] != '-' || value[7] != '-' {
-		return time.Time{}, domain.ErrInvalidDiaryInput
+		return time.Time{}, ErrInvalidDiaryInput
 	}
 	date, err := time.Parse("2006-01-02", value)
 	if err != nil || date.Format("2006-01-02") != value {
-		return time.Time{}, domain.ErrInvalidDiaryInput
+		return time.Time{}, ErrInvalidDiaryInput
 	}
 	return date, nil
 }

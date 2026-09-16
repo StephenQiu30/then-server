@@ -10,50 +10,52 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
+	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
 )
 
 type outfitPlanTransportStub struct {
 	token    string
 	planID   string
-	created  domain.OutfitPlanInput
-	updated  domain.OutfitPlanInput
+	created  outfitplanapp.OutfitPlanInput
+	updated  outfitplanapp.OutfitPlanInput
 	expected int
 	err      error
 }
 
-func (s *outfitPlanTransportStub) CreateOutfitPlan(_ context.Context, token, planID string, input domain.OutfitPlanInput) (domain.OutfitPlan, error) {
+func (s *outfitPlanTransportStub) CreateOutfitPlan(_ context.Context, token, planID string, input outfitplanapp.OutfitPlanInput) (outfitplanapp.OutfitPlan, error) {
 	s.token, s.planID, s.created = token, planID, input
 	return outfitPlanFixture(), s.err
 }
-func (s *outfitPlanTransportStub) ListOutfitPlans(_ context.Context, token string, _ int, _, _ *string) (domain.OutfitPlanPage, error) {
+func (s *outfitPlanTransportStub) ListOutfitPlans(_ context.Context, token string, _ int, _, _ *string) (outfitplanapp.OutfitPlanPage, error) {
 	s.token = token
-	return domain.OutfitPlanPage{Plans: []domain.OutfitPlan{outfitPlanFixture()}}, s.err
+	return outfitplanapp.OutfitPlanPage{Plans: []outfitplanapp.OutfitPlan{outfitPlanFixture()}}, s.err
 }
-func (s *outfitPlanTransportStub) GetOutfitPlan(_ context.Context, token, planID string) (domain.OutfitPlan, error) {
+func (s *outfitPlanTransportStub) GetOutfitPlan(_ context.Context, token, planID string) (outfitplanapp.OutfitPlan, error) {
 	s.token, s.planID = token, planID
 	return outfitPlanFixture(), s.err
 }
-func (s *outfitPlanTransportStub) UpdateOutfitPlan(_ context.Context, token, planID string, expected int, input domain.OutfitPlanInput) (domain.OutfitPlan, error) {
+func (s *outfitPlanTransportStub) UpdateOutfitPlan(_ context.Context, token, planID string, expected int, input outfitplanapp.OutfitPlanInput) (outfitplanapp.OutfitPlan, error) {
 	s.token, s.planID, s.expected, s.updated = token, planID, expected, input
 	return outfitPlanFixture(), s.err
 }
-func (s *outfitPlanTransportStub) CancelOutfitPlan(_ context.Context, token, planID string, expected int) (domain.OutfitPlan, error) {
+func (s *outfitPlanTransportStub) CancelOutfitPlan(_ context.Context, token, planID string, expected int) (outfitplanapp.OutfitPlan, error) {
 	s.token, s.planID, s.expected = token, planID, expected
 	plan := outfitPlanFixture()
-	plan.Status, plan.Revision = domain.OutfitPlanCancelled, expected+1
+	plan.Status, plan.Revision = outfitplanapp.OutfitPlanCancelled, expected+1
 	return plan, s.err
 }
-func (s *outfitPlanTransportStub) MarkOutfitPlanNotWorn(_ context.Context, token, planID string, expected int) (domain.OutfitPlan, error) {
+func (s *outfitPlanTransportStub) MarkOutfitPlanNotWorn(_ context.Context, token, planID string, expected int) (outfitplanapp.OutfitPlan, error) {
 	s.token, s.planID, s.expected = token, planID, expected
 	plan := outfitPlanFixture()
-	plan.Status, plan.Revision = domain.OutfitPlanNotWorn, expected+1
+	plan.Status, plan.Revision = outfitplanapp.OutfitPlanNotWorn, expected+1
 	return plan, s.err
 }
-func (s *outfitPlanTransportStub) RestoreOutfitPlan(_ context.Context, token, planID string, expected int) (domain.OutfitPlan, error) {
+func (s *outfitPlanTransportStub) RestoreOutfitPlan(_ context.Context, token, planID string, expected int) (outfitplanapp.OutfitPlan, error) {
 	s.token, s.planID, s.expected = token, planID, expected
 	plan := outfitPlanFixture()
-	plan.Status, plan.Revision = domain.OutfitPlanActive, expected+1
+	plan.Status, plan.Revision = outfitplanapp.OutfitPlanActive, expected+1
 	return plan, s.err
 }
 func (s *outfitPlanTransportStub) DeleteOutfitPlan(_ context.Context, token, planID string, expected int) error {
@@ -61,8 +63,8 @@ func (s *outfitPlanTransportStub) DeleteOutfitPlan(_ context.Context, token, pla
 	return s.err
 }
 
-func outfitPlanFixture() domain.OutfitPlan {
-	return domain.OutfitPlan{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400d11", OwnerID: fixtureUser().ID, LocalDate: "2026-09-17", TimeZone: "Asia/Shanghai", Status: domain.OutfitPlanActive, Revision: 1, CreatedAt: time.Date(2026, 9, 16, 3, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 9, 16, 3, 0, 0, 0, time.UTC), Items: []domain.OutfitPlanItemSnapshot{{Ordinal: 0, Content: &domain.OutfitItemContent{ItemID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", ItemRevision: 2, Name: "Blue Shirt", Category: domain.WardrobeTop, Availability: domain.WardrobeWearable, Attributes: domain.WardrobeAttributes{FormalityBand: wardrobeTransportValue(domain.WardrobeFormalitySmartCasual)}}}}}
+func outfitPlanFixture() outfitplanapp.OutfitPlan {
+	return outfitplanapp.OutfitPlan{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400d11", OwnerID: fixtureUser().ID, LocalDate: "2026-09-17", TimeZone: "Asia/Shanghai", Status: outfitplanapp.OutfitPlanActive, Revision: 1, CreatedAt: time.Date(2026, 9, 16, 3, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 9, 16, 3, 0, 0, 0, time.UTC), Items: []outfitplanapp.OutfitPlanItemSnapshot{{Ordinal: 0, Content: &outfitplanapp.OutfitItemContent{ItemID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", ItemRevision: 2, Name: "Blue Shirt", Category: wardrobeapp.WardrobeTop, Availability: wardrobeapp.WardrobeWearable, Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: wardrobeTransportValue(wardrobeapp.WardrobeFormalitySmartCasual)}}}}}
 }
 
 func outfitPlanRouter(t *testing.T, service OutfitPlanHTTPService) *Router {
@@ -142,7 +144,7 @@ func TestOutfitPlanMapsDomainFailures(t *testing.T) {
 	for _, test := range []struct {
 		err    error
 		status int
-	}{{domain.ErrInvalidOutfitPlanInput, http.StatusBadRequest}, {domain.ErrOutfitPlanNotFound, http.StatusNotFound}, {domain.ErrOutfitPlanConflict, http.StatusConflict}, {domain.ErrOutfitItemsUnavailable, http.StatusConflict}, {domain.ErrAuthentication, http.StatusUnauthorized}} {
+	}{{outfitplanapp.ErrInvalidOutfitPlanInput, http.StatusBadRequest}, {outfitplanapp.ErrOutfitPlanNotFound, http.StatusNotFound}, {outfitplanapp.ErrOutfitPlanConflict, http.StatusConflict}, {outfitplanapp.ErrOutfitItemsUnavailable, http.StatusConflict}, {accountapp.ErrAuthentication, http.StatusUnauthorized}} {
 		router := outfitPlanRouter(t, &outfitPlanTransportStub{err: test.err})
 		request := httptest.NewRequest(http.MethodGet, "/outfit-plans/018f1f74-a2d0-7c6d-9c17-4a0ea2400d11", nil)
 		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})

@@ -6,7 +6,10 @@ import (
 	"slices"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
+	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+	weareventapp "github.com/StephenQiu30/then-server/backend/internal/application/wearevent"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -58,18 +61,18 @@ type outfitPlanDeletionRecord struct {
 
 func (outfitPlanDeletionRecord) TableName() string { return "outfit_plan_deletions" }
 
-func (r *OutfitPlanRepository) CreateOutfitPlan(ctx context.Context, ownerID, planID string, input domain.OutfitPlanInput, at time.Time) (domain.OutfitPlan, error) {
-	var result domain.OutfitPlan
+func (r *OutfitPlanRepository) CreateOutfitPlan(ctx context.Context, ownerID, planID string, input outfitplanapp.OutfitPlanInput, at time.Time) (outfitplanapp.OutfitPlan, error) {
+	var result outfitplanapp.OutfitPlan
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		existing, err := readOutfitPlan(tx, ownerID, planID)
 		if err == nil {
 			if !outfitPlanMatchesInput(existing, input) {
-				return domain.ErrOutfitPlanConflict
+				return outfitplanapp.ErrOutfitPlanConflict
 			}
 			result = existing
 			return nil
 		}
-		if !errors.Is(err, domain.ErrOutfitPlanNotFound) {
+		if !errors.Is(err, outfitplanapp.ErrOutfitPlanNotFound) {
 			return err
 		}
 		var deleted int64
@@ -77,14 +80,14 @@ func (r *OutfitPlanRepository) CreateOutfitPlan(ctx context.Context, ownerID, pl
 			return err
 		}
 		if deleted != 0 {
-			return domain.ErrOutfitPlanConflict
+			return outfitplanapp.ErrOutfitPlanConflict
 		}
 		items, err := snapshotOutfitItems(tx, ownerID, planID, input)
 		if err != nil {
 			return err
 		}
 		date, _ := time.Parse("2006-01-02", input.LocalDate)
-		record := outfitPlanRecord{OwnerID: ownerID, ID: planID, LocalDate: date, TimeZone: input.TimeZone, ContextSummary: input.ContextSummary, Status: string(domain.OutfitPlanActive), Revision: 1, CreatedAt: at, UpdatedAt: at}
+		record := outfitPlanRecord{OwnerID: ownerID, ID: planID, LocalDate: date, TimeZone: input.TimeZone, ContextSummary: input.ContextSummary, Status: string(outfitplanapp.OutfitPlanActive), Revision: 1, CreatedAt: at, UpdatedAt: at}
 		created := tx.Clauses(clause.OnConflict{DoNothing: true}).Omit("Items").Create(&record)
 		if created.Error != nil {
 			return created.Error
@@ -92,7 +95,7 @@ func (r *OutfitPlanRepository) CreateOutfitPlan(ctx context.Context, ownerID, pl
 		if created.RowsAffected == 0 {
 			existing, err := readOutfitPlan(tx, ownerID, planID)
 			if err != nil || !outfitPlanMatchesInput(existing, input) {
-				return domain.ErrOutfitPlanConflict
+				return outfitplanapp.ErrOutfitPlanConflict
 			}
 			result = existing
 			return nil
@@ -104,12 +107,12 @@ func (r *OutfitPlanRepository) CreateOutfitPlan(ctx context.Context, ownerID, pl
 		return nil
 	})
 	if err != nil {
-		return domain.OutfitPlan{}, outfitPlanWriteError(err)
+		return outfitplanapp.OutfitPlan{}, outfitPlanWriteError(err)
 	}
 	return result, nil
 }
 
-func (r *OutfitPlanRepository) ListOutfitPlans(ctx context.Context, ownerID string, limit int, afterID, localDate *string) (domain.OutfitPlanPage, error) {
+func (r *OutfitPlanRepository) ListOutfitPlans(ctx context.Context, ownerID string, limit int, afterID, localDate *string) (outfitplanapp.OutfitPlanPage, error) {
 	query := r.database.WithContext(ctx).Where("owner_id = ?", ownerID)
 	if localDate != nil {
 		query = query.Where("local_date = ?", *localDate)
@@ -121,13 +124,13 @@ func (r *OutfitPlanRepository) ListOutfitPlans(ctx context.Context, ownerID stri
 			cursorQuery = cursorQuery.Where("local_date = ?", *localDate)
 		}
 		if err := cursorQuery.First(&cursor).Error; err != nil {
-			return domain.OutfitPlanPage{}, outfitPlanLookupError(err)
+			return outfitplanapp.OutfitPlanPage{}, outfitPlanLookupError(err)
 		}
 		query = query.Where("local_date < ? OR (local_date = ? AND created_at < ?) OR (local_date = ? AND created_at = ? AND id > ?)", cursor.LocalDate, cursor.LocalDate, cursor.CreatedAt, cursor.LocalDate, cursor.CreatedAt, cursor.ID)
 	}
 	var records []outfitPlanRecord
 	if err := query.Order("local_date DESC").Order("created_at DESC").Order("id ASC").Limit(limit + 1).Find(&records).Error; err != nil {
-		return domain.OutfitPlanPage{}, domain.ErrOutfitPlanUnavailable
+		return outfitplanapp.OutfitPlanPage{}, outfitplanapp.ErrOutfitPlanUnavailable
 	}
 	hasMore := len(records) > limit
 	if hasMore {
@@ -135,9 +138,9 @@ func (r *OutfitPlanRepository) ListOutfitPlans(ctx context.Context, ownerID stri
 	}
 	itemsByPlan, err := readOutfitItemsForPlans(r.database.WithContext(ctx), ownerID, records)
 	if err != nil {
-		return domain.OutfitPlanPage{}, domain.ErrOutfitPlanUnavailable
+		return outfitplanapp.OutfitPlanPage{}, outfitplanapp.ErrOutfitPlanUnavailable
 	}
-	page := domain.OutfitPlanPage{Plans: make([]domain.OutfitPlan, 0, len(records))}
+	page := outfitplanapp.OutfitPlanPage{Plans: make([]outfitplanapp.OutfitPlan, 0, len(records))}
 	for _, record := range records {
 		page.Plans = append(page.Plans, outfitFromRecord(record, itemsByPlan[record.ID]))
 	}
@@ -148,33 +151,33 @@ func (r *OutfitPlanRepository) ListOutfitPlans(ctx context.Context, ownerID stri
 	return page, nil
 }
 
-func (r *OutfitPlanRepository) GetOutfitPlan(ctx context.Context, ownerID, planID string) (domain.OutfitPlan, error) {
+func (r *OutfitPlanRepository) GetOutfitPlan(ctx context.Context, ownerID, planID string) (outfitplanapp.OutfitPlan, error) {
 	plan, err := readOutfitPlan(r.database.WithContext(ctx), ownerID, planID)
 	if err != nil {
-		return domain.OutfitPlan{}, outfitPlanLookupError(err)
+		return outfitplanapp.OutfitPlan{}, outfitPlanLookupError(err)
 	}
 	return plan, nil
 }
 
-func (r *OutfitPlanRepository) UpdateOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, input domain.OutfitPlanInput, at time.Time) (domain.OutfitPlan, error) {
-	var result domain.OutfitPlan
+func (r *OutfitPlanRepository) UpdateOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, input outfitplanapp.OutfitPlanInput, at time.Time) (outfitplanapp.OutfitPlan, error) {
+	var result outfitplanapp.OutfitPlan
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var record outfitPlanRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, planID).First(&record).Error; err != nil {
 			return err
 		}
-		if record.Revision != expectedRevision || record.Status != string(domain.OutfitPlanActive) || record.TimeZone != input.TimeZone {
-			return domain.ErrOutfitPlanConflict
+		if record.Revision != expectedRevision || record.Status != string(outfitplanapp.OutfitPlanActive) || record.TimeZone != input.TimeZone {
+			return outfitplanapp.ErrOutfitPlanConflict
 		}
 		date, _ := time.Parse("2006-01-02", input.LocalDate)
 		location, err := time.LoadLocation(input.TimeZone)
 		if err != nil {
-			return domain.ErrInvalidOutfitPlanInput
+			return outfitplanapp.ErrInvalidOutfitPlanInput
 		}
 		local := at.In(location)
 		today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
 		if date.Before(today) && !sameDate(date, record.LocalDate) {
-			return domain.ErrInvalidOutfitPlanInput
+			return outfitplanapp.ErrInvalidOutfitPlanInput
 		}
 		items, err := snapshotOutfitItems(tx, ownerID, planID, input)
 		if err != nil {
@@ -192,7 +195,7 @@ func (r *OutfitPlanRepository) UpdateOutfitPlan(ctx context.Context, ownerID, pl
 			return updated.Error
 		}
 		if updated.RowsAffected != 1 {
-			return domain.ErrOutfitPlanConflict
+			return outfitplanapp.ErrOutfitPlanConflict
 		}
 		if err := tx.Create(&items).Error; err != nil {
 			return err
@@ -201,25 +204,25 @@ func (r *OutfitPlanRepository) UpdateOutfitPlan(ctx context.Context, ownerID, pl
 		return nil
 	})
 	if err != nil {
-		return domain.OutfitPlan{}, outfitPlanWriteError(err)
+		return outfitplanapp.OutfitPlan{}, outfitPlanWriteError(err)
 	}
 	return result, nil
 }
 
-func (r *OutfitPlanRepository) CancelOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, at time.Time) (domain.OutfitPlan, error) {
-	var result domain.OutfitPlan
+func (r *OutfitPlanRepository) CancelOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, at time.Time) (outfitplanapp.OutfitPlan, error) {
+	var result outfitplanapp.OutfitPlan
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var record outfitPlanRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, planID).First(&record).Error; err != nil {
 			return err
 		}
-		if record.Revision != expectedRevision || record.Status != string(domain.OutfitPlanActive) {
-			return domain.ErrOutfitPlanConflict
+		if record.Revision != expectedRevision || record.Status != string(outfitplanapp.OutfitPlanActive) {
+			return outfitplanapp.ErrOutfitPlanConflict
 		}
 		if at.Before(record.UpdatedAt) {
 			at = record.UpdatedAt
 		}
-		record.Status, record.Revision, record.UpdatedAt = string(domain.OutfitPlanCancelled), record.Revision+1, at
+		record.Status, record.Revision, record.UpdatedAt = string(outfitplanapp.OutfitPlanCancelled), record.Revision+1, at
 		if err := tx.Model(&outfitPlanRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, planID, expectedRevision).Updates(map[string]any{"status": record.Status, "revision": record.Revision, "updated_at": record.UpdatedAt}).Error; err != nil {
 			return err
 		}
@@ -231,35 +234,35 @@ func (r *OutfitPlanRepository) CancelOutfitPlan(ctx context.Context, ownerID, pl
 		return nil
 	})
 	if err != nil {
-		return domain.OutfitPlan{}, outfitPlanWriteError(err)
+		return outfitplanapp.OutfitPlan{}, outfitPlanWriteError(err)
 	}
 	return result, nil
 }
 
-func (r *OutfitPlanRepository) MarkOutfitPlanNotWorn(ctx context.Context, ownerID, planID string, expectedRevision int, at time.Time) (domain.OutfitPlan, error) {
-	return r.transitionOutfitPlan(ctx, ownerID, planID, expectedRevision, domain.OutfitPlanActive, domain.OutfitPlanNotWorn, at)
+func (r *OutfitPlanRepository) MarkOutfitPlanNotWorn(ctx context.Context, ownerID, planID string, expectedRevision int, at time.Time) (outfitplanapp.OutfitPlan, error) {
+	return r.transitionOutfitPlan(ctx, ownerID, planID, expectedRevision, outfitplanapp.OutfitPlanActive, outfitplanapp.OutfitPlanNotWorn, at)
 }
 
-func (r *OutfitPlanRepository) RestoreOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, at time.Time) (domain.OutfitPlan, error) {
-	return r.transitionOutfitPlan(ctx, ownerID, planID, expectedRevision, domain.OutfitPlanNotWorn, domain.OutfitPlanActive, at)
+func (r *OutfitPlanRepository) RestoreOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, at time.Time) (outfitplanapp.OutfitPlan, error) {
+	return r.transitionOutfitPlan(ctx, ownerID, planID, expectedRevision, outfitplanapp.OutfitPlanNotWorn, outfitplanapp.OutfitPlanActive, at)
 }
 
-func (r *OutfitPlanRepository) transitionOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, from, to domain.OutfitPlanStatus, at time.Time) (domain.OutfitPlan, error) {
-	var result domain.OutfitPlan
+func (r *OutfitPlanRepository) transitionOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, from, to outfitplanapp.OutfitPlanStatus, at time.Time) (outfitplanapp.OutfitPlan, error) {
+	var result outfitplanapp.OutfitPlan
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var record outfitPlanRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, planID).First(&record).Error; err != nil {
 			return err
 		}
 		if record.Revision != expectedRevision || record.Status != string(from) {
-			return domain.ErrOutfitPlanConflict
+			return outfitplanapp.ErrOutfitPlanConflict
 		}
 		var linked int64
 		if err := tx.Model(&wearEventRecord{}).Where("owner_id = ? AND source_plan_id = ?", ownerID, planID).Count(&linked).Error; err != nil {
 			return err
 		}
 		if linked != 0 {
-			return domain.ErrOutfitPlanConflict
+			return outfitplanapp.ErrOutfitPlanConflict
 		}
 		if at.Before(record.UpdatedAt) {
 			at = record.UpdatedAt
@@ -270,7 +273,7 @@ func (r *OutfitPlanRepository) transitionOutfitPlan(ctx context.Context, ownerID
 			return updated.Error
 		}
 		if updated.RowsAffected != 1 {
-			return domain.ErrOutfitPlanConflict
+			return outfitplanapp.ErrOutfitPlanConflict
 		}
 		items, err := readOutfitItemsForPlans(tx, ownerID, []outfitPlanRecord{record})
 		if err != nil {
@@ -280,7 +283,7 @@ func (r *OutfitPlanRepository) transitionOutfitPlan(ctx context.Context, ownerID
 		return nil
 	})
 	if err != nil {
-		return domain.OutfitPlan{}, outfitPlanWriteError(err)
+		return outfitplanapp.OutfitPlan{}, outfitPlanWriteError(err)
 	}
 	return result, nil
 }
@@ -292,7 +295,7 @@ func (r *OutfitPlanRepository) DeleteOutfitPlan(ctx context.Context, ownerID, pl
 			return err
 		}
 		if record.Revision != expectedRevision {
-			return domain.ErrOutfitPlanConflict
+			return outfitplanapp.ErrOutfitPlanConflict
 		}
 		if err := createOutfitPlanTombstone(tx, ownerID, planID, at); err != nil {
 			return err
@@ -318,14 +321,14 @@ func unlinkWearEventsFromPlan(tx *gorm.DB, ownerID, planID string, at time.Time)
 		if updatedAt.Before(event.UpdatedAt) {
 			updatedAt = event.UpdatedAt
 		}
-		if err := tx.Model(&wearEventRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, event.ID, event.Revision).Updates(map[string]any{"source_plan_id": nil, "source_plan_revision": nil, "source_kind": string(domain.WearEventUnplanned), "revision": event.Revision + 1, "updated_at": updatedAt}).Error; err != nil {
+		if err := tx.Model(&wearEventRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, event.ID, event.Revision).Updates(map[string]any{"source_plan_id": nil, "source_plan_revision": nil, "source_kind": string(weareventapp.WearEventUnplanned), "revision": event.Revision + 1, "updated_at": updatedAt}).Error; err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func snapshotOutfitItems(tx *gorm.DB, ownerID, planID string, input domain.OutfitPlanInput) ([]outfitPlanItemRecord, error) {
+func snapshotOutfitItems(tx *gorm.DB, ownerID, planID string, input outfitplanapp.OutfitPlanInput) ([]outfitPlanItemRecord, error) {
 	ids := make([]string, len(input.Items))
 	for index, item := range input.Items {
 		ids[index] = item.ItemID
@@ -335,7 +338,7 @@ func snapshotOutfitItems(tx *gorm.DB, ownerID, planID string, input domain.Outfi
 		return nil, err
 	}
 	if len(wardrobe) != len(ids) {
-		return nil, domain.ErrOutfitPlanConflict
+		return nil, outfitplanapp.ErrOutfitPlanConflict
 	}
 	byID := make(map[string]wardrobeItemRecord, len(wardrobe))
 	for _, item := range wardrobe {
@@ -349,14 +352,14 @@ func snapshotOutfitItems(tx *gorm.DB, ownerID, planID string, input domain.Outfi
 	for ordinal, selected := range input.Items {
 		item := byID[selected.ItemID]
 		if item.Revision != selected.Revision {
-			return nil, domain.ErrOutfitPlanConflict
+			return nil, outfitplanapp.ErrOutfitPlanConflict
 		}
-		unavailable := item.Availability != string(domain.WardrobeWearable)
+		unavailable := item.Availability != string(wardrobeapp.WardrobeWearable)
 		if unavailable && !confirmed[item.ID] {
-			return nil, domain.ErrOutfitItemsUnavailable
+			return nil, outfitplanapp.ErrOutfitItemsUnavailable
 		}
 		if !unavailable && confirmed[item.ID] {
-			return nil, domain.ErrOutfitPlanConflict
+			return nil, outfitplanapp.ErrOutfitPlanConflict
 		}
 		itemID, revision, name, category, availability := item.ID, item.Revision, item.Name, item.Category, item.Availability
 		items = append(items, outfitPlanItemRecord{OwnerID: ownerID, PlanID: planID, Ordinal: ordinal, WardrobeItemID: &itemID, ItemRevision: &revision, Name: &name, Category: &category, Availability: &availability, FormalityBand: copyString(item.FormalityBand), WarmthBand: copyString(item.WarmthBand), RainUse: copyString(item.RainUse), WalkingUse: copyString(item.WalkingUse)})
@@ -364,14 +367,14 @@ func snapshotOutfitItems(tx *gorm.DB, ownerID, planID string, input domain.Outfi
 	return items, nil
 }
 
-func readOutfitPlan(tx *gorm.DB, ownerID, planID string) (domain.OutfitPlan, error) {
+func readOutfitPlan(tx *gorm.DB, ownerID, planID string) (outfitplanapp.OutfitPlan, error) {
 	var record outfitPlanRecord
 	if err := tx.Where("owner_id = ? AND id = ?", ownerID, planID).First(&record).Error; err != nil {
-		return domain.OutfitPlan{}, outfitPlanLookupError(err)
+		return outfitplanapp.OutfitPlan{}, outfitPlanLookupError(err)
 	}
 	itemsByPlan, err := readOutfitItemsForPlans(tx, ownerID, []outfitPlanRecord{record})
 	if err != nil {
-		return domain.OutfitPlan{}, domain.ErrOutfitPlanUnavailable
+		return outfitplanapp.OutfitPlan{}, outfitplanapp.ErrOutfitPlanUnavailable
 	}
 	return outfitFromRecord(record, itemsByPlan[planID]), nil
 }
@@ -395,20 +398,20 @@ func readOutfitItemsForPlans(tx *gorm.DB, ownerID string, plans []outfitPlanReco
 	return result, nil
 }
 
-func outfitFromRecord(record outfitPlanRecord, items []outfitPlanItemRecord) domain.OutfitPlan {
-	result := domain.OutfitPlan{OwnerID: record.OwnerID, ID: record.ID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, ContextSummary: copyString(record.ContextSummary), Status: domain.OutfitPlanStatus(record.Status), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Items: make([]domain.OutfitPlanItemSnapshot, 0, len(items))}
+func outfitFromRecord(record outfitPlanRecord, items []outfitPlanItemRecord) outfitplanapp.OutfitPlan {
+	result := outfitplanapp.OutfitPlan{OwnerID: record.OwnerID, ID: record.ID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, ContextSummary: copyString(record.ContextSummary), Status: outfitplanapp.OutfitPlanStatus(record.Status), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Items: make([]outfitplanapp.OutfitPlanItemSnapshot, 0, len(items))}
 	for _, item := range items {
-		snapshot := domain.OutfitPlanItemSnapshot{Ordinal: item.Ordinal}
+		snapshot := outfitplanapp.OutfitPlanItemSnapshot{Ordinal: item.Ordinal}
 		if !item.Redacted && item.WardrobeItemID != nil && item.ItemRevision != nil && item.Name != nil && item.Category != nil && item.Availability != nil {
-			snapshot.Content = &domain.OutfitItemContent{ItemID: *item.WardrobeItemID, ItemRevision: *item.ItemRevision, Name: *item.Name, Category: domain.WardrobeCategory(*item.Category), Availability: domain.WardrobeAvailability(*item.Availability), Attributes: domain.WardrobeAttributes{FormalityBand: typedPointer[domain.WardrobeFormalityBand](item.FormalityBand), WarmthBand: typedPointer[domain.WardrobeWarmthBand](item.WarmthBand), RainUse: typedPointer[domain.WardrobeUseSuitability](item.RainUse), WalkingUse: typedPointer[domain.WardrobeUseSuitability](item.WalkingUse)}}
+			snapshot.Content = &outfitplanapp.OutfitItemContent{ItemID: *item.WardrobeItemID, ItemRevision: *item.ItemRevision, Name: *item.Name, Category: wardrobeapp.WardrobeCategory(*item.Category), Availability: wardrobeapp.WardrobeAvailability(*item.Availability), Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: typedPointer[wardrobeapp.WardrobeFormalityBand](item.FormalityBand), WarmthBand: typedPointer[wardrobeapp.WardrobeWarmthBand](item.WarmthBand), RainUse: typedPointer[wardrobeapp.WardrobeUseSuitability](item.RainUse), WalkingUse: typedPointer[wardrobeapp.WardrobeUseSuitability](item.WalkingUse)}}
 		}
 		result.Items = append(result.Items, snapshot)
 	}
 	return result
 }
 
-func outfitPlanMatchesInput(plan domain.OutfitPlan, input domain.OutfitPlanInput) bool {
-	if plan.Status != domain.OutfitPlanActive || plan.LocalDate != input.LocalDate || plan.TimeZone != input.TimeZone || !stringsEqual(plan.ContextSummary, input.ContextSummary) || len(plan.Items) != len(input.Items) {
+func outfitPlanMatchesInput(plan outfitplanapp.OutfitPlan, input outfitplanapp.OutfitPlanInput) bool {
+	if plan.Status != outfitplanapp.OutfitPlanActive || plan.LocalDate != input.LocalDate || plan.TimeZone != input.TimeZone || !stringsEqual(plan.ContextSummary, input.ContextSummary) || len(plan.Items) != len(input.Items) {
 		return false
 	}
 	confirmed := make(map[string]bool, len(input.ConfirmedUnavailableIDs))
@@ -417,7 +420,7 @@ func outfitPlanMatchesInput(plan domain.OutfitPlan, input domain.OutfitPlanInput
 	}
 	for index, selected := range input.Items {
 		content := plan.Items[index].Content
-		if content == nil || content.ItemID != selected.ItemID || content.ItemRevision != selected.Revision || confirmed[selected.ItemID] != (content.Availability != domain.WardrobeWearable) {
+		if content == nil || content.ItemID != selected.ItemID || content.ItemRevision != selected.Revision || confirmed[selected.ItemID] != (content.Availability != wardrobeapp.WardrobeWearable) {
 			return false
 		}
 	}
@@ -441,25 +444,25 @@ func copyString(value *string) *string {
 }
 
 func outfitPlanLookupError(err error) error {
-	if errors.Is(err, domain.ErrOutfitPlanNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.ErrOutfitPlanNotFound
+	if errors.Is(err, outfitplanapp.ErrOutfitPlanNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
+		return outfitplanapp.ErrOutfitPlanNotFound
 	}
-	return domain.ErrOutfitPlanUnavailable
+	return outfitplanapp.ErrOutfitPlanUnavailable
 }
 
 func outfitPlanWriteError(err error) error {
 	if err == nil {
 		return nil
 	}
-	for _, known := range []error{domain.ErrInvalidOutfitPlanInput, domain.ErrOutfitPlanNotFound, domain.ErrOutfitPlanConflict, domain.ErrOutfitItemsUnavailable} {
+	for _, known := range []error{outfitplanapp.ErrInvalidOutfitPlanInput, outfitplanapp.ErrOutfitPlanNotFound, outfitplanapp.ErrOutfitPlanConflict, outfitplanapp.ErrOutfitItemsUnavailable} {
 		if errors.Is(err, known) {
 			return known
 		}
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.ErrOutfitPlanNotFound
+		return outfitplanapp.ErrOutfitPlanNotFound
 	}
-	return domain.ErrOutfitPlanUnavailable
+	return outfitplanapp.ErrOutfitPlanUnavailable
 }
 
 func sortedPlanIDs(plans []outfitPlanRecord) []string {

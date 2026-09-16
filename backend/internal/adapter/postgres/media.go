@@ -5,7 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -105,17 +107,17 @@ type inboxReceiptRecord struct {
 
 func (inboxReceiptRecord) TableName() string { return "inbox_receipts" }
 
-func (r *MediaRepository) CreateConsent(ctx context.Context, ownerID string, input domain.CreateConsentInput, at time.Time) (domain.ConsentRecord, error) {
+func (r *MediaRepository) CreateConsent(ctx context.Context, ownerID string, input mediaapp.CreateConsentInput, at time.Time) (mediaapp.ConsentRecord, error) {
 	var result consentRecord
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		err := tx.Where("owner_id = ? AND purpose = ? AND category = ? AND processor = ? AND region = ? AND policy_version = ? AND training_allowed = false AND withdrawn_at IS NULL", ownerID, input.Purpose, input.Category, domain.MediaProcessorThen, domain.MediaRegionLocalDevelopment, input.PolicyVersion).First(&result).Error
+		err := tx.Where("owner_id = ? AND purpose = ? AND category = ? AND processor = ? AND region = ? AND policy_version = ? AND training_allowed = false AND withdrawn_at IS NULL", ownerID, input.Purpose, input.Category, mediaapp.MediaProcessorThen, mediaapp.MediaRegionLocalDevelopment, input.PolicyVersion).First(&result).Error
 		if err == nil {
 			return nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		result = consentRecord{ID: uuid.NewString(), OwnerID: ownerID, Purpose: input.Purpose, Category: input.Category, Processor: domain.MediaProcessorThen, Region: domain.MediaRegionLocalDevelopment, PolicyVersion: input.PolicyVersion, MaxRetentionHours: 24, TrainingAllowed: false, AgreedAt: at}
+		result = consentRecord{ID: uuid.NewString(), OwnerID: ownerID, Purpose: input.Purpose, Category: input.Category, Processor: mediaapp.MediaProcessorThen, Region: mediaapp.MediaRegionLocalDevelopment, PolicyVersion: input.PolicyVersion, MaxRetentionHours: 24, TrainingAllowed: false, AgreedAt: at}
 		created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&result)
 		if created.Error != nil {
 			return created.Error
@@ -123,23 +125,23 @@ func (r *MediaRepository) CreateConsent(ctx context.Context, ownerID string, inp
 		if created.RowsAffected == 1 {
 			return nil
 		}
-		return tx.Where("owner_id = ? AND purpose = ? AND category = ? AND processor = ? AND region = ? AND policy_version = ? AND training_allowed = false AND withdrawn_at IS NULL", ownerID, input.Purpose, input.Category, domain.MediaProcessorThen, domain.MediaRegionLocalDevelopment, input.PolicyVersion).First(&result).Error
+		return tx.Where("owner_id = ? AND purpose = ? AND category = ? AND processor = ? AND region = ? AND policy_version = ? AND training_allowed = false AND withdrawn_at IS NULL", ownerID, input.Purpose, input.Category, mediaapp.MediaProcessorThen, mediaapp.MediaRegionLocalDevelopment, input.PolicyVersion).First(&result).Error
 	})
 	if err != nil {
-		return domain.ConsentRecord{}, domain.ErrMediaUnavailable
+		return mediaapp.ConsentRecord{}, mediaapp.ErrMediaUnavailable
 	}
 	return consentFromRecord(result), nil
 }
 
-func (r *MediaRepository) GetConsent(ctx context.Context, ownerID, consentID string) (domain.ConsentRecord, error) {
+func (r *MediaRepository) GetConsent(ctx context.Context, ownerID, consentID string) (mediaapp.ConsentRecord, error) {
 	var record consentRecord
 	if err := r.database.WithContext(ctx).Where("id = ? AND owner_id = ?", consentID, ownerID).First(&record).Error; err != nil {
-		return domain.ConsentRecord{}, mediaLookupError(err)
+		return mediaapp.ConsentRecord{}, mediaLookupError(err)
 	}
 	return consentFromRecord(record), nil
 }
 
-func (r *MediaRepository) WithdrawConsent(ctx context.Context, ownerID, consentID string, at time.Time) (domain.ConsentRecord, error) {
+func (r *MediaRepository) WithdrawConsent(ctx context.Context, ownerID, consentID string, at time.Time) (mediaapp.ConsentRecord, error) {
 	var record consentRecord
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND owner_id = ?", consentID, ownerID).First(&record).Error; err != nil {
@@ -154,87 +156,87 @@ func (r *MediaRepository) WithdrawConsent(ctx context.Context, ownerID, consentI
 		return nil
 	})
 	if err != nil {
-		return domain.ConsentRecord{}, mediaLookupError(err)
+		return mediaapp.ConsentRecord{}, mediaLookupError(err)
 	}
 	return consentFromRecord(record), nil
 }
 
 func (r *MediaRepository) IsSelfAdultConfirmed(ctx context.Context, ownerID string) (bool, error) {
 	var count int64
-	err := r.database.WithContext(ctx).Model(&selfAdultDeclarationRecord{}).Where("user_id = ? AND policy_version = ? AND withdrawn_at IS NULL", ownerID, domain.CurrentSelfAdultPolicyVersion).Count(&count).Error
+	err := r.database.WithContext(ctx).Model(&selfAdultDeclarationRecord{}).Where("user_id = ? AND policy_version = ? AND withdrawn_at IS NULL", ownerID, privacyapp.CurrentSelfAdultPolicyVersion).Count(&count).Error
 	if err != nil {
-		return false, domain.ErrMediaUnavailable
+		return false, mediaapp.ErrMediaUnavailable
 	}
 	return count == 1, nil
 }
 
-func (r *MediaRepository) CreateMedia(ctx context.Context, ownerID string, input domain.CreateMediaUploadInput, at time.Time) (domain.MediaAsset, error) {
+func (r *MediaRepository) CreateMedia(ctx context.Context, ownerID string, input mediaapp.CreateMediaUploadInput, at time.Time) (mediaapp.MediaAsset, error) {
 	mediaID := uuid.NewString()
-	category := domain.MediaCategoryOrdinaryImage
+	category := mediaapp.MediaCategoryOrdinaryImage
 	var consentID *string
-	if input.Purpose == domain.MediaPurposeAvatarSourcePreparation {
-		category = domain.MediaCategoryPersonPhoto
+	if input.Purpose == mediaapp.MediaPurposeAvatarSourcePreparation {
+		category = mediaapp.MediaCategoryPersonPhoto
 		consentID = &input.ConsentID
 	}
-	record := mediaAssetRecord{ID: mediaID, OwnerID: ownerID, ConsentID: consentID, Purpose: input.Purpose, Category: category, ContentType: input.ContentType, ByteSize: input.ByteSize, SHA256: input.SHA256, RawObjectKey: "owners/" + ownerID + "/media/" + mediaID + "/source.jpg", Status: string(domain.MediaPendingUpload), UploadExpiresAt: at.Add(domain.UploadIntentLifetime), CreatedAt: at, UpdatedAt: at}
+	record := mediaAssetRecord{ID: mediaID, OwnerID: ownerID, ConsentID: consentID, Purpose: input.Purpose, Category: category, ContentType: input.ContentType, ByteSize: input.ByteSize, SHA256: input.SHA256, RawObjectKey: "owners/" + ownerID + "/media/" + mediaID + "/source.jpg", Status: string(mediaapp.MediaPendingUpload), UploadExpiresAt: at.Add(mediaapp.UploadIntentLifetime), CreatedAt: at, UpdatedAt: at}
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user userRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", ownerID).First(&user).Error; err != nil {
 			return err
 		}
-		if input.Purpose == domain.MediaPurposeAvatarSourcePreparation {
+		if input.Purpose == mediaapp.MediaPurposeAvatarSourcePreparation {
 			var consent consentRecord
-			if err := tx.Where("id = ? AND owner_id = ? AND purpose = ? AND category = ? AND policy_version = ? AND withdrawn_at IS NULL", input.ConsentID, ownerID, domain.MediaPurposeAvatarSourcePreparation, domain.MediaCategoryPersonPhoto, domain.CurrentMediaPolicyVersion).First(&consent).Error; err != nil {
+			if err := tx.Where("id = ? AND owner_id = ? AND purpose = ? AND category = ? AND policy_version = ? AND withdrawn_at IS NULL", input.ConsentID, ownerID, mediaapp.MediaPurposeAvatarSourcePreparation, mediaapp.MediaCategoryPersonPhoto, mediaapp.CurrentMediaPolicyVersion).First(&consent).Error; err != nil {
 				return err
 			}
 		}
 		return tx.Create(&record).Error
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.MediaAsset{}, domain.ErrConsentRequired
+		return mediaapp.MediaAsset{}, mediaapp.ErrConsentRequired
 	}
 	if err != nil {
-		return domain.MediaAsset{}, domain.ErrMediaUnavailable
+		return mediaapp.MediaAsset{}, mediaapp.ErrMediaUnavailable
 	}
 	return mediaFromRecord(record), nil
 }
 
-func (r *MediaRepository) GetMedia(ctx context.Context, ownerID, mediaID string) (domain.MediaAsset, error) {
+func (r *MediaRepository) GetMedia(ctx context.Context, ownerID, mediaID string) (mediaapp.MediaAsset, error) {
 	var record mediaAssetRecord
 	if err := r.database.WithContext(ctx).Where("id = ? AND owner_id = ?", mediaID, ownerID).First(&record).Error; err != nil {
-		return domain.MediaAsset{}, mediaLookupError(err)
+		return mediaapp.MediaAsset{}, mediaLookupError(err)
 	}
 	return mediaFromRecord(record), nil
 }
 
-func (r *MediaRepository) CompleteMedia(ctx context.Context, ownerID, mediaID, versionID string, _ domain.ObjectFact, at time.Time) (domain.MediaAsset, error) {
+func (r *MediaRepository) CompleteMedia(ctx context.Context, ownerID, mediaID, versionID string, _ mediaapp.ObjectFact, at time.Time) (mediaapp.MediaAsset, error) {
 	var record mediaAssetRecord
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND owner_id = ?", mediaID, ownerID).First(&record).Error; err != nil {
 			return err
 		}
-		if record.Status == string(domain.MediaUploaded) && record.ObjectVersionID == versionID {
+		if record.Status == string(mediaapp.MediaUploaded) && record.ObjectVersionID == versionID {
 			return nil
 		}
-		if record.Status != string(domain.MediaPendingUpload) || record.ObjectVersionID != "" || !at.Before(record.UploadExpiresAt) {
-			return domain.ErrMediaConflict
+		if record.Status != string(mediaapp.MediaPendingUpload) || record.ObjectVersionID != "" || !at.Before(record.UploadExpiresAt) {
+			return mediaapp.ErrMediaConflict
 		}
-		record.Status, record.ObjectVersionID, record.UpdatedAt = string(domain.MediaUploaded), versionID, at
+		record.Status, record.ObjectVersionID, record.UpdatedAt = string(mediaapp.MediaUploaded), versionID, at
 		if err := tx.Model(&record).Updates(map[string]any{"status": record.Status, "object_version_id": versionID, "updated_at": at}).Error; err != nil {
 			return err
 		}
 		return tx.Create(&outboxEventRecord{ID: uuid.NewString(), EventType: "media.uploaded", AggregateID: mediaID, Payload: []byte(`{"media_id":"` + mediaID + `"}`), CreatedAt: at}).Error
 	})
 	if err != nil {
-		if errors.Is(err, domain.ErrMediaConflict) {
-			return domain.MediaAsset{}, err
+		if errors.Is(err, mediaapp.ErrMediaConflict) {
+			return mediaapp.MediaAsset{}, err
 		}
-		return domain.MediaAsset{}, mediaLookupError(err)
+		return mediaapp.MediaAsset{}, mediaLookupError(err)
 	}
 	return mediaFromRecord(record), nil
 }
 
-func (r *MediaRepository) DeleteMedia(ctx context.Context, ownerID, mediaID string, at time.Time) (domain.DeletionRequest, error) {
+func (r *MediaRepository) DeleteMedia(ctx context.Context, ownerID, mediaID string, at time.Time) (mediaapp.DeletionRequest, error) {
 	var request deletionRequestRecord
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var media mediaAssetRecord
@@ -246,14 +248,14 @@ func (r *MediaRepository) DeleteMedia(ctx context.Context, ownerID, mediaID stri
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if media.Status == string(domain.MediaDeleted) {
-			return domain.ErrMediaConflict
+		if media.Status == string(mediaapp.MediaDeleted) {
+			return mediaapp.ErrMediaConflict
 		}
 		if err := unlinkMediaFromDiaries(tx, ownerID, mediaID, at); err != nil {
 			return err
 		}
-		request = deletionRequestRecord{ID: uuid.NewString(), OwnerID: ownerID, MediaID: mediaID, Status: string(domain.DeletionPending), ReadRevokedAt: at, BackupExpiresAt: at, NextAttemptAt: at, CreatedAt: at, UpdatedAt: at}
-		if err := tx.Model(&media).Updates(map[string]any{"status": string(domain.MediaDeleting), "updated_at": at}).Error; err != nil {
+		request = deletionRequestRecord{ID: uuid.NewString(), OwnerID: ownerID, MediaID: mediaID, Status: string(mediaapp.DeletionPending), ReadRevokedAt: at, BackupExpiresAt: at, NextAttemptAt: at, CreatedAt: at, UpdatedAt: at}
+		if err := tx.Model(&media).Updates(map[string]any{"status": string(mediaapp.MediaDeleting), "updated_at": at}).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&request).Error; err != nil {
@@ -262,10 +264,10 @@ func (r *MediaRepository) DeleteMedia(ctx context.Context, ownerID, mediaID stri
 		return tx.Create(&outboxEventRecord{ID: uuid.NewString(), EventType: "media.deletion_requested", AggregateID: mediaID, Payload: []byte(`{"media_id":"` + mediaID + `"}`), CreatedAt: at}).Error
 	})
 	if err != nil {
-		if errors.Is(err, domain.ErrMediaConflict) {
-			return domain.DeletionRequest{}, err
+		if errors.Is(err, mediaapp.ErrMediaConflict) {
+			return mediaapp.DeletionRequest{}, err
 		}
-		return domain.DeletionRequest{}, mediaLookupError(err)
+		return mediaapp.DeletionRequest{}, mediaLookupError(err)
 	}
 	return deletionFromRecord(request), nil
 }
@@ -285,7 +287,7 @@ func unlinkMediaFromDiaries(tx *gorm.DB, ownerID, mediaID string, at time.Time) 
 			return err
 		}
 		if entry.Body == nil && count <= 1 {
-			return domain.ErrMediaConflict
+			return mediaapp.ErrMediaConflict
 		}
 		if err := tx.Where("owner_id = ? AND entry_id = ? AND media_id = ?", ownerID, link.EntryID, mediaID).Delete(&diaryEntryMediaRecord{}).Error; err != nil {
 			return err
@@ -313,25 +315,25 @@ func unlinkMediaFromDiaries(tx *gorm.DB, ownerID, mediaID string, at time.Time) 
 	return nil
 }
 
-func (r *MediaRepository) GetDeletionRequest(ctx context.Context, ownerID, requestID string) (domain.DeletionRequest, error) {
+func (r *MediaRepository) GetDeletionRequest(ctx context.Context, ownerID, requestID string) (mediaapp.DeletionRequest, error) {
 	var record deletionRequestRecord
 	if err := r.database.WithContext(ctx).Where("id = ? AND owner_id = ?", requestID, ownerID).First(&record).Error; err != nil {
-		return domain.DeletionRequest{}, mediaLookupError(err)
+		return mediaapp.DeletionRequest{}, mediaLookupError(err)
 	}
 	return deletionFromRecord(record), nil
 }
 
-func (r *MediaRepository) PendingOutbox(ctx context.Context, limit int) ([]domain.OutboxEvent, error) {
+func (r *MediaRepository) PendingOutbox(ctx context.Context, limit int) ([]mediaapp.OutboxEvent, error) {
 	if limit < 1 || limit > 100 {
-		return nil, domain.ErrMediaUnavailable
+		return nil, mediaapp.ErrMediaUnavailable
 	}
 	var records []outboxEventRecord
 	if err := r.database.WithContext(ctx).Where("published_at IS NULL").Order("created_at ASC").Limit(limit).Find(&records).Error; err != nil {
-		return nil, domain.ErrMediaUnavailable
+		return nil, mediaapp.ErrMediaUnavailable
 	}
-	events := make([]domain.OutboxEvent, 0, len(records))
+	events := make([]mediaapp.OutboxEvent, 0, len(records))
 	for _, record := range records {
-		events = append(events, domain.OutboxEvent{ID: record.ID, EventType: record.EventType, AggregateID: record.AggregateID, CreatedAt: record.CreatedAt})
+		events = append(events, mediaapp.OutboxEvent{ID: record.ID, EventType: record.EventType, AggregateID: record.AggregateID, CreatedAt: record.CreatedAt})
 	}
 	return events, nil
 }
@@ -339,36 +341,36 @@ func (r *MediaRepository) PendingOutbox(ctx context.Context, limit int) ([]domai
 func (r *MediaRepository) MarkOutboxPublished(ctx context.Context, eventID string, at time.Time) error {
 	result := r.database.WithContext(ctx).Model(&outboxEventRecord{}).Where("id = ? AND published_at IS NULL", eventID).Update("published_at", at)
 	if result.Error != nil {
-		return domain.ErrMediaUnavailable
+		return mediaapp.ErrMediaUnavailable
 	}
 	return nil
 }
 
-func (r *MediaRepository) BeginMediaCheck(ctx context.Context, mediaID string, at time.Time) (domain.MediaAsset, bool, error) {
+func (r *MediaRepository) BeginMediaCheck(ctx context.Context, mediaID string, at time.Time) (mediaapp.MediaAsset, bool, error) {
 	var record mediaAssetRecord
 	process := false
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", mediaID).First(&record).Error; err != nil {
 			return err
 		}
-		switch domain.MediaStatus(record.Status) {
-		case domain.MediaUploaded:
-			if record.Purpose == domain.MediaPurposeAvatarSourcePreparation {
+		switch mediaapp.MediaStatus(record.Status) {
+		case mediaapp.MediaUploaded:
+			if record.Purpose == mediaapp.MediaPurposeAvatarSourcePreparation {
 				if record.ConsentID == nil {
-					return domain.ErrMediaConflict
+					return mediaapp.ErrMediaConflict
 				}
 				var consent consentRecord
 				if err := tx.Where("id = ?", *record.ConsentID).First(&consent).Error; err != nil {
 					return err
 				}
 				if consent.WithdrawnAt != nil {
-					record.Status, record.StableReason, record.UpdatedAt = string(domain.MediaRejected), "consent_withdrawn", at
+					record.Status, record.StableReason, record.UpdatedAt = string(mediaapp.MediaRejected), "consent_withdrawn", at
 					return tx.Model(&record).Updates(map[string]any{"status": record.Status, "stable_reason": record.StableReason, "updated_at": at}).Error
 				}
 			}
-			record.Status, record.UpdatedAt, process = string(domain.MediaChecking), at, true
+			record.Status, record.UpdatedAt, process = string(mediaapp.MediaChecking), at, true
 			return tx.Model(&record).Updates(map[string]any{"status": record.Status, "updated_at": at}).Error
-		case domain.MediaChecking:
+		case mediaapp.MediaChecking:
 			process = true
 			return nil
 		default:
@@ -376,14 +378,14 @@ func (r *MediaRepository) BeginMediaCheck(ctx context.Context, mediaID string, a
 		}
 	})
 	if err != nil {
-		return domain.MediaAsset{}, false, mediaLookupError(err)
+		return mediaapp.MediaAsset{}, false, mediaLookupError(err)
 	}
 	return mediaFromRecord(record), process, nil
 }
 
-func (r *MediaRepository) CompleteMediaCheck(ctx context.Context, eventID, mediaID string, derivation *domain.MediaDerivation, width, height int, status domain.MediaStatus, reason string, at time.Time) error {
-	if status != domain.MediaReady && status != domain.MediaRejected {
-		return domain.ErrMediaConflict
+func (r *MediaRepository) CompleteMediaCheck(ctx context.Context, eventID, mediaID string, derivation *mediaapp.MediaDerivation, width, height int, status mediaapp.MediaStatus, reason string, at time.Time) error {
+	if status != mediaapp.MediaReady && status != mediaapp.MediaRejected {
+		return mediaapp.ErrMediaConflict
 	}
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var receipt inboxReceiptRecord
@@ -392,12 +394,12 @@ func (r *MediaRepository) CompleteMediaCheck(ctx context.Context, eventID, media
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		result := tx.Model(&mediaAssetRecord{}).Where("id = ? AND status = ?", mediaID, string(domain.MediaChecking)).Updates(map[string]any{"status": string(status), "stable_reason": reason, "pixel_width": width, "pixel_height": height, "updated_at": at})
+		result := tx.Model(&mediaAssetRecord{}).Where("id = ? AND status = ?", mediaID, string(mediaapp.MediaChecking)).Updates(map[string]any{"status": string(status), "stable_reason": reason, "pixel_width": width, "pixel_height": height, "updated_at": at})
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			return domain.ErrMediaConflict
+			return mediaapp.ErrMediaConflict
 		}
 		if derivation != nil {
 			if err := tx.Create(&mediaDerivationRecord{ID: uuid.NewString(), MediaID: mediaID, ObjectKey: derivation.ObjectKey, ObjectVersionID: derivation.ObjectVersionID, CreatedAt: at}).Error; err != nil {
@@ -407,15 +409,15 @@ func (r *MediaRepository) CompleteMediaCheck(ctx context.Context, eventID, media
 		return tx.Create(&inboxReceiptRecord{EventID: eventID, HandlerName: "media-check", ProcessedAt: at}).Error
 	})
 	if err != nil {
-		if errors.Is(err, domain.ErrMediaConflict) {
+		if errors.Is(err, mediaapp.ErrMediaConflict) {
 			return err
 		}
-		return domain.ErrMediaUnavailable
+		return mediaapp.ErrMediaUnavailable
 	}
 	return nil
 }
 
-func (r *MediaRepository) BeginDeletion(ctx context.Context, mediaID string, at time.Time) (domain.MediaAsset, []domain.MediaDerivation, domain.DeletionRequest, bool, error) {
+func (r *MediaRepository) BeginDeletion(ctx context.Context, mediaID string, at time.Time) (mediaapp.MediaAsset, []mediaapp.MediaDerivation, mediaapp.DeletionRequest, bool, error) {
 	var media mediaAssetRecord
 	var request deletionRequestRecord
 	var records []mediaDerivationRecord
@@ -427,22 +429,22 @@ func (r *MediaRepository) BeginDeletion(ctx context.Context, mediaID string, at 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("media_id = ?", mediaID).First(&request).Error; err != nil {
 			return err
 		}
-		if request.Status == string(domain.DeletionComplete) {
+		if request.Status == string(mediaapp.DeletionComplete) {
 			return nil
 		}
 		process = true
-		request.Status, request.Attempts, request.UpdatedAt = string(domain.DeletionRunning), request.Attempts+1, at
+		request.Status, request.Attempts, request.UpdatedAt = string(mediaapp.DeletionRunning), request.Attempts+1, at
 		if err := tx.Model(&request).Updates(map[string]any{"status": request.Status, "attempts": request.Attempts, "updated_at": at}).Error; err != nil {
 			return err
 		}
 		return tx.Where("media_id = ?", mediaID).Find(&records).Error
 	})
 	if err != nil {
-		return domain.MediaAsset{}, nil, domain.DeletionRequest{}, false, mediaLookupError(err)
+		return mediaapp.MediaAsset{}, nil, mediaapp.DeletionRequest{}, false, mediaLookupError(err)
 	}
-	derivations := make([]domain.MediaDerivation, 0, len(records))
+	derivations := make([]mediaapp.MediaDerivation, 0, len(records))
 	for _, record := range records {
-		derivations = append(derivations, domain.MediaDerivation{ObjectKey: record.ObjectKey, ObjectVersionID: record.ObjectVersionID})
+		derivations = append(derivations, mediaapp.MediaDerivation{ObjectKey: record.ObjectKey, ObjectVersionID: record.ObjectVersionID})
 	}
 	return mediaFromRecord(media), derivations, deletionFromRecord(request), process, nil
 }
@@ -458,30 +460,30 @@ func (r *MediaRepository) CompleteDeletion(ctx context.Context, eventID, mediaID
 		if err := tx.Where("media_id = ?", mediaID).Delete(&mediaDerivationRecord{}).Error; err != nil {
 			return err
 		}
-		result := tx.Model(&mediaAssetRecord{}).Where("id = ? AND status = ?", mediaID, string(domain.MediaDeleting)).Updates(map[string]any{"status": string(domain.MediaDeleted), "raw_object_key": "deleted/" + mediaID, "object_version_id": "", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "stable_reason": "deleted", "updated_at": at})
+		result := tx.Model(&mediaAssetRecord{}).Where("id = ? AND status = ?", mediaID, string(mediaapp.MediaDeleting)).Updates(map[string]any{"status": string(mediaapp.MediaDeleted), "raw_object_key": "deleted/" + mediaID, "object_version_id": "", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "stable_reason": "deleted", "updated_at": at})
 		if result.Error != nil || result.RowsAffected != 1 {
-			return domain.ErrMediaConflict
+			return mediaapp.ErrMediaConflict
 		}
-		result = tx.Model(&deletionRequestRecord{}).Where("media_id = ?", mediaID).Updates(map[string]any{"status": string(domain.DeletionComplete), "completed_at": at, "stable_error": "", "updated_at": at})
+		result = tx.Model(&deletionRequestRecord{}).Where("media_id = ?", mediaID).Updates(map[string]any{"status": string(mediaapp.DeletionComplete), "completed_at": at, "stable_error": "", "updated_at": at})
 		if result.Error != nil || result.RowsAffected != 1 {
-			return domain.ErrMediaConflict
+			return mediaapp.ErrMediaConflict
 		}
 		return tx.Create(&inboxReceiptRecord{EventID: eventID, HandlerName: "media-delete", ProcessedAt: at}).Error
 	})
 }
 
-func (r *MediaRepository) SourceCleanupCandidates(ctx context.Context, at time.Time, limit int) ([]domain.MediaAsset, error) {
+func (r *MediaRepository) SourceCleanupCandidates(ctx context.Context, at time.Time, limit int) ([]mediaapp.MediaAsset, error) {
 	if limit < 1 || limit > 100 {
-		return nil, domain.ErrMediaUnavailable
+		return nil, mediaapp.ErrMediaUnavailable
 	}
 	var records []mediaAssetRecord
 	err := r.database.WithContext(ctx).
-		Where("source_deleted_at IS NULL AND ((status = ? AND created_at <= ?) OR status IN ? OR (status = ? AND updated_at <= ?))", string(domain.MediaPendingUpload), at.Add(-domain.UnfinishedUploadLifetime), []string{string(domain.MediaReady), string(domain.MediaRejected)}, string(domain.MediaDeleted), at.Add(-time.Minute)).
+		Where("source_deleted_at IS NULL AND ((status = ? AND created_at <= ?) OR status IN ? OR (status = ? AND updated_at <= ?))", string(mediaapp.MediaPendingUpload), at.Add(-mediaapp.UnfinishedUploadLifetime), []string{string(mediaapp.MediaReady), string(mediaapp.MediaRejected)}, string(mediaapp.MediaDeleted), at.Add(-time.Minute)).
 		Order("updated_at ASC").Limit(limit).Find(&records).Error
 	if err != nil {
-		return nil, domain.ErrMediaUnavailable
+		return nil, mediaapp.ErrMediaUnavailable
 	}
-	result := make([]domain.MediaAsset, 0, len(records))
+	result := make([]mediaapp.MediaAsset, 0, len(records))
 	for _, record := range records {
 		result = append(result, mediaFromRecord(record))
 	}
@@ -497,39 +499,39 @@ func (r *MediaRepository) MarkSourceDeleted(ctx context.Context, mediaID string,
 		}
 		return mediaLookupError(err)
 	}
-	if domain.MediaStatus(record.Status) == domain.MediaPendingUpload {
-		updates["status"] = string(domain.MediaRejected)
+	if mediaapp.MediaStatus(record.Status) == mediaapp.MediaPendingUpload {
+		updates["status"] = string(mediaapp.MediaRejected)
 		updates["stable_reason"] = "upload_expired"
 	}
 	if err := r.database.WithContext(ctx).Model(&mediaAssetRecord{}).Where("id = ? AND status = ? AND source_deleted_at IS NULL", mediaID, record.Status).Updates(updates).Error; err != nil {
-		return domain.ErrMediaUnavailable
+		return mediaapp.ErrMediaUnavailable
 	}
 	return nil
 }
 
 func mediaLookupError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.ErrMediaNotFound
+		return mediaapp.ErrMediaNotFound
 	}
-	return domain.ErrMediaUnavailable
+	return mediaapp.ErrMediaUnavailable
 }
 
-func consentFromRecord(record consentRecord) domain.ConsentRecord {
-	status := domain.ConsentActive
+func consentFromRecord(record consentRecord) mediaapp.ConsentRecord {
+	status := mediaapp.ConsentActive
 	if record.WithdrawnAt != nil {
-		status = domain.ConsentWithdrawn
+		status = mediaapp.ConsentWithdrawn
 	}
-	return domain.ConsentRecord{ID: record.ID, OwnerID: record.OwnerID, Purpose: record.Purpose, Category: record.Category, Processor: record.Processor, Region: record.Region, PolicyVersion: record.PolicyVersion, MaxRetentionHours: record.MaxRetentionHours, TrainingAllowed: record.TrainingAllowed, Status: status, AgreedAt: record.AgreedAt, WithdrawnAt: record.WithdrawnAt}
+	return mediaapp.ConsentRecord{ID: record.ID, OwnerID: record.OwnerID, Purpose: record.Purpose, Category: record.Category, Processor: record.Processor, Region: record.Region, PolicyVersion: record.PolicyVersion, MaxRetentionHours: record.MaxRetentionHours, TrainingAllowed: record.TrainingAllowed, Status: status, AgreedAt: record.AgreedAt, WithdrawnAt: record.WithdrawnAt}
 }
 
-func mediaFromRecord(record mediaAssetRecord) domain.MediaAsset {
+func mediaFromRecord(record mediaAssetRecord) mediaapp.MediaAsset {
 	consentID := ""
 	if record.ConsentID != nil {
 		consentID = *record.ConsentID
 	}
-	return domain.MediaAsset{ID: record.ID, OwnerID: record.OwnerID, ConsentID: consentID, Purpose: record.Purpose, Category: record.Category, ContentType: record.ContentType, ByteSize: record.ByteSize, SHA256: record.SHA256, RawObjectKey: record.RawObjectKey, ObjectVersionID: record.ObjectVersionID, Status: domain.MediaStatus(record.Status), StableReason: record.StableReason, PixelWidth: record.PixelWidth, PixelHeight: record.PixelHeight, UploadExpiresAt: record.UploadExpiresAt, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, SourceDeletedAt: record.SourceDeletedAt}
+	return mediaapp.MediaAsset{ID: record.ID, OwnerID: record.OwnerID, ConsentID: consentID, Purpose: record.Purpose, Category: record.Category, ContentType: record.ContentType, ByteSize: record.ByteSize, SHA256: record.SHA256, RawObjectKey: record.RawObjectKey, ObjectVersionID: record.ObjectVersionID, Status: mediaapp.MediaStatus(record.Status), StableReason: record.StableReason, PixelWidth: record.PixelWidth, PixelHeight: record.PixelHeight, UploadExpiresAt: record.UploadExpiresAt, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, SourceDeletedAt: record.SourceDeletedAt}
 }
 
-func deletionFromRecord(record deletionRequestRecord) domain.DeletionRequest {
-	return domain.DeletionRequest{ID: record.ID, OwnerID: record.OwnerID, MediaID: record.MediaID, Status: domain.DeletionStatus(record.Status), ReadRevokedAt: record.ReadRevokedAt, CompletedAt: record.CompletedAt, BackupExpiresAt: record.BackupExpiresAt, StableError: record.StableError, Attempts: record.Attempts, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+func deletionFromRecord(record deletionRequestRecord) mediaapp.DeletionRequest {
+	return mediaapp.DeletionRequest{ID: record.ID, OwnerID: record.OwnerID, MediaID: record.MediaID, Status: mediaapp.DeletionStatus(record.Status), ReadRevokedAt: record.ReadRevokedAt, CompletedAt: record.CompletedAt, BackupExpiresAt: record.BackupExpiresAt, StableError: record.StableError, Attempts: record.Attempts, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
 }

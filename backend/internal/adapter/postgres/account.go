@@ -6,7 +6,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -74,7 +76,7 @@ type accountRow struct {
 	UpdatedAt    time.Time `gorm:"column:updated_at"`
 }
 
-func (r *AccountRepository) CreateAccount(ctx context.Context, user domain.User, passwordHash string, session domain.Session) (domain.User, error) {
+func (r *AccountRepository) CreateAccount(ctx context.Context, user accountapp.User, passwordHash string, session accountapp.Session) (accountapp.User, error) {
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := gorm.G[userRecord](tx).Create(ctx, &userRecord{
 			ID: user.ID, DisplayName: user.DisplayName, Status: string(user.Status), Role: string(user.Role),
@@ -93,12 +95,12 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, user domain.User,
 		})
 	})
 	if err != nil {
-		return domain.User{}, mapDatabaseError(err)
+		return accountapp.User{}, mapDatabaseError(err)
 	}
 	return user, nil
 }
 
-func (r *AccountRepository) FindCredentialByEmail(ctx context.Context, email string) (domain.Credential, error) {
+func (r *AccountRepository) FindCredentialByEmail(ctx context.Context, email string) (accountapp.Credential, error) {
 	rows, err := gorm.G[accountRow](r.database).Raw(`
 		SELECT u.id, c.email, u.display_name, u.status, u.role, u.revision,
 		       c.password_hash, u.created_at, u.updated_at
@@ -107,15 +109,15 @@ func (r *AccountRepository) FindCredentialByEmail(ctx context.Context, email str
 		WHERE c.email = ? AND u.status = 'active'
 		LIMIT 1`, email).Find(ctx)
 	if err != nil {
-		return domain.Credential{}, domain.ErrAccountUnavailable
+		return accountapp.Credential{}, accountapp.ErrAccountUnavailable
 	}
 	if len(rows) != 1 {
-		return domain.Credential{}, domain.ErrAuthentication
+		return accountapp.Credential{}, accountapp.ErrAuthentication
 	}
 	return credentialFromRow(rows[0]), nil
 }
 
-func (r *AccountRepository) CreateSession(ctx context.Context, session domain.Session) error {
+func (r *AccountRepository) CreateSession(ctx context.Context, session accountapp.Session) error {
 	err := gorm.G[sessionRecord](r.database).Create(ctx, &sessionRecord{
 		ID: session.ID, UserID: session.UserID, TokenHash: session.TokenHash,
 		ExpiresAt: session.ExpiresAt, CreatedAt: session.CreatedAt,
@@ -123,7 +125,7 @@ func (r *AccountRepository) CreateSession(ctx context.Context, session domain.Se
 	return mapDatabaseError(err)
 }
 
-func (r *AccountRepository) FindUserBySession(ctx context.Context, tokenHash []byte, now time.Time) (domain.User, error) {
+func (r *AccountRepository) FindUserBySession(ctx context.Context, tokenHash []byte, now time.Time) (accountapp.User, error) {
 	rows, err := gorm.G[accountRow](r.database).Raw(`
 		SELECT u.id, c.email, u.display_name, u.status, u.role, u.revision,
 		       '' AS password_hash, u.created_at, u.updated_at
@@ -133,26 +135,26 @@ func (r *AccountRepository) FindUserBySession(ctx context.Context, tokenHash []b
 		WHERE s.token_hash = ? AND s.expires_at > ? AND u.status = 'active'
 		LIMIT 1`, tokenHash, now).Find(ctx)
 	if err != nil {
-		return domain.User{}, domain.ErrAccountUnavailable
+		return accountapp.User{}, accountapp.ErrAccountUnavailable
 	}
 	if len(rows) != 1 {
-		return domain.User{}, domain.ErrAuthentication
+		return accountapp.User{}, accountapp.ErrAuthentication
 	}
 	return userFromRow(rows[0]), nil
 }
 
-func (r *AccountRepository) UpdateUser(ctx context.Context, userID string, expectedRevision int, email, displayName *string, updatedAt time.Time) (domain.User, error) {
-	var result domain.User
+func (r *AccountRepository) UpdateUser(ctx context.Context, userID string, expectedRevision int, email, displayName *string, updatedAt time.Time) (accountapp.User, error) {
+	var result accountapp.User
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current userRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", userID).First(&current).Error; err != nil {
 			return err
 		}
-		if current.Status != string(domain.AccountActive) {
-			return domain.ErrAuthentication
+		if current.Status != string(accountapp.AccountActive) {
+			return accountapp.ErrAuthentication
 		}
 		if current.Revision != expectedRevision {
-			return domain.ErrAccountConflict
+			return accountapp.ErrAccountConflict
 		}
 		if email != nil {
 			rows, err := gorm.G[credentialRecord](tx).Where("user_id = ?", userID).Update(ctx, "email", *email)
@@ -160,7 +162,7 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, userID string, expec
 				return err
 			}
 			if rows != 1 {
-				return domain.ErrAuthentication
+				return accountapp.ErrAuthentication
 			}
 		}
 		updates := map[string]any{"updated_at": updatedAt, "revision": current.Revision + 1}
@@ -172,7 +174,7 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, userID string, expec
 			return resultUpdate.Error
 		}
 		if resultUpdate.RowsAffected != 1 {
-			return domain.ErrAccountConflict
+			return accountapp.ErrAccountConflict
 		}
 		account, err := findAccount(ctx, tx, userID)
 		if err != nil {
@@ -182,7 +184,7 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, userID string, expec
 		return nil
 	})
 	if err != nil {
-		return domain.User{}, mapDatabaseError(err)
+		return accountapp.User{}, mapDatabaseError(err)
 	}
 	return result, nil
 }
@@ -190,10 +192,10 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, userID string, expec
 func (r *AccountRepository) DeleteSession(ctx context.Context, tokenHash []byte) error {
 	rows, err := gorm.G[sessionRecord](r.database).Where("token_hash = ?", tokenHash).Delete(ctx)
 	if err != nil {
-		return domain.ErrAccountUnavailable
+		return accountapp.ErrAccountUnavailable
 	}
 	if rows != 1 {
-		return domain.ErrAuthentication
+		return accountapp.ErrAuthentication
 	}
 	return nil
 }
@@ -205,11 +207,11 @@ func (r *AccountRepository) DeleteUser(ctx context.Context, userID string) error
 			return err
 		}
 		var activeMedia int64
-		if err := tx.Model(&mediaAssetRecord{}).Where("owner_id = ? AND status <> ?", userID, string(domain.MediaDeleted)).Count(&activeMedia).Error; err != nil {
+		if err := tx.Model(&mediaAssetRecord{}).Where("owner_id = ? AND status <> ?", userID, string(mediaapp.MediaDeleted)).Count(&activeMedia).Error; err != nil {
 			return err
 		}
 		if activeMedia != 0 {
-			return domain.ErrAccountMediaConflict
+			return accountapp.ErrAccountMediaConflict
 		}
 		if err := tx.Exec("DELETE FROM inbox_receipts WHERE event_id IN (SELECT id FROM outbox_events WHERE aggregate_id IN (SELECT id FROM media_assets WHERE owner_id = ?))", userID).Error; err != nil {
 			return err
@@ -222,14 +224,14 @@ func (r *AccountRepository) DeleteUser(ctx context.Context, userID string) error
 			return err
 		}
 		if rows != 1 {
-			return domain.ErrAuthentication
+			return accountapp.ErrAuthentication
 		}
 		return nil
 	})
 	return mapDatabaseError(err)
 }
 
-func findAccount(ctx context.Context, database *gorm.DB, userID string) (domain.User, error) {
+func findAccount(ctx context.Context, database *gorm.DB, userID string) (accountapp.User, error) {
 	rows, err := gorm.G[accountRow](database).Raw(`
 		SELECT u.id, c.email, u.display_name, u.status, u.role, u.revision,
 		       '' AS password_hash, u.created_at, u.updated_at
@@ -238,22 +240,22 @@ func findAccount(ctx context.Context, database *gorm.DB, userID string) (domain.
 		WHERE u.id = ? AND u.status = 'active'
 		LIMIT 1`, userID).Find(ctx)
 	if err != nil {
-		return domain.User{}, domain.ErrAccountUnavailable
+		return accountapp.User{}, accountapp.ErrAccountUnavailable
 	}
 	if len(rows) != 1 {
-		return domain.User{}, domain.ErrAuthentication
+		return accountapp.User{}, accountapp.ErrAuthentication
 	}
 	return userFromRow(rows[0]), nil
 }
 
-func credentialFromRow(row accountRow) domain.Credential {
-	return domain.Credential{User: userFromRow(row), PasswordHash: row.PasswordHash}
+func credentialFromRow(row accountRow) accountapp.Credential {
+	return accountapp.Credential{User: userFromRow(row), PasswordHash: row.PasswordHash}
 }
 
-func userFromRow(row accountRow) domain.User {
-	return domain.User{
+func userFromRow(row accountRow) accountapp.User {
+	return accountapp.User{
 		ID: row.ID, Email: row.Email, DisplayName: row.DisplayName,
-		Status: domain.AccountStatus(row.Status), Role: domain.AccountRole(row.Role), Revision: row.Revision,
+		Status: accountapp.AccountStatus(row.Status), Role: accountapp.AccountRole(row.Role), Revision: row.Revision,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }
@@ -263,22 +265,22 @@ func mapDatabaseError(err error) error {
 		return nil
 	}
 	for _, domainError := range []error{
-		domain.ErrAuthentication, domain.ErrAccountConflict, domain.ErrProfileNotFound,
-		domain.ErrProfileConflict, domain.ErrHandleConflict,
+		accountapp.ErrAuthentication, accountapp.ErrAccountConflict, accountapp.ErrProfileNotFound,
+		accountapp.ErrProfileConflict, accountapp.ErrHandleConflict,
 	} {
 		if errors.Is(err, domainError) {
 			return domainError
 		}
 	}
-	if errors.Is(err, domain.ErrAccountMediaConflict) {
-		return domain.ErrAccountMediaConflict
+	if errors.Is(err, accountapp.ErrAccountMediaConflict) {
+		return accountapp.ErrAccountMediaConflict
 	}
 	var postgresError *pgconn.PgError
 	if errors.As(err, &postgresError) && postgresError.Code == "23505" && postgresError.ConstraintName == "user_credentials_email_unique" {
-		return domain.ErrEmailConflict
+		return accountapp.ErrEmailConflict
 	}
 	if errors.As(err, &postgresError) && postgresError.Code == "23505" && postgresError.ConstraintName == "user_profiles_handle_unique" {
-		return domain.ErrHandleConflict
+		return accountapp.ErrHandleConflict
 	}
-	return domain.ErrAccountUnavailable
+	return accountapp.ErrAccountUnavailable
 }

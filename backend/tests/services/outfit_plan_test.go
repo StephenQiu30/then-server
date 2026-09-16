@@ -14,7 +14,6 @@ import (
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
 	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -48,25 +47,25 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 
 	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
 	serviceOK(t, "construct outfit plan account service", err)
-	owner, err := accounts.Register(ctx, domain.RegisterAccountInput{Email: "outfit-owner@example.test", DisplayName: "Owner", Password: "correct-password-owner"})
+	owner, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "outfit-owner@example.test", DisplayName: "Owner", Password: "correct-password-owner"})
 	serviceOK(t, "register outfit plan owner", err)
-	other, err := accounts.Register(ctx, domain.RegisterAccountInput{Email: "outfit-other@example.test", DisplayName: "Other", Password: "correct-password-other"})
+	other, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "outfit-other@example.test", DisplayName: "Other", Password: "correct-password-other"})
 	serviceOK(t, "register second outfit plan owner", err)
 	wardrobe, err := wardrobeapp.NewWardrobeService(accounts, store.NewWardrobeRepository(database))
 	serviceOK(t, "construct outfit plan wardrobe service", err)
 	outfits, err := outfitplanapp.NewOutfitPlanService(accounts, store.NewOutfitPlanRepository(database))
 	serviceOK(t, "construct outfit plan service", err)
 
-	top, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, domain.CreateWardrobeItemInput{
-		ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400c01", Name: "Blue Shirt", Category: domain.WardrobeTop,
-		Availability: domain.WardrobeWearable, Source: domain.WardrobeSourceWardrobe,
-		Attributes: domain.WardrobeAttributes{FormalityBand: wardrobeTestValue(domain.WardrobeFormalitySmartCasual), WarmthBand: wardrobeTestValue(domain.WardrobeWarmthLight)},
+	top, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, wardrobeapp.CreateWardrobeItemInput{
+		ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400c01", Name: "Blue Shirt", Category: wardrobeapp.WardrobeTop,
+		Availability: wardrobeapp.WardrobeWearable, Source: wardrobeapp.WardrobeSourceWardrobe,
+		Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: wardrobeTestValue(wardrobeapp.WardrobeFormalitySmartCasual), WarmthBand: wardrobeTestValue(wardrobeapp.WardrobeWarmthLight)},
 	})
 	serviceOK(t, "create wearable outfit item", err)
-	shoes, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, domain.CreateWardrobeItemInput{
-		ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400c02", Name: "Walking Shoes", Category: domain.WardrobeShoes,
-		Availability: domain.WardrobeLaundry, Source: domain.WardrobeSourceQuickAdd,
-		Attributes: domain.WardrobeAttributes{WalkingUse: wardrobeTestValue(domain.WardrobeUseSuitable)},
+	shoes, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, wardrobeapp.CreateWardrobeItemInput{
+		ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400c02", Name: "Walking Shoes", Category: wardrobeapp.WardrobeShoes,
+		Availability: wardrobeapp.WardrobeLaundry, Source: wardrobeapp.WardrobeSourceQuickAdd,
+		Attributes: wardrobeapp.WardrobeAttributes{WalkingUse: wardrobeTestValue(wardrobeapp.WardrobeUseSuitable)},
 	})
 	serviceOK(t, "create unavailable outfit item", err)
 
@@ -76,14 +75,14 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 	secondDate := time.Now().In(location).AddDate(0, 0, 2).Format("2006-01-02")
 	firstPlanID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400d01"
 	summary := "Office day"
-	firstInput := domain.OutfitPlanInput{
+	firstInput := outfitplanapp.OutfitPlanInput{
 		LocalDate: firstDate, TimeZone: "Asia/Shanghai", ContextSummary: &summary,
-		Items:                   []domain.OutfitSelection{{ItemID: top.ID, Revision: top.Revision}, {ItemID: shoes.ID, Revision: shoes.Revision}},
+		Items:                   []outfitplanapp.OutfitSelection{{ItemID: top.ID, Revision: top.Revision}, {ItemID: shoes.ID, Revision: shoes.Revision}},
 		ConfirmedUnavailableIDs: []string{shoes.ID},
 	}
 	created, err := outfits.CreateOutfitPlan(ctx, owner.Token, firstPlanID, firstInput)
 	serviceOK(t, "create outfit plan with confirmed unavailable item", err)
-	if created.Revision != 1 || created.Status != domain.OutfitPlanActive || len(created.Items) != 2 || created.Items[0].Content == nil || created.Items[0].Content.Name != "Blue Shirt" || created.Items[0].Content.Attributes.FormalityBand == nil {
+	if created.Revision != 1 || created.Status != outfitplanapp.OutfitPlanActive || len(created.Items) != 2 || created.Items[0].Content == nil || created.Items[0].Content.Name != "Blue Shirt" || created.Items[0].Content.Attributes.FormalityBand == nil {
 		t.Fatal("created outfit plan did not preserve its ordered server snapshot")
 	}
 	repeated, err := outfits.CreateOutfitPlan(ctx, owner.Token, firstPlanID, firstInput)
@@ -94,16 +93,16 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 	changedInput := firstInput
 	changedSummary := "Different"
 	changedInput.ContextSummary = &changedSummary
-	if _, err := outfits.CreateOutfitPlan(ctx, owner.Token, firstPlanID, changedInput); !errors.Is(err, domain.ErrOutfitPlanConflict) {
+	if _, err := outfits.CreateOutfitPlan(ctx, owner.Token, firstPlanID, changedInput); !errors.Is(err, outfitplanapp.ErrOutfitPlanConflict) {
 		t.Fatal("same outfit plan ID accepted different content")
 	}
-	if _, err := outfits.GetOutfitPlan(ctx, other.Token, firstPlanID); !errors.Is(err, domain.ErrOutfitPlanNotFound) {
+	if _, err := outfits.GetOutfitPlan(ctx, other.Token, firstPlanID); !errors.Is(err, outfitplanapp.ErrOutfitPlanNotFound) {
 		t.Fatal("cross-owner outfit plan lookup did not return uniform not-found")
 	}
 
-	updatedTop, err := wardrobe.UpdateWardrobeItem(ctx, owner.Token, top.ID, top.Revision, domain.UpdateWardrobeItemInput{
-		Name: "Navy Shirt", Category: domain.WardrobeTop, Availability: domain.WardrobeWearable,
-		Attributes: domain.WardrobeAttributes{FormalityBand: wardrobeTestValue(domain.WardrobeFormalityFormal)},
+	updatedTop, err := wardrobe.UpdateWardrobeItem(ctx, owner.Token, top.ID, top.Revision, wardrobeapp.UpdateWardrobeItemInput{
+		Name: "Navy Shirt", Category: wardrobeapp.WardrobeTop, Availability: wardrobeapp.WardrobeWearable,
+		Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: wardrobeTestValue(wardrobeapp.WardrobeFormalityFormal)},
 	})
 	serviceOK(t, "update wardrobe after outfit snapshot", err)
 	restarted, err := outfitplanapp.NewOutfitPlanService(accounts, store.NewOutfitPlanRepository(database))
@@ -113,12 +112,12 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 	if snapshotted.Items[0].Content == nil || snapshotted.Items[0].Content.Name != "Blue Shirt" || snapshotted.Items[0].Content.ItemRevision != top.Revision {
 		t.Fatal("wardrobe update rewrote an existing outfit snapshot")
 	}
-	staleUpdate := domain.OutfitPlanInput{LocalDate: secondDate, TimeZone: "Asia/Shanghai", Items: []domain.OutfitSelection{{ItemID: top.ID, Revision: top.Revision}}}
-	if _, err := outfits.UpdateOutfitPlan(ctx, owner.Token, firstPlanID, created.Revision, staleUpdate); !errors.Is(err, domain.ErrOutfitPlanConflict) {
+	staleUpdate := outfitplanapp.OutfitPlanInput{LocalDate: secondDate, TimeZone: "Asia/Shanghai", Items: []outfitplanapp.OutfitSelection{{ItemID: top.ID, Revision: top.Revision}}}
+	if _, err := outfits.UpdateOutfitPlan(ctx, owner.Token, firstPlanID, created.Revision, staleUpdate); !errors.Is(err, outfitplanapp.ErrOutfitPlanConflict) {
 		t.Fatal("outfit plan update accepted a stale wardrobe revision")
 	}
 	updatedSummary := "Dinner"
-	currentUpdate := domain.OutfitPlanInput{LocalDate: secondDate, TimeZone: "Asia/Shanghai", ContextSummary: &updatedSummary, Items: []domain.OutfitSelection{{ItemID: top.ID, Revision: updatedTop.Revision}}}
+	currentUpdate := outfitplanapp.OutfitPlanInput{LocalDate: secondDate, TimeZone: "Asia/Shanghai", ContextSummary: &updatedSummary, Items: []outfitplanapp.OutfitSelection{{ItemID: top.ID, Revision: updatedTop.Revision}}}
 	updatedPlan, err := outfits.UpdateOutfitPlan(ctx, owner.Token, firstPlanID, created.Revision, currentUpdate)
 	serviceOK(t, "update outfit plan with current wardrobe revision", err)
 	if updatedPlan.Revision != 2 || updatedPlan.LocalDate != secondDate || len(updatedPlan.Items) != 1 || updatedPlan.Items[0].Content == nil || updatedPlan.Items[0].Content.Name != "Navy Shirt" {
@@ -126,7 +125,7 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 	}
 
 	secondPlanID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400d02"
-	secondInput := domain.OutfitPlanInput{LocalDate: secondDate, TimeZone: "Asia/Shanghai", Items: []domain.OutfitSelection{{ItemID: top.ID, Revision: updatedTop.Revision}}}
+	secondInput := outfitplanapp.OutfitPlanInput{LocalDate: secondDate, TimeZone: "Asia/Shanghai", Items: []outfitplanapp.OutfitSelection{{ItemID: top.ID, Revision: updatedTop.Revision}}}
 	secondPlan, err := outfits.CreateOutfitPlan(ctx, owner.Token, secondPlanID, secondInput)
 	serviceOK(t, "create second outfit plan", err)
 	firstPage, err := outfits.ListOutfitPlans(ctx, owner.Token, 1, nil, nil)
@@ -144,23 +143,23 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 	if len(filtered.Plans) != 2 || filtered.Plans[0].ID == filtered.Plans[1].ID {
 		t.Fatal("outfit plan local-date filter lost same-day plans")
 	}
-	if _, err := outfits.ListOutfitPlans(ctx, other.Token, 1, firstPage.NextAfterID, nil); !errors.Is(err, domain.ErrOutfitPlanNotFound) {
+	if _, err := outfits.ListOutfitPlans(ctx, other.Token, 1, firstPage.NextAfterID, nil); !errors.Is(err, outfitplanapp.ErrOutfitPlanNotFound) {
 		t.Fatal("cross-owner outfit cursor leaked a different result")
 	}
 
 	cancelled, err := outfits.CancelOutfitPlan(ctx, owner.Token, firstPlanID, updatedPlan.Revision)
 	serviceOK(t, "cancel current outfit plan", err)
-	if cancelled.Status != domain.OutfitPlanCancelled || cancelled.Revision != 3 || len(cancelled.Items) != 1 {
+	if cancelled.Status != outfitplanapp.OutfitPlanCancelled || cancelled.Revision != 3 || len(cancelled.Items) != 1 {
 		t.Fatal("cancelled outfit plan lost its snapshot or revision")
 	}
-	if _, err := outfits.UpdateOutfitPlan(ctx, owner.Token, firstPlanID, cancelled.Revision, currentUpdate); !errors.Is(err, domain.ErrOutfitPlanConflict) {
+	if _, err := outfits.UpdateOutfitPlan(ctx, owner.Token, firstPlanID, cancelled.Revision, currentUpdate); !errors.Is(err, outfitplanapp.ErrOutfitPlanConflict) {
 		t.Fatal("cancelled outfit plan remained editable")
 	}
 	serviceOK(t, "delete cancelled outfit plan", outfits.DeleteOutfitPlan(ctx, owner.Token, firstPlanID, cancelled.Revision))
-	if _, err := outfits.GetOutfitPlan(ctx, owner.Token, firstPlanID); !errors.Is(err, domain.ErrOutfitPlanNotFound) {
+	if _, err := outfits.GetOutfitPlan(ctx, owner.Token, firstPlanID); !errors.Is(err, outfitplanapp.ErrOutfitPlanNotFound) {
 		t.Fatal("deleted outfit plan remained readable")
 	}
-	if _, err := outfits.CreateOutfitPlan(ctx, owner.Token, firstPlanID, currentUpdate); !errors.Is(err, domain.ErrOutfitPlanConflict) {
+	if _, err := outfits.CreateOutfitPlan(ctx, owner.Token, firstPlanID, currentUpdate); !errors.Is(err, outfitplanapp.ErrOutfitPlanConflict) {
 		t.Fatal("outfit plan tombstone allowed a late recreate")
 	}
 
@@ -170,9 +169,9 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 		t.Fatal("wardrobe deletion impact missed an affected outfit plan")
 	}
 	thirdPlanID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400d03"
-	thirdPlan, err := outfits.CreateOutfitPlan(ctx, owner.Token, thirdPlanID, domain.OutfitPlanInput{LocalDate: secondDate, TimeZone: "Asia/Shanghai", Items: []domain.OutfitSelection{{ItemID: top.ID, Revision: updatedTop.Revision}}})
+	thirdPlan, err := outfits.CreateOutfitPlan(ctx, owner.Token, thirdPlanID, outfitplanapp.OutfitPlanInput{LocalDate: secondDate, TimeZone: "Asia/Shanghai", Items: []outfitplanapp.OutfitSelection{{ItemID: top.ID, Revision: updatedTop.Revision}}})
 	serviceOK(t, "create plan after deletion impact preview", err)
-	if err := wardrobe.DeleteWardrobeItem(ctx, owner.Token, top.ID, updatedTop.Revision, domain.WardrobeHistoryRedactSnapshots, staleImpact.ExpectedImpact); !errors.Is(err, domain.ErrWardrobeConflict) {
+	if err := wardrobe.DeleteWardrobeItem(ctx, owner.Token, top.ID, updatedTop.Revision, wardrobeapp.WardrobeHistoryRedactSnapshots, staleImpact.ExpectedImpact); !errors.Is(err, wardrobeapp.ErrWardrobeConflict) {
 		t.Fatal("wardrobe deletion accepted a stale impact digest")
 	}
 	freshImpact, err := wardrobe.GetWardrobeDeletionImpact(ctx, owner.Token, top.ID)
@@ -180,7 +179,7 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 	if freshImpact.AffectedPlanCount != 2 {
 		t.Fatal("refreshed wardrobe deletion impact did not include both plans")
 	}
-	serviceOK(t, "delete wardrobe item and redact snapshots", wardrobe.DeleteWardrobeItem(ctx, owner.Token, top.ID, updatedTop.Revision, domain.WardrobeHistoryRedactSnapshots, freshImpact.ExpectedImpact))
+	serviceOK(t, "delete wardrobe item and redact snapshots", wardrobe.DeleteWardrobeItem(ctx, owner.Token, top.ID, updatedTop.Revision, wardrobeapp.WardrobeHistoryRedactSnapshots, freshImpact.ExpectedImpact))
 	for _, expected := range []struct {
 		id       string
 		revision int
@@ -192,19 +191,19 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 		}
 	}
 
-	bag, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, domain.CreateWardrobeItemInput{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400c03", Name: "Canvas Bag", Category: domain.WardrobeBag, Availability: domain.WardrobeWearable, Source: domain.WardrobeSourceWardrobe})
+	bag, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, wardrobeapp.CreateWardrobeItemInput{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400c03", Name: "Canvas Bag", Category: wardrobeapp.WardrobeBag, Availability: wardrobeapp.WardrobeWearable, Source: wardrobeapp.WardrobeSourceWardrobe})
 	serviceOK(t, "create deletion-policy wardrobe item", err)
 	fourthPlanID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400d04"
-	fourthInput := domain.OutfitPlanInput{LocalDate: firstDate, TimeZone: "Asia/Shanghai", Items: []domain.OutfitSelection{{ItemID: bag.ID, Revision: bag.Revision}}}
+	fourthInput := outfitplanapp.OutfitPlanInput{LocalDate: firstDate, TimeZone: "Asia/Shanghai", Items: []outfitplanapp.OutfitSelection{{ItemID: bag.ID, Revision: bag.Revision}}}
 	_, err = outfits.CreateOutfitPlan(ctx, owner.Token, fourthPlanID, fourthInput)
 	serviceOK(t, "create deletion-policy outfit plan", err)
 	bagImpact, err := wardrobe.GetWardrobeDeletionImpact(ctx, owner.Token, bag.ID)
 	serviceOK(t, "read deletion-policy wardrobe impact", err)
-	serviceOK(t, "delete wardrobe item and affected history", wardrobe.DeleteWardrobeItem(ctx, owner.Token, bag.ID, bag.Revision, domain.WardrobeHistoryDeleteAffectedHistory, bagImpact.ExpectedImpact))
-	if _, err := outfits.GetOutfitPlan(ctx, owner.Token, fourthPlanID); !errors.Is(err, domain.ErrOutfitPlanNotFound) {
+	serviceOK(t, "delete wardrobe item and affected history", wardrobe.DeleteWardrobeItem(ctx, owner.Token, bag.ID, bag.Revision, wardrobeapp.WardrobeHistoryDeleteAffectedHistory, bagImpact.ExpectedImpact))
+	if _, err := outfits.GetOutfitPlan(ctx, owner.Token, fourthPlanID); !errors.Is(err, outfitplanapp.ErrOutfitPlanNotFound) {
 		t.Fatal("delete-affected-plans policy left an affected plan readable")
 	}
-	if _, err := outfits.CreateOutfitPlan(ctx, owner.Token, fourthPlanID, fourthInput); !errors.Is(err, domain.ErrOutfitPlanConflict) {
+	if _, err := outfits.CreateOutfitPlan(ctx, owner.Token, fourthPlanID, fourthInput); !errors.Is(err, outfitplanapp.ErrOutfitPlanConflict) {
 		t.Fatal("delete-affected-plans policy omitted the plan tombstone")
 	}
 	if err := database.WithContext(ctx).Exec("UPDATE outfit_plans SET status = 'unknown' WHERE owner_id = ? AND id = ?", owner.User.ID, secondPlanID).Error; err == nil {

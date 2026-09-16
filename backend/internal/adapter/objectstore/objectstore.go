@@ -10,7 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -61,31 +62,31 @@ func (s *Store) Probe(ctx context.Context) error {
 	return nil
 }
 
-func (s *Store) SignUpload(ctx context.Context, media domain.MediaAsset) (domain.SignedUpload, error) {
-	if s == nil || s.client == nil || media.RawObjectKey == "" || media.ContentType != domain.MediaContentTypeJPEG || media.ByteSize <= 0 || media.SHA256 == "" {
-		return domain.SignedUpload{}, errors.New("invalid upload intent")
+func (s *Store) SignUpload(ctx context.Context, asset mediaapp.MediaAsset) (mediaapp.SignedUpload, error) {
+	if s == nil || s.client == nil || asset.RawObjectKey == "" || asset.ContentType != mediaapp.MediaContentTypeJPEG || asset.ByteSize <= 0 || asset.SHA256 == "" {
+		return mediaapp.SignedUpload{}, errors.New("invalid upload intent")
 	}
 	headers := http.Header{}
-	headers.Set("Content-Type", media.ContentType)
-	headers.Set("Content-Length", strconv.FormatInt(media.ByteSize, 10))
-	headers.Set("X-Amz-Meta-Sha256", media.SHA256)
-	u, err := s.client.PresignHeader(ctx, http.MethodPut, RawBucket, media.RawObjectKey, domain.UploadIntentLifetime, url.Values{}, headers)
+	headers.Set("Content-Type", asset.ContentType)
+	headers.Set("Content-Length", strconv.FormatInt(asset.ByteSize, 10))
+	headers.Set("X-Amz-Meta-Sha256", asset.SHA256)
+	u, err := s.client.PresignHeader(ctx, http.MethodPut, RawBucket, asset.RawObjectKey, mediaapp.UploadIntentLifetime, url.Values{}, headers)
 	if err != nil {
-		return domain.SignedUpload{}, errors.New("upload signing failed")
+		return mediaapp.SignedUpload{}, errors.New("upload signing failed")
 	}
-	return domain.SignedUpload{Method: http.MethodPut, URL: u.String(), Headers: map[string]string{"Content-Type": media.ContentType, "Content-Length": strconv.FormatInt(media.ByteSize, 10), "X-Amz-Meta-Sha256": media.SHA256}, ExpiresAt: time.Now().UTC().Add(domain.UploadIntentLifetime)}, nil
+	return mediaapp.SignedUpload{Method: http.MethodPut, URL: u.String(), Headers: map[string]string{"Content-Type": asset.ContentType, "Content-Length": strconv.FormatInt(asset.ByteSize, 10), "X-Amz-Meta-Sha256": asset.SHA256}, ExpiresAt: time.Now().UTC().Add(mediaapp.UploadIntentLifetime)}, nil
 }
 
-func (s *Store) HeadVersion(ctx context.Context, media domain.MediaAsset, versionID string) (domain.ObjectFact, error) {
-	if s == nil || s.client == nil || media.RawObjectKey == "" || versionID == "" {
-		return domain.ObjectFact{}, errors.New("object fact unavailable")
+func (s *Store) HeadVersion(ctx context.Context, asset mediaapp.MediaAsset, versionID string) (mediaapp.ObjectFact, error) {
+	if s == nil || s.client == nil || asset.RawObjectKey == "" || versionID == "" {
+		return mediaapp.ObjectFact{}, errors.New("object fact unavailable")
 	}
-	info, err := s.client.StatObject(ctx, RawBucket, media.RawObjectKey, minio.StatObjectOptions{VersionID: versionID})
+	info, err := s.client.StatObject(ctx, RawBucket, asset.RawObjectKey, minio.StatObjectOptions{VersionID: versionID})
 	if err != nil || info.VersionID != versionID {
-		return domain.ObjectFact{}, errors.New("object version unavailable")
+		return mediaapp.ObjectFact{}, errors.New("object version unavailable")
 	}
 	digest := info.Metadata.Get("X-Amz-Meta-Sha256")
-	return domain.ObjectFact{ContentType: info.ContentType, ByteSize: info.Size, SHA256: digest}, nil
+	return mediaapp.ObjectFact{ContentType: info.ContentType, ByteSize: info.Size, SHA256: digest}, nil
 }
 
 func (s *Store) OpenVersion(ctx context.Context, objectKey, versionID string) (io.ReadCloser, error) {
@@ -107,7 +108,7 @@ func (s *Store) PutDerived(ctx context.Context, objectKey string, reader io.Read
 	if s == nil || s.client == nil || objectKey == "" || reader == nil || size <= 0 {
 		return "", errors.New("derived object invalid")
 	}
-	result, err := s.client.PutObject(ctx, DerivedBucket, objectKey, reader, size, minio.PutObjectOptions{ContentType: domain.MediaContentTypeJPEG})
+	result, err := s.client.PutObject(ctx, DerivedBucket, objectKey, reader, size, minio.PutObjectOptions{ContentType: mediaapp.MediaContentTypeJPEG})
 	if err != nil || result.VersionID == "" {
 		return "", errors.New("derived object write failed")
 	}

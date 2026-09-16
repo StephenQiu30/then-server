@@ -23,9 +23,8 @@ import (
 	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
-	"github.com/StephenQiu30/then-server/backend/internal/application/mediaworker"
+	mediaworkerapp "github.com/StephenQiu30/then-server/backend/internal/application/mediaworker"
 	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -71,17 +70,17 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	serviceOK(t, "open private media store", err)
 	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
 	serviceOK(t, "construct media account service", err)
-	owner, err := accounts.Register(ctx, domain.RegisterAccountInput{Email: "media-owner@example.test", DisplayName: "Media Owner", Password: "correct-password-owner"})
+	owner, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "media-owner@example.test", DisplayName: "Media Owner", Password: "correct-password-owner"})
 	serviceOK(t, "register media owner", err)
-	other, err := accounts.Register(ctx, domain.RegisterAccountInput{Email: "media-other@example.test", DisplayName: "Other Owner", Password: "correct-password-other"})
+	other, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "media-other@example.test", DisplayName: "Other Owner", Password: "correct-password-other"})
 	serviceOK(t, "register second media owner", err)
 	privacy, err := privacyapp.NewPrivacyService(accounts, store.NewPrivacyRepository(database))
 	serviceOK(t, "construct media privacy service", err)
-	_, err = privacy.ConfirmSelfAdultDeclaration(ctx, owner.Token, domain.ConfirmSelfAdultDeclarationInput{PolicyVersion: domain.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true})
+	_, err = privacy.ConfirmSelfAdultDeclaration(ctx, owner.Token, privacyapp.ConfirmSelfAdultDeclarationInput{PolicyVersion: privacyapp.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true})
 	serviceOK(t, "confirm synthetic adult declaration", err)
 	mediaService, err := mediaapp.NewMediaService(accounts, store.NewMediaRepository(database), objects)
 	serviceOK(t, "construct media service", err)
-	consent, err := mediaService.CreateConsent(ctx, owner.Token, domain.CreateConsentInput{Purpose: domain.MediaPurposeAvatarSourcePreparation, Category: domain.MediaCategoryPersonPhoto, PolicyVersion: domain.CurrentMediaPolicyVersion, ActivelyAgreed: true})
+	consent, err := mediaService.CreateConsent(ctx, owner.Token, mediaapp.CreateConsentInput{Purpose: mediaapp.MediaPurposeAvatarSourcePreparation, Category: mediaapp.MediaCategoryPersonPhoto, PolicyVersion: mediaapp.CurrentMediaPolicyVersion, ActivelyAgreed: true})
 	serviceOK(t, "create fixed synthetic consent", err)
 	assertConcurrentConsentIdempotency(t, ctx, database, mediaService, owner.Token, owner.User.ID, consent.ID)
 	assertAccountDeleteAndMediaCreateSerialize(t, ctx, database, accounts, mediaService)
@@ -89,15 +88,15 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 
 	photo := syntheticJPEG(t)
 	digest := fmt.Sprintf("%x", sha256.Sum256(photo))
-	upload, err := mediaService.CreateMediaUpload(ctx, owner.Token, domain.CreateMediaUploadInput{ConsentID: consent.ID, Purpose: domain.MediaPurposeAvatarSourcePreparation, ContentType: domain.MediaContentTypeJPEG, ByteSize: int64(len(photo)), SHA256: digest})
+	upload, err := mediaService.CreateMediaUpload(ctx, owner.Token, mediaapp.CreateMediaUploadInput{ConsentID: consent.ID, Purpose: mediaapp.MediaPurposeAvatarSourcePreparation, ContentType: mediaapp.MediaContentTypeJPEG, ByteSize: int64(len(photo)), SHA256: digest})
 	serviceOK(t, "create signed media upload", err)
-	if upload.Method != http.MethodPut || upload.ExpiresAt.Sub(time.Now()) > domain.UploadIntentLifetime+time.Second {
+	if upload.Method != http.MethodPut || upload.ExpiresAt.Sub(time.Now()) > mediaapp.UploadIntentLifetime+time.Second {
 		t.Fatal("upload intent did not use the fixed short PUT contract")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPut, upload.URL, bytes.NewReader(photo))
 	serviceOK(t, "build signed media PUT", err)
 	request.ContentLength = int64(len(photo))
-	request.Header.Set("Content-Type", domain.MediaContentTypeJPEG)
+	request.Header.Set("Content-Type", mediaapp.MediaContentTypeJPEG)
 	request.Header.Set("X-Amz-Meta-Sha256", strings.Repeat("b", 64))
 	invalidResponse, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
 	serviceOK(t, "perform tampered signed media PUT", err)
@@ -120,12 +119,12 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 		t.Fatal("signed PUT did not return a fixed object version")
 	}
 	versionID := response.Header.Get("X-Amz-Version-Id")
-	uploaded, err := mediaService.CompleteMediaUpload(ctx, owner.Token, upload.Media.ID, domain.CompleteMediaUploadInput{VersionID: versionID})
+	uploaded, err := mediaService.CompleteMediaUpload(ctx, owner.Token, upload.Media.ID, mediaapp.CompleteMediaUploadInput{VersionID: versionID})
 	serviceOK(t, "complete fixed media upload", err)
-	if uploaded.Status != domain.MediaUploaded || uploaded.ObjectVersionID != versionID {
+	if uploaded.Status != mediaapp.MediaUploaded || uploaded.ObjectVersionID != versionID {
 		t.Fatal("finalize did not pin the uploaded object version")
 	}
-	repeated, err := mediaService.CompleteMediaUpload(ctx, owner.Token, upload.Media.ID, domain.CompleteMediaUploadInput{VersionID: versionID})
+	repeated, err := mediaService.CompleteMediaUpload(ctx, owner.Token, upload.Media.ID, mediaapp.CompleteMediaUploadInput{VersionID: versionID})
 	serviceOK(t, "repeat identical media finalize", err)
 	if repeated.ObjectVersionID != versionID {
 		t.Fatal("repeated finalize changed the fixed version")
@@ -153,22 +152,22 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	if anonymous.StatusCode != http.StatusForbidden {
 		t.Fatal("raw media bucket allowed anonymous read")
 	}
-	if _, err := mediaService.GetMedia(ctx, other.Token, uploaded.ID); !errors.Is(err, domain.ErrMediaNotFound) {
+	if _, err := mediaService.GetMedia(ctx, other.Token, uploaded.ID); !errors.Is(err, mediaapp.ErrMediaNotFound) {
 		t.Fatal("cross-owner media lookup did not use the not-found boundary")
 	}
-	if err := accounts.DeleteCurrentUser(ctx, owner.Token); !errors.Is(err, domain.ErrAccountMediaConflict) {
+	if err := accounts.DeleteCurrentUser(ctx, owner.Token); !errors.Is(err, accountapp.ErrAccountMediaConflict) {
 		t.Fatal("account deletion did not block while private media remained active")
 	}
 
 	broker, err := messagequeue.Open(environment.rabbitMQURL)
 	serviceOK(t, "open media broker", err)
 	defer broker.Close()
-	runner, err := mediaworker.New(store.NewMediaRepository(database), broker, objects)
+	runner, err := mediaworkerapp.New(store.NewMediaRepository(database), broker, objects)
 	serviceOK(t, "construct media worker", err)
 	workerContext, stopWorker := context.WithCancel(ctx)
 	workerDone := make(chan error, 1)
 	go func() { workerDone <- runner.Run(workerContext) }()
-	waitForMediaStatus(t, ctx, mediaService, owner.Token, uploaded.ID, domain.MediaReady)
+	waitForMediaStatus(t, ctx, mediaService, owner.Token, uploaded.ID, mediaapp.MediaReady)
 	var derivationCount int64
 	serviceOK(t, "count normalized derivations", database.WithContext(ctx).Table("media_derivations").Where("media_id = ?", uploaded.ID).Count(&derivationCount).Error)
 	if derivationCount != 1 {
@@ -182,7 +181,7 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	}
 	deletion, err := mediaService.DeleteMedia(ctx, owner.Token, uploaded.ID)
 	serviceOK(t, "request media deletion", err)
-	if deletion.Status != domain.DeletionPending || deletion.ReadRevokedAt.IsZero() {
+	if deletion.Status != mediaapp.DeletionPending || deletion.ReadRevokedAt.IsZero() {
 		t.Fatal("delete did not immediately tombstone media")
 	}
 	repeatedDeletion, err := mediaService.DeleteMedia(ctx, owner.Token, uploaded.ID)
@@ -193,7 +192,7 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	waitForDeletion(t, ctx, mediaService, owner.Token, deletion.ID)
 	deleted, err := mediaService.GetMedia(ctx, owner.Token, uploaded.ID)
 	serviceOK(t, "read deleted media status", err)
-	if deleted.Status != domain.MediaDeleted || deleted.SHA256 != strings.Repeat("0", 64) || deleted.ObjectVersionID != "" {
+	if deleted.Status != mediaapp.MediaDeleted || deleted.SHA256 != strings.Repeat("0", 64) || deleted.ObjectVersionID != "" {
 		t.Fatal("completed deletion retained an active object reference")
 	}
 	if err := accounts.DeleteCurrentUser(ctx, owner.Token); err != nil {
@@ -205,11 +204,11 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	}
 }
 
-func assertUnfinishedUploadRetentionBoundary(t *testing.T, ctx context.Context, database *gorm.DB, mediaService *mediaapp.MediaService, user domain.AuthenticatedUser) {
+func assertUnfinishedUploadRetentionBoundary(t *testing.T, ctx context.Context, database *gorm.DB, mediaService *mediaapp.MediaService, user accountapp.AuthenticatedUser) {
 	t.Helper()
-	consent, err := mediaService.CreateConsent(ctx, user.Token, domain.CreateConsentInput{Purpose: domain.MediaPurposeAvatarSourcePreparation, Category: domain.MediaCategoryPersonPhoto, PolicyVersion: domain.CurrentMediaPolicyVersion, ActivelyAgreed: true})
+	consent, err := mediaService.CreateConsent(ctx, user.Token, mediaapp.CreateConsentInput{Purpose: mediaapp.MediaPurposeAvatarSourcePreparation, Category: mediaapp.MediaCategoryPersonPhoto, PolicyVersion: mediaapp.CurrentMediaPolicyVersion, ActivelyAgreed: true})
 	serviceOK(t, "create unfinished-upload consent", err)
-	media, err := store.NewMediaRepository(database).CreateMedia(ctx, user.User.ID, domain.CreateMediaUploadInput{ConsentID: consent.ID, Purpose: domain.MediaPurposeAvatarSourcePreparation, ContentType: domain.MediaContentTypeJPEG, ByteSize: 128, SHA256: strings.Repeat("a", 64)}, time.Now().UTC())
+	media, err := store.NewMediaRepository(database).CreateMedia(ctx, user.User.ID, mediaapp.CreateMediaUploadInput{ConsentID: consent.ID, Purpose: mediaapp.MediaPurposeAvatarSourcePreparation, ContentType: mediaapp.MediaContentTypeJPEG, ByteSize: 128, SHA256: strings.Repeat("a", 64)}, time.Now().UTC())
 	serviceOK(t, "create unfinished-upload record", err)
 	now := time.Now().UTC()
 	serviceOK(t, "age unfinished upload below cleanup boundary", database.WithContext(ctx).Table("media_assets").Where("id = ?", media.ID).Updates(map[string]any{"created_at": now.Add(-23 * time.Hour), "upload_expires_at": now.Add(-time.Hour)}).Error)
@@ -226,7 +225,7 @@ func assertUnfinishedUploadRetentionBoundary(t *testing.T, ctx context.Context, 
 	}
 }
 
-func containsMedia(media []domain.MediaAsset, id string) bool {
+func containsMedia(media []mediaapp.MediaAsset, id string) bool {
 	for _, item := range media {
 		if item.ID == id {
 			return true
@@ -238,16 +237,16 @@ func containsMedia(media []domain.MediaAsset, id string) bool {
 func assertAccountDeleteAndMediaCreateSerialize(t *testing.T, ctx context.Context, database *gorm.DB, accounts *accountapp.AccountService, mediaService *mediaapp.MediaService) {
 	t.Helper()
 	for attempt := range 6 {
-		user, err := accounts.Register(ctx, domain.RegisterAccountInput{Email: fmt.Sprintf("media-race-%d@example.test", attempt), DisplayName: "Media Race", Password: "correct-password-race-user"})
+		user, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: fmt.Sprintf("media-race-%d@example.test", attempt), DisplayName: "Media Race", Password: "correct-password-race-user"})
 		serviceOK(t, "register media/account race user", err)
-		consent, err := mediaService.CreateConsent(ctx, user.Token, domain.CreateConsentInput{Purpose: domain.MediaPurposeAvatarSourcePreparation, Category: domain.MediaCategoryPersonPhoto, PolicyVersion: domain.CurrentMediaPolicyVersion, ActivelyAgreed: true})
+		consent, err := mediaService.CreateConsent(ctx, user.Token, mediaapp.CreateConsentInput{Purpose: mediaapp.MediaPurposeAvatarSourcePreparation, Category: mediaapp.MediaCategoryPersonPhoto, PolicyVersion: mediaapp.CurrentMediaPolicyVersion, ActivelyAgreed: true})
 		serviceOK(t, "create media/account race consent", err)
 		start := make(chan struct{})
 		createResult := make(chan error, 1)
 		deleteResult := make(chan error, 1)
 		go func() {
 			<-start
-			_, err := store.NewMediaRepository(database).CreateMedia(ctx, user.User.ID, domain.CreateMediaUploadInput{ConsentID: consent.ID, Purpose: domain.MediaPurposeAvatarSourcePreparation, ContentType: domain.MediaContentTypeJPEG, ByteSize: 128, SHA256: strings.Repeat("a", 64)}, time.Now().UTC())
+			_, err := store.NewMediaRepository(database).CreateMedia(ctx, user.User.ID, mediaapp.CreateMediaUploadInput{ConsentID: consent.ID, Purpose: mediaapp.MediaPurposeAvatarSourcePreparation, ContentType: mediaapp.MediaContentTypeJPEG, ByteSize: 128, SHA256: strings.Repeat("a", 64)}, time.Now().UTC())
 			createResult <- err
 		}()
 		go func() {
@@ -257,21 +256,21 @@ func assertAccountDeleteAndMediaCreateSerialize(t *testing.T, ctx context.Contex
 		close(start)
 		createErr, deleteErr := <-createResult, <-deleteResult
 		switch {
-		case createErr == nil && errors.Is(deleteErr, domain.ErrAccountMediaConflict):
-		case errors.Is(createErr, domain.ErrConsentRequired) && deleteErr == nil:
+		case createErr == nil && errors.Is(deleteErr, accountapp.ErrAccountMediaConflict):
+		case errors.Is(createErr, mediaapp.ErrConsentRequired) && deleteErr == nil:
 		default:
 			t.Fatalf("media creation/account deletion were not serialized: create=%v delete=%v", createErr, deleteErr)
 		}
 	}
 }
 
-func assertWithdrawnConsentRejectsQueuedMedia(t *testing.T, ctx context.Context, database *gorm.DB, privacy *privacyapp.PrivacyService, mediaService *mediaapp.MediaService, user domain.AuthenticatedUser, photo []byte, digest string) {
+func assertWithdrawnConsentRejectsQueuedMedia(t *testing.T, ctx context.Context, database *gorm.DB, privacy *privacyapp.PrivacyService, mediaService *mediaapp.MediaService, user accountapp.AuthenticatedUser, photo []byte, digest string) {
 	t.Helper()
-	_, err := privacy.ConfirmSelfAdultDeclaration(ctx, user.Token, domain.ConfirmSelfAdultDeclarationInput{PolicyVersion: domain.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true})
+	_, err := privacy.ConfirmSelfAdultDeclaration(ctx, user.Token, privacyapp.ConfirmSelfAdultDeclarationInput{PolicyVersion: privacyapp.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true})
 	serviceOK(t, "confirm second synthetic adult declaration", err)
-	consent, err := mediaService.CreateConsent(ctx, user.Token, domain.CreateConsentInput{Purpose: domain.MediaPurposeAvatarSourcePreparation, Category: domain.MediaCategoryPersonPhoto, PolicyVersion: domain.CurrentMediaPolicyVersion, ActivelyAgreed: true})
+	consent, err := mediaService.CreateConsent(ctx, user.Token, mediaapp.CreateConsentInput{Purpose: mediaapp.MediaPurposeAvatarSourcePreparation, Category: mediaapp.MediaCategoryPersonPhoto, PolicyVersion: mediaapp.CurrentMediaPolicyVersion, ActivelyAgreed: true})
 	serviceOK(t, "create consent for withdrawal check", err)
-	upload, err := mediaService.CreateMediaUpload(ctx, user.Token, domain.CreateMediaUploadInput{ConsentID: consent.ID, Purpose: domain.MediaPurposeAvatarSourcePreparation, ContentType: domain.MediaContentTypeJPEG, ByteSize: int64(len(photo)), SHA256: digest})
+	upload, err := mediaService.CreateMediaUpload(ctx, user.Token, mediaapp.CreateMediaUploadInput{ConsentID: consent.ID, Purpose: mediaapp.MediaPurposeAvatarSourcePreparation, ContentType: mediaapp.MediaContentTypeJPEG, ByteSize: int64(len(photo)), SHA256: digest})
 	serviceOK(t, "create queued upload for withdrawal check", err)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPut, upload.URL, bytes.NewReader(photo))
 	serviceOK(t, "build queued signed PUT", err)
@@ -288,18 +287,18 @@ func assertWithdrawnConsentRejectsQueuedMedia(t *testing.T, ctx context.Context,
 	if response.StatusCode != http.StatusOK || versionID == "" {
 		t.Fatal("queued signed PUT did not return a fixed version")
 	}
-	_, err = mediaService.CompleteMediaUpload(ctx, user.Token, upload.Media.ID, domain.CompleteMediaUploadInput{VersionID: versionID})
+	_, err = mediaService.CompleteMediaUpload(ctx, user.Token, upload.Media.ID, mediaapp.CompleteMediaUploadInput{VersionID: versionID})
 	serviceOK(t, "complete queued upload before withdrawal", err)
 	withdrawn, err := mediaService.WithdrawConsent(ctx, user.Token, consent.ID)
 	serviceOK(t, "withdraw consent before queued processing", err)
 	repeated, err := mediaService.WithdrawConsent(ctx, user.Token, consent.ID)
 	serviceOK(t, "repeat consent withdrawal", err)
-	if withdrawn.Status != domain.ConsentWithdrawn || repeated.Status != domain.ConsentWithdrawn || withdrawn.WithdrawnAt == nil || repeated.WithdrawnAt == nil || !withdrawn.WithdrawnAt.Equal(*repeated.WithdrawnAt) {
+	if withdrawn.Status != mediaapp.ConsentWithdrawn || repeated.Status != mediaapp.ConsentWithdrawn || withdrawn.WithdrawnAt == nil || repeated.WithdrawnAt == nil || !withdrawn.WithdrawnAt.Equal(*repeated.WithdrawnAt) {
 		t.Fatal("consent withdrawal was not idempotent")
 	}
 	media, process, err := store.NewMediaRepository(database).BeginMediaCheck(ctx, upload.Media.ID, time.Now().UTC())
 	serviceOK(t, "begin queued media check after withdrawal", err)
-	if process || media.Status != domain.MediaRejected || media.StableReason != "consent_withdrawn" {
+	if process || media.Status != mediaapp.MediaRejected || media.StableReason != "consent_withdrawn" {
 		t.Fatal("withdrawn consent did not reject queued media before object processing")
 	}
 }
@@ -314,7 +313,7 @@ func assertConcurrentConsentIdempotency(t *testing.T, ctx context.Context, datab
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			consent, err := mediaService.CreateConsent(ctx, token, domain.CreateConsentInput{Purpose: domain.MediaPurposeAvatarSourcePreparation, Category: domain.MediaCategoryPersonPhoto, PolicyVersion: domain.CurrentMediaPolicyVersion, ActivelyAgreed: true})
+			consent, err := mediaService.CreateConsent(ctx, token, mediaapp.CreateConsentInput{Purpose: mediaapp.MediaPurposeAvatarSourcePreparation, Category: mediaapp.MediaCategoryPersonPhoto, PolicyVersion: mediaapp.CurrentMediaPolicyVersion, ActivelyAgreed: true})
 			if err != nil {
 				errorsFound <- err
 				return
@@ -355,7 +354,7 @@ func syntheticJPEG(t *testing.T) []byte {
 	return output.Bytes()
 }
 
-func waitForMediaStatus(t *testing.T, ctx context.Context, mediaService *mediaapp.MediaService, token, mediaID string, expected domain.MediaStatus) {
+func waitForMediaStatus(t *testing.T, ctx context.Context, mediaService *mediaapp.MediaService, token, mediaID string, expected mediaapp.MediaStatus) {
 	t.Helper()
 	for {
 		media, err := mediaService.GetMedia(ctx, token, mediaID)
@@ -363,7 +362,7 @@ func waitForMediaStatus(t *testing.T, ctx context.Context, mediaService *mediaap
 		if media.Status == expected {
 			return
 		}
-		if media.Status == domain.MediaRejected {
+		if media.Status == mediaapp.MediaRejected {
 			t.Fatalf("synthetic JPEG was rejected: %s", media.StableReason)
 		}
 		select {
@@ -379,7 +378,7 @@ func waitForDeletion(t *testing.T, ctx context.Context, mediaService *mediaapp.M
 	for {
 		deletion, err := mediaService.GetDeletionRequest(ctx, token, requestID)
 		serviceOK(t, "poll deletion state", err)
-		if deletion.Status == domain.DeletionComplete {
+		if deletion.Status == mediaapp.DeletionComplete {
 			return
 		}
 		select {

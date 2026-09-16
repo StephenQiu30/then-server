@@ -1,5 +1,5 @@
 // Package domain contains transport- and persistence-independent domain values.
-package domain
+package account
 
 import (
 	"errors"
