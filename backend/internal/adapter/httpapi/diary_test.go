@@ -10,45 +10,45 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
 )
 
 type diaryTransportStub struct {
-	input    domain.DiaryEntryInput
+	input    diaryapp.DiaryEntryInput
 	expected int
 	err      error
 }
 
-func (s *diaryTransportStub) Create(_ context.Context, _, id string, input domain.DiaryEntryInput) (domain.DiaryEntry, error) {
+func (s *diaryTransportStub) Create(_ context.Context, _, id string, input diaryapp.DiaryEntryInput) (diaryapp.DiaryEntry, error) {
 	s.input = input
 	return diaryFixture(id), s.err
 }
-func (s *diaryTransportStub) List(context.Context, string, int, *string, *string, *string) (domain.DiaryEntryPage, error) {
-	return domain.DiaryEntryPage{Entries: []domain.DiaryEntry{diaryFixture("11111111-1111-4111-8111-111111111111")}}, s.err
+func (s *diaryTransportStub) List(context.Context, string, int, *string, *string, *string) (diaryapp.DiaryEntryPage, error) {
+	return diaryapp.DiaryEntryPage{Entries: []diaryapp.DiaryEntry{diaryFixture("11111111-1111-4111-8111-111111111111")}}, s.err
 }
-func (s *diaryTransportStub) Get(_ context.Context, _, id string) (domain.DiaryEntry, error) {
+func (s *diaryTransportStub) Get(_ context.Context, _, id string) (diaryapp.DiaryEntry, error) {
 	return diaryFixture(id), s.err
 }
-func (s *diaryTransportStub) Update(_ context.Context, _, id string, expected int, input domain.DiaryEntryInput) (domain.DiaryEntry, error) {
+func (s *diaryTransportStub) Update(_ context.Context, _, id string, expected int, input diaryapp.DiaryEntryInput) (diaryapp.DiaryEntry, error) {
 	s.expected, s.input = expected, input
 	entry := diaryFixture(id)
 	entry.Revision = expected + 1
 	return entry, s.err
 }
-func (s *diaryTransportStub) DeletionImpact(_ context.Context, _, id string) (domain.DiaryDeletionImpact, error) {
-	return domain.DiaryDeletionImpact{EntryID: id, Revision: 1, MediaCount: 1, MediaRetained: true}, s.err
+func (s *diaryTransportStub) DeletionImpact(_ context.Context, _, id string) (diaryapp.DiaryDeletionImpact, error) {
+	return diaryapp.DiaryDeletionImpact{EntryID: id, Revision: 1, MediaCount: 1, MediaRetained: true}, s.err
 }
 func (s *diaryTransportStub) Delete(_ context.Context, _, _ string, expected int) error {
 	s.expected = expected
 	return s.err
 }
-func (s *diaryTransportStub) Calendar(context.Context, string, string) (domain.CalendarMonth, error) {
-	return domain.CalendarMonth{Month: "2026-09", Days: []domain.CalendarDay{{LocalDate: "2026-09-16", PlanCount: 1, WearEventCount: 1, DiaryCount: 2}}}, s.err
+func (s *diaryTransportStub) Calendar(context.Context, string, string) (diaryapp.CalendarMonth, error) {
+	return diaryapp.CalendarMonth{Month: "2026-09", Days: []diaryapp.CalendarDay{{LocalDate: "2026-09-16", PlanCount: 1, WearEventCount: 1, DiaryCount: 2}}}, s.err
 }
 
-func diaryFixture(id string) domain.DiaryEntry {
+func diaryFixture(id string) diaryapp.DiaryEntry {
 	body := "今天的穿搭"
-	return domain.DiaryEntry{ID: id, LocalDate: "2026-09-16", TimeZone: "Asia/Shanghai", Body: &body, MediaIDs: []string{"33333333-3333-4333-8333-333333333333"}, Revision: 1, CreatedAt: time.Date(2026, 9, 16, 4, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 9, 16, 4, 0, 0, 0, time.UTC)}
+	return diaryapp.DiaryEntry{ID: id, LocalDate: "2026-09-16", TimeZone: "Asia/Shanghai", Body: &body, MediaIDs: []string{"33333333-3333-4333-8333-333333333333"}, Revision: 1, CreatedAt: time.Date(2026, 9, 16, 4, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 9, 16, 4, 0, 0, 0, time.UTC)}
 }
 
 func diaryRouter(t *testing.T, service DiaryHTTPService) *Router {
@@ -94,7 +94,7 @@ func TestDiaryRejectsPrivateFactInjectionAndMapsConflicts(t *testing.T) {
 	if response.Code != http.StatusBadRequest || service.input.Body != nil {
 		t.Fatalf("owner injection reached diary service: status=%d body=%s", response.Code, response.Body.String())
 	}
-	service.err = domain.ErrDiaryConflict
+	service.err = diaryapp.ErrDiaryConflict
 	request = httptest.NewRequest(http.MethodDelete, "/diary-entries/11111111-1111-4111-8111-111111111111?expected_revision=1", nil)
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
 	response = httptest.NewRecorder()

@@ -11,23 +11,23 @@ import (
 	"io"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 )
 
 type Repository interface {
-	PendingOutbox(context.Context, int) ([]domain.OutboxEvent, error)
+	PendingOutbox(context.Context, int) ([]mediaapp.OutboxEvent, error)
 	MarkOutboxPublished(context.Context, string, time.Time) error
-	BeginMediaCheck(context.Context, string, time.Time) (domain.MediaAsset, bool, error)
-	CompleteMediaCheck(context.Context, string, string, *domain.MediaDerivation, int, int, domain.MediaStatus, string, time.Time) error
-	BeginDeletion(context.Context, string, time.Time) (domain.MediaAsset, []domain.MediaDerivation, domain.DeletionRequest, bool, error)
+	BeginMediaCheck(context.Context, string, time.Time) (mediaapp.MediaAsset, bool, error)
+	CompleteMediaCheck(context.Context, string, string, *mediaapp.MediaDerivation, int, int, mediaapp.MediaStatus, string, time.Time) error
+	BeginDeletion(context.Context, string, time.Time) (mediaapp.MediaAsset, []mediaapp.MediaDerivation, mediaapp.DeletionRequest, bool, error)
 	CompleteDeletion(context.Context, string, string, time.Time) error
-	SourceCleanupCandidates(context.Context, time.Time, int) ([]domain.MediaAsset, error)
+	SourceCleanupCandidates(context.Context, time.Time, int) ([]mediaapp.MediaAsset, error)
 	MarkSourceDeleted(context.Context, string, time.Time) error
 }
 
 type Broker interface {
-	Publish(context.Context, domain.OutboxEvent) error
-	Consume(context.Context, string, func(context.Context, domain.OutboxEvent) error) error
+	Publish(context.Context, mediaapp.OutboxEvent) error
+	Consume(context.Context, string, func(context.Context, mediaapp.OutboxEvent) error) error
 }
 
 type ObjectStore interface {
@@ -45,7 +45,7 @@ type Runner struct {
 
 func New(repository Repository, broker Broker, objects ObjectStore) (*Runner, error) {
 	if repository == nil || broker == nil || objects == nil {
-		return nil, domain.ErrMediaUnavailable
+		return nil, mediaapp.ErrMediaUnavailable
 	}
 	return &Runner{repository: repository, broker: broker, objects: objects, now: time.Now}, nil
 }
@@ -73,20 +73,20 @@ func (r *Runner) cleanupSources(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		for _, media := range candidates {
-			rawKey := media.RawObjectKey
-			if media.Status == domain.MediaDeleted {
-				rawKey = "owners/" + media.OwnerID + "/media/" + media.ID + "/source.jpg"
+		for _, asset := range candidates {
+			rawKey := asset.RawObjectKey
+			if asset.Status == mediaapp.MediaDeleted {
+				rawKey = "owners/" + asset.OwnerID + "/media/" + asset.ID + "/source.jpg"
 			}
 			if err := r.objects.DeleteAllVersions(ctx, "raw-private", rawKey); err != nil {
 				return err
 			}
-			if media.Status == domain.MediaDeleted {
-				if err := r.objects.DeleteAllVersions(ctx, "derived-private", "media/"+media.ID+"/normalized.jpg"); err != nil {
+			if asset.Status == mediaapp.MediaDeleted {
+				if err := r.objects.DeleteAllVersions(ctx, "derived-private", "media/"+asset.ID+"/normalized.jpg"); err != nil {
 					return err
 				}
 			}
-			if err := r.repository.MarkSourceDeleted(ctx, media.ID, r.now().UTC()); err != nil {
+			if err := r.repository.MarkSourceDeleted(ctx, asset.ID, r.now().UTC()); err != nil {
 				return err
 			}
 		}
@@ -129,30 +129,30 @@ func (r *Runner) publishPending(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runner) checkMedia(ctx context.Context, event domain.OutboxEvent) error {
+func (r *Runner) checkMedia(ctx context.Context, event mediaapp.OutboxEvent) error {
 	if event.EventType != "media.uploaded" {
 		return errors.New("unexpected media-check event")
 	}
 	workContext, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	media, process, err := r.repository.BeginMediaCheck(workContext, event.AggregateID, r.now().UTC())
+	asset, process, err := r.repository.BeginMediaCheck(workContext, event.AggregateID, r.now().UTC())
 	if err != nil || !process {
 		return err
 	}
-	data, width, height, reason, err := r.normalizedJPEG(workContext, media)
+	data, width, height, reason, err := r.normalizedJPEG(workContext, asset)
 	if err != nil {
-		if completionErr := r.repository.CompleteMediaCheck(ctx, event.ID, media.ID, nil, width, height, domain.MediaRejected, reason, r.now().UTC()); completionErr != nil {
+		if completionErr := r.repository.CompleteMediaCheck(ctx, event.ID, asset.ID, nil, width, height, mediaapp.MediaRejected, reason, r.now().UTC()); completionErr != nil {
 			return completionErr
 		}
 		return nil
 	}
-	key := "media/" + media.ID + "/normalized.jpg"
+	key := "media/" + asset.ID + "/normalized.jpg"
 	versionID, err := r.objects.PutDerived(workContext, key, bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return err
 	}
-	derivation := &domain.MediaDerivation{ObjectKey: key, ObjectVersionID: versionID}
-	if err := r.repository.CompleteMediaCheck(workContext, event.ID, media.ID, derivation, width, height, domain.MediaReady, "ready", r.now().UTC()); err != nil {
+	derivation := &mediaapp.MediaDerivation{ObjectKey: key, ObjectVersionID: versionID}
+	if err := r.repository.CompleteMediaCheck(workContext, event.ID, asset.ID, derivation, width, height, mediaapp.MediaReady, "ready", r.now().UTC()); err != nil {
 		cleanupContext, stopCleanup := context.WithTimeout(context.Background(), 10*time.Second)
 		_ = r.objects.DeleteAllVersions(cleanupContext, "derived-private", key)
 		stopCleanup()
@@ -161,25 +161,25 @@ func (r *Runner) checkMedia(ctx context.Context, event domain.OutboxEvent) error
 	return nil
 }
 
-func (r *Runner) normalizedJPEG(ctx context.Context, media domain.MediaAsset) ([]byte, int, int, string, error) {
-	reader, err := r.objects.OpenVersion(ctx, media.RawObjectKey, media.ObjectVersionID)
+func (r *Runner) normalizedJPEG(ctx context.Context, asset mediaapp.MediaAsset) ([]byte, int, int, string, error) {
+	reader, err := r.objects.OpenVersion(ctx, asset.RawObjectKey, asset.ObjectVersionID)
 	if err != nil {
 		return nil, 0, 0, "source_unavailable", err
 	}
 	defer reader.Close()
-	data, err := io.ReadAll(io.LimitReader(reader, domain.MaxPersonPhotoBytes+1))
-	if err != nil || int64(len(data)) != media.ByteSize || len(data) > int(domain.MaxPersonPhotoBytes) {
+	data, err := io.ReadAll(io.LimitReader(reader, mediaapp.MaxPersonPhotoBytes+1))
+	if err != nil || int64(len(data)) != asset.ByteSize || len(data) > int(mediaapp.MaxPersonPhotoBytes) {
 		return nil, 0, 0, "size_mismatch", errors.New("source size mismatch")
 	}
 	digest := fmt.Sprintf("%x", sha256.Sum256(data))
-	if digest != media.SHA256 {
+	if digest != asset.SHA256 {
 		return nil, 0, 0, "digest_mismatch", errors.New("source digest mismatch")
 	}
 	if len(data) < 4 || data[0] != 0xff || data[1] != 0xd8 || bytes.Count(data, []byte{0xff, 0xd8}) != 1 {
 		return nil, 0, 0, "invalid_jpeg", errors.New("invalid JPEG framing")
 	}
 	configuration, err := jpeg.DecodeConfig(bytes.NewReader(data))
-	if err != nil || configuration.Width < 1 || configuration.Height < 1 || int64(configuration.Width)*int64(configuration.Height) > domain.MaxPersonPhotoPixels {
+	if err != nil || configuration.Width < 1 || configuration.Height < 1 || int64(configuration.Width)*int64(configuration.Height) > mediaapp.MaxPersonPhotoPixels {
 		return nil, 0, 0, "pixel_limit", errors.New("JPEG pixel budget exceeded")
 	}
 	image, err := jpeg.Decode(bytes.NewReader(data))
@@ -193,16 +193,16 @@ func (r *Runner) normalizedJPEG(ctx context.Context, media domain.MediaAsset) ([
 	return normalized.Bytes(), configuration.Width, configuration.Height, "", nil
 }
 
-func (r *Runner) deleteMedia(ctx context.Context, event domain.OutboxEvent) error {
+func (r *Runner) deleteMedia(ctx context.Context, event mediaapp.OutboxEvent) error {
 	if event.EventType != "media.deletion_requested" {
 		return errors.New("unexpected media-delete event")
 	}
-	media, derivations, _, process, err := r.repository.BeginDeletion(ctx, event.AggregateID, r.now().UTC())
+	asset, derivations, _, process, err := r.repository.BeginDeletion(ctx, event.AggregateID, r.now().UTC())
 	if err != nil || !process {
 		return err
 	}
-	if media.RawObjectKey != "" {
-		if err := r.objects.DeleteAllVersions(ctx, "raw-private", media.RawObjectKey); err != nil {
+	if asset.RawObjectKey != "" {
+		if err := r.objects.DeleteAllVersions(ctx, "raw-private", asset.RawObjectKey); err != nil {
 			return err
 		}
 	}
@@ -211,8 +211,8 @@ func (r *Runner) deleteMedia(ctx context.Context, event domain.OutboxEvent) erro
 			return err
 		}
 	}
-	if err := r.objects.DeleteAllVersions(ctx, "derived-private", "media/"+media.ID+"/normalized.jpg"); err != nil {
+	if err := r.objects.DeleteAllVersions(ctx, "derived-private", "media/"+asset.ID+"/normalized.jpg"); err != nil {
 		return err
 	}
-	return r.repository.CompleteDeletion(ctx, event.ID, media.ID, r.now().UTC())
+	return r.repository.CompleteDeletion(ctx, event.ID, asset.ID, r.now().UTC())
 }

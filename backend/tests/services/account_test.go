@@ -15,7 +15,6 @@ import (
 	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -49,7 +48,7 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 
 	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
 	serviceOK(t, "construct account service", err)
-	first, err := accounts.Register(ctx, domain.RegisterAccountInput{
+	first, err := accounts.Register(ctx, accountapp.RegisterAccountInput{
 		Email: " FIRST@Example.Test ", DisplayName: "First User", Password: "correct-password-one",
 	})
 	serviceOK(t, "register first account", err)
@@ -60,19 +59,19 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 	serviceOK(t, "construct privacy service", err)
 	declaration, err := privacy.CurrentSelfAdultDeclaration(ctx, first.Token)
 	serviceOK(t, "read initial declaration", err)
-	if declaration.PolicyVersion != domain.CurrentSelfAdultPolicyVersion || declaration.Confirmed || declaration.ConfirmedAt != nil || declaration.WithdrawnAt != nil {
+	if declaration.PolicyVersion != privacyapp.CurrentSelfAdultPolicyVersion || declaration.Confirmed || declaration.ConfirmedAt != nil || declaration.WithdrawnAt != nil {
 		t.Fatal("new account did not expose an explicit unconfirmed current policy")
 	}
-	declaration, err = privacy.ConfirmSelfAdultDeclaration(ctx, first.Token, domain.ConfirmSelfAdultDeclarationInput{
-		PolicyVersion: domain.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
+	declaration, err = privacy.ConfirmSelfAdultDeclaration(ctx, first.Token, privacyapp.ConfirmSelfAdultDeclarationInput{
+		PolicyVersion: privacyapp.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
 	})
 	serviceOK(t, "confirm current declaration", err)
 	if !declaration.Confirmed || declaration.ConfirmedAt == nil || declaration.WithdrawnAt != nil {
 		t.Fatal("confirmed declaration was not persisted")
 	}
 	firstConfirmation := *declaration.ConfirmedAt
-	declaration, err = privacy.ConfirmSelfAdultDeclaration(ctx, first.Token, domain.ConfirmSelfAdultDeclarationInput{
-		PolicyVersion: domain.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
+	declaration, err = privacy.ConfirmSelfAdultDeclaration(ctx, first.Token, privacyapp.ConfirmSelfAdultDeclarationInput{
+		PolicyVersion: privacyapp.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
 	})
 	serviceOK(t, "repeat current declaration", err)
 	if declaration.ConfirmedAt == nil || !declaration.ConfirmedAt.Equal(firstConfirmation) {
@@ -89,24 +88,24 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 	if declaration.WithdrawnAt == nil || !declaration.WithdrawnAt.Equal(firstWithdrawal) {
 		t.Fatal("repeated withdrawal changed its withdrawal time")
 	}
-	declaration, err = privacy.ConfirmSelfAdultDeclaration(ctx, first.Token, domain.ConfirmSelfAdultDeclarationInput{
-		PolicyVersion: domain.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
+	declaration, err = privacy.ConfirmSelfAdultDeclaration(ctx, first.Token, privacyapp.ConfirmSelfAdultDeclarationInput{
+		PolicyVersion: privacyapp.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
 	})
 	serviceOK(t, "reconfirm withdrawn declaration", err)
 	if !declaration.Confirmed || declaration.ConfirmedAt == nil || !declaration.ConfirmedAt.After(firstConfirmation) || declaration.WithdrawnAt != nil {
 		t.Fatal("reconfirmation did not replace the withdrawn state")
 	}
-	if _, err := accounts.Register(ctx, domain.RegisterAccountInput{
+	if _, err := accounts.Register(ctx, accountapp.RegisterAccountInput{
 		Email: "first@example.test", DisplayName: "Duplicate", Password: "correct-password-two",
-	}); !errors.Is(err, domain.ErrEmailConflict) {
+	}); !errors.Is(err, accountapp.ErrEmailConflict) {
 		t.Fatal("duplicate email did not return the stable conflict")
 	}
-	second, err := accounts.Register(ctx, domain.RegisterAccountInput{
+	second, err := accounts.Register(ctx, accountapp.RegisterAccountInput{
 		Email: "second@example.test", DisplayName: "Second User", Password: "correct-password-two",
 	})
 	serviceOK(t, "register second account", err)
 	firstBio := "  记录日常穿搭与轻量生活。  "
-	firstProfile, err := accounts.PutCurrentProfile(ctx, first.Token, domain.PutProfileInput{
+	firstProfile, err := accounts.PutCurrentProfile(ctx, first.Token, accountapp.PutProfileInput{
 		Handle: " First_Style ", Bio: &firstBio, ExpectedRevision: 0,
 	})
 	serviceOK(t, "create first public profile", err)
@@ -118,24 +117,24 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 	if publicProfile.Handle != firstProfile.Handle || publicProfile.DisplayName != first.User.DisplayName {
 		t.Fatal("public profile did not join the current display name")
 	}
-	if _, err := accounts.PutCurrentProfile(ctx, second.Token, domain.PutProfileInput{
+	if _, err := accounts.PutCurrentProfile(ctx, second.Token, accountapp.PutProfileInput{
 		Handle: firstProfile.Handle, ExpectedRevision: 0,
-	}); !errors.Is(err, domain.ErrHandleConflict) {
+	}); !errors.Is(err, accountapp.ErrHandleConflict) {
 		t.Fatalf("duplicate profile handle error=%v", err)
 	}
-	if _, err := accounts.PutCurrentProfile(ctx, first.Token, domain.PutProfileInput{
+	if _, err := accounts.PutCurrentProfile(ctx, first.Token, accountapp.PutProfileInput{
 		Handle: firstProfile.Handle, ExpectedRevision: 0,
-	}); !errors.Is(err, domain.ErrProfileConflict) {
+	}); !errors.Is(err, accountapp.ErrProfileConflict) {
 		t.Fatalf("stale profile revision error=%v", err)
 	}
-	firstProfile, err = accounts.PutCurrentProfile(ctx, first.Token, domain.PutProfileInput{
+	firstProfile, err = accounts.PutCurrentProfile(ctx, first.Token, accountapp.PutProfileInput{
 		Handle: firstProfile.Handle, ExpectedRevision: firstProfile.Revision,
 	})
 	serviceOK(t, "update first public profile", err)
 	if firstProfile.Revision != 2 || firstProfile.Bio != nil {
 		t.Fatal("profile update did not advance revision and clear bio")
 	}
-	secondProfile, err := accounts.PutCurrentProfile(ctx, second.Token, domain.PutProfileInput{
+	secondProfile, err := accounts.PutCurrentProfile(ctx, second.Token, accountapp.PutProfileInput{
 		Handle: "second_style", ExpectedRevision: 0,
 	})
 	serviceOK(t, "create second public profile", err)
@@ -146,25 +145,25 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 		t.Fatal("database accepted an account role outside the closed set")
 	}
 	serviceOK(t, "suspend second account", database.WithContext(ctx).Exec("UPDATE users SET status = 'suspended' WHERE id = ?", second.User.ID).Error)
-	if _, err := accounts.Login(ctx, domain.CreateSessionInput{Email: second.User.Email, Password: "correct-password-two"}); !errors.Is(err, domain.ErrAuthentication) {
+	if _, err := accounts.Login(ctx, accountapp.CreateSessionInput{Email: second.User.Email, Password: "correct-password-two"}); !errors.Is(err, accountapp.ErrAuthentication) {
 		t.Fatalf("suspended account login error=%v", err)
 	}
-	if _, err := accounts.CurrentUser(ctx, second.Token); !errors.Is(err, domain.ErrAuthentication) {
+	if _, err := accounts.CurrentUser(ctx, second.Token); !errors.Is(err, accountapp.ErrAuthentication) {
 		t.Fatalf("suspended account session error=%v", err)
 	}
-	if _, err := accounts.PublicProfile(ctx, secondProfile.Handle); !errors.Is(err, domain.ErrProfileNotFound) {
+	if _, err := accounts.PublicProfile(ctx, secondProfile.Handle); !errors.Is(err, accountapp.ErrProfileNotFound) {
 		t.Fatalf("suspended public profile error=%v", err)
 	}
 	serviceOK(t, "restore second account", database.WithContext(ctx).Exec("UPDATE users SET status = 'active' WHERE id = ?", second.User.ID).Error)
 	const concurrentConfirmations = 16
-	confirmationResults := make(chan domain.SelfAdultDeclaration, concurrentConfirmations)
+	confirmationResults := make(chan privacyapp.SelfAdultDeclaration, concurrentConfirmations)
 	confirmationErrors := make(chan error, concurrentConfirmations)
 	var confirmationGroup sync.WaitGroup
 	for range concurrentConfirmations {
 		confirmationGroup.Add(1)
 		go func() {
-			declaration, err := privacy.ConfirmSelfAdultDeclaration(ctx, second.Token, domain.ConfirmSelfAdultDeclarationInput{
-				PolicyVersion: domain.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
+			declaration, err := privacy.ConfirmSelfAdultDeclaration(ctx, second.Token, privacyapp.ConfirmSelfAdultDeclarationInput{
+				PolicyVersion: privacyapp.CurrentSelfAdultPolicyVersion, ConfirmsSelfAndAdult: true,
 			})
 			if err != nil {
 				confirmationErrors <- err
@@ -194,9 +193,9 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 
 	conflictEmail := first.User.Email
 	newName := "Should Roll Back"
-	if _, err := accounts.UpdateCurrentUser(ctx, second.Token, domain.UpdateCurrentUserInput{
+	if _, err := accounts.UpdateCurrentUser(ctx, second.Token, accountapp.UpdateCurrentUserInput{
 		Email: &conflictEmail, DisplayName: &newName, ExpectedRevision: second.User.Revision,
-	}); !errors.Is(err, domain.ErrEmailConflict) {
+	}); !errors.Is(err, accountapp.ErrEmailConflict) {
 		t.Fatal("conflicting update did not return email conflict")
 	}
 	secondAfterConflict, err := accounts.CurrentUser(ctx, second.Token)
@@ -218,7 +217,7 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 		t.Fatal("database session token hash has an invalid length")
 	}
 
-	loggedIn, err := accounts.Login(ctx, domain.CreateSessionInput{Email: first.User.Email, Password: "correct-password-one"})
+	loggedIn, err := accounts.Login(ctx, accountapp.CreateSessionInput{Email: first.User.Email, Password: "correct-password-one"})
 	serviceOK(t, "login persisted account", err)
 	if err := accounts.DeleteCurrentUser(ctx, loggedIn.Token); err != nil {
 		t.Fatal("delete persisted account failed")

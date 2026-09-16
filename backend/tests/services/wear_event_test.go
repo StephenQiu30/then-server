@@ -15,7 +15,6 @@ import (
 	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
 	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
 	weareventapp "github.com/StephenQiu30/then-server/backend/internal/application/wearevent"
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -47,9 +46,9 @@ func TestWearEventPersistenceLifecycle(t *testing.T) {
 
 	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
 	serviceOK(t, "construct wear event account service", err)
-	owner, err := accounts.Register(ctx, domain.RegisterAccountInput{Email: "wear-owner@example.test", DisplayName: "Owner", Password: "correct-password-owner"})
+	owner, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "wear-owner@example.test", DisplayName: "Owner", Password: "correct-password-owner"})
 	serviceOK(t, "register wear event owner", err)
-	other, err := accounts.Register(ctx, domain.RegisterAccountInput{Email: "wear-other@example.test", DisplayName: "Other", Password: "correct-password-other"})
+	other, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "wear-other@example.test", DisplayName: "Other", Password: "correct-password-other"})
 	serviceOK(t, "register other wear event owner", err)
 	wardrobe, err := wardrobeapp.NewWardrobeService(accounts, store.NewWardrobeRepository(database))
 	serviceOK(t, "construct wear event wardrobe service", err)
@@ -58,27 +57,27 @@ func TestWearEventPersistenceLifecycle(t *testing.T) {
 	wear, err := weareventapp.NewWearEventService(accounts, store.NewWearEventRepository(database))
 	serviceOK(t, "construct wear event service", err)
 
-	shirt, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, domain.CreateWardrobeItemInput{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400f01", Name: "Blue Shirt", Category: domain.WardrobeTop, Availability: domain.WardrobeWearable, Source: domain.WardrobeSourceWardrobe})
+	shirt, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, wardrobeapp.CreateWardrobeItemInput{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400f01", Name: "Blue Shirt", Category: wardrobeapp.WardrobeTop, Availability: wardrobeapp.WardrobeWearable, Source: wardrobeapp.WardrobeSourceWardrobe})
 	serviceOK(t, "create wear event wardrobe item", err)
 	location, err := time.LoadLocation("Asia/Shanghai")
 	serviceOK(t, "load wear event timezone", err)
 	today := time.Now().In(location).Format("2006-01-02")
 	planID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400f02"
-	plan, err := outfits.CreateOutfitPlan(ctx, owner.Token, planID, domain.OutfitPlanInput{LocalDate: today, TimeZone: "Asia/Shanghai", Items: []domain.OutfitSelection{{ItemID: shirt.ID, Revision: shirt.Revision}}})
+	plan, err := outfits.CreateOutfitPlan(ctx, owner.Token, planID, outfitplanapp.OutfitPlanInput{LocalDate: today, TimeZone: "Asia/Shanghai", Items: []outfitplanapp.OutfitSelection{{ItemID: shirt.ID, Revision: shirt.Revision}}})
 	serviceOK(t, "create source outfit plan", err)
 	notWorn, err := outfits.MarkOutfitPlanNotWorn(ctx, owner.Token, planID, plan.Revision)
 	serviceOK(t, "mark source plan not worn", err)
-	if notWorn.Status != domain.OutfitPlanNotWorn || notWorn.Revision != plan.Revision+1 {
+	if notWorn.Status != outfitplanapp.OutfitPlanNotWorn || notWorn.Revision != plan.Revision+1 {
 		t.Fatal("not-worn transition did not persist")
 	}
 	plan, err = outfits.RestoreOutfitPlan(ctx, owner.Token, planID, notWorn.Revision)
 	serviceOK(t, "restore source plan", err)
-	if plan.Status != domain.OutfitPlanActive || plan.Revision != notWorn.Revision+1 {
+	if plan.Status != outfitplanapp.OutfitPlanActive || plan.Revision != notWorn.Revision+1 {
 		t.Fatal("restore transition did not return the plan to active")
 	}
 	eventID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400f03"
 	sourceRevision := plan.Revision
-	input := domain.WearEventInput{LocalDate: today, TimeZone: "Asia/Shanghai", Completeness: domain.WearEventComplete, Items: []domain.OutfitSelection{{ItemID: shirt.ID, Revision: shirt.Revision}}, LaundryItemIDs: []string{shirt.ID}, SourcePlanID: &planID, SourcePlanRevision: &sourceRevision, SourceKind: domain.WearEventFollowedPlan}
+	input := weareventapp.WearEventInput{LocalDate: today, TimeZone: "Asia/Shanghai", Completeness: weareventapp.WearEventComplete, Items: []outfitplanapp.OutfitSelection{{ItemID: shirt.ID, Revision: shirt.Revision}}, LaundryItemIDs: []string{shirt.ID}, SourcePlanID: &planID, SourcePlanRevision: &sourceRevision, SourceKind: weareventapp.WearEventFollowedPlan}
 	created, err := wear.CreateWearEvent(ctx, owner.Token, eventID, input)
 	serviceOK(t, "create planned wear event", err)
 	if created.Revision != 1 || len(created.Items) != 1 || created.Items[0].Content == nil || created.Items[0].Content.Name != "Blue Shirt" {
@@ -91,29 +90,29 @@ func TestWearEventPersistenceLifecycle(t *testing.T) {
 	}
 	changedCommand := input
 	changedCommand.LaundryItemIDs = nil
-	if _, err := wear.CreateWearEvent(ctx, owner.Token, eventID, changedCommand); !errors.Is(err, domain.ErrWearEventConflict) {
+	if _, err := wear.CreateWearEvent(ctx, owner.Token, eventID, changedCommand); !errors.Is(err, weareventapp.ErrWearEventConflict) {
 		t.Fatal("same wear event ID accepted a create command with different side effects")
 	}
-	if _, err := wear.GetWearEvent(ctx, other.Token, eventID); !errors.Is(err, domain.ErrWearEventNotFound) {
+	if _, err := wear.GetWearEvent(ctx, other.Token, eventID); !errors.Is(err, weareventapp.ErrWearEventNotFound) {
 		t.Fatal("cross-owner wear event lookup did not return not-found")
 	}
 	completed, err := outfits.GetOutfitPlan(ctx, owner.Token, planID)
 	serviceOK(t, "read completed source plan", err)
-	if completed.Status != domain.OutfitPlanCompleted || completed.Revision != plan.Revision+1 {
+	if completed.Status != outfitplanapp.OutfitPlanCompleted || completed.Revision != plan.Revision+1 {
 		t.Fatal("wear event did not complete its source plan")
 	}
 	currentShirt, err := wardrobe.GetWardrobeItem(ctx, owner.Token, shirt.ID)
 	serviceOK(t, "read laundry wardrobe item", err)
-	if currentShirt.Availability != domain.WardrobeLaundry || currentShirt.Revision != shirt.Revision+1 {
+	if currentShirt.Availability != wardrobeapp.WardrobeLaundry || currentShirt.Revision != shirt.Revision+1 {
 		t.Fatal("wear event laundry selection was not committed atomically")
 	}
 
 	secondID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400f04"
-	secondInput := domain.WearEventInput{LocalDate: today, TimeZone: "Asia/Shanghai", Completeness: domain.WearEventPartial, Items: []domain.OutfitSelection{{ItemID: currentShirt.ID, Revision: currentShirt.Revision}}, ConfirmedUnavailableIDs: []string{currentShirt.ID}, SourceKind: domain.WearEventUnplanned}
-	if _, err := wear.CreateWearEvent(ctx, owner.Token, secondID, secondInput); !errors.Is(err, domain.ErrWearEventDuplicate) {
+	secondInput := weareventapp.WearEventInput{LocalDate: today, TimeZone: "Asia/Shanghai", Completeness: weareventapp.WearEventPartial, Items: []outfitplanapp.OutfitSelection{{ItemID: currentShirt.ID, Revision: currentShirt.Revision}}, ConfirmedUnavailableIDs: []string{currentShirt.ID}, SourceKind: weareventapp.WearEventUnplanned}
+	if _, err := wear.CreateWearEvent(ctx, owner.Token, secondID, secondInput); !errors.Is(err, weareventapp.ErrWearEventDuplicate) {
 		t.Fatal("similar same-day wear event did not require explicit confirmation")
 	} else {
-		var duplicate *domain.WearEventDuplicateError
+		var duplicate *weareventapp.WearEventDuplicateError
 		if !errors.As(err, &duplicate) || len(duplicate.Candidates) != 1 || duplicate.Candidates[0].ID != eventID {
 			t.Fatal("duplicate response lost the current candidate revision")
 		}
@@ -135,10 +134,10 @@ func TestWearEventPersistenceLifecycle(t *testing.T) {
 	serviceOK(t, "delete planned wear event", wear.DeleteWearEvent(ctx, owner.Token, eventID, created.Revision))
 	activeAgain, err := outfits.GetOutfitPlan(ctx, owner.Token, planID)
 	serviceOK(t, "read restored active plan", err)
-	if activeAgain.Status != domain.OutfitPlanActive || activeAgain.Revision != completed.Revision+1 {
+	if activeAgain.Status != outfitplanapp.OutfitPlanActive || activeAgain.Revision != completed.Revision+1 {
 		t.Fatal("deleting the last linked wear event did not restore the plan")
 	}
-	if _, err := wear.CreateWearEvent(ctx, owner.Token, eventID, input); !errors.Is(err, domain.ErrWearEventConflict) {
+	if _, err := wear.CreateWearEvent(ctx, owner.Token, eventID, input); !errors.Is(err, weareventapp.ErrWearEventConflict) {
 		t.Fatal("wear event tombstone allowed late recreation")
 	}
 
@@ -147,7 +146,7 @@ func TestWearEventPersistenceLifecycle(t *testing.T) {
 	if impact.AffectedPlanCount != 1 || impact.AffectedWearEventCount != 1 {
 		t.Fatalf("wear-aware deletion impact mismatch: plans=%d events=%d", impact.AffectedPlanCount, impact.AffectedWearEventCount)
 	}
-	serviceOK(t, "redact wardrobe history", wardrobe.DeleteWardrobeItem(ctx, owner.Token, currentShirt.ID, currentShirt.Revision, domain.WardrobeHistoryRedactSnapshots, impact.ExpectedImpact))
+	serviceOK(t, "redact wardrobe history", wardrobe.DeleteWardrobeItem(ctx, owner.Token, currentShirt.ID, currentShirt.Revision, wardrobeapp.WardrobeHistoryRedactSnapshots, impact.ExpectedImpact))
 	redacted, err := wear.GetWearEvent(ctx, owner.Token, second.ID)
 	serviceOK(t, "read redacted wear event", err)
 	if redacted.Revision != second.Revision+1 || redacted.Items[0].Content != nil {

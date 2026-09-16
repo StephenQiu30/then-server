@@ -6,55 +6,56 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
 )
 
 type authenticatorStub struct {
-	user domain.User
+	user accountapp.User
 	err  error
 }
 
-func (s authenticatorStub) CurrentUser(context.Context, string) (domain.User, error) {
+func (s authenticatorStub) CurrentUser(context.Context, string) (accountapp.User, error) {
 	return s.user, s.err
 }
 
 type wearEventRepositoryStub struct {
 	ownerID  string
 	eventID  string
-	input    domain.WearEventInput
+	input    WearEventInput
 	expected int
 	err      error
 }
 
-func (s *wearEventRepositoryStub) CreateWearEvent(_ context.Context, ownerID, eventID string, input domain.WearEventInput, _ time.Time) (domain.WearEvent, error) {
+func (s *wearEventRepositoryStub) CreateWearEvent(_ context.Context, ownerID, eventID string, input WearEventInput, _ time.Time) (WearEvent, error) {
 	s.ownerID, s.eventID, s.input = ownerID, eventID, input
-	return domain.WearEvent{ID: eventID, OwnerID: ownerID, LocalDate: input.LocalDate, TimeZone: input.TimeZone, Revision: 1}, s.err
+	return WearEvent{ID: eventID, OwnerID: ownerID, LocalDate: input.LocalDate, TimeZone: input.TimeZone, Revision: 1}, s.err
 }
-func (s *wearEventRepositoryStub) ListWearEvents(_ context.Context, ownerID string, _ int, _, _ *string) (domain.WearEventPage, error) {
+func (s *wearEventRepositoryStub) ListWearEvents(_ context.Context, ownerID string, _ int, _, _ *string) (WearEventPage, error) {
 	s.ownerID = ownerID
-	return domain.WearEventPage{}, s.err
+	return WearEventPage{}, s.err
 }
-func (s *wearEventRepositoryStub) GetWearEvent(_ context.Context, ownerID, eventID string) (domain.WearEvent, error) {
+func (s *wearEventRepositoryStub) GetWearEvent(_ context.Context, ownerID, eventID string) (WearEvent, error) {
 	s.ownerID, s.eventID = ownerID, eventID
-	return domain.WearEvent{ID: eventID}, s.err
+	return WearEvent{ID: eventID}, s.err
 }
-func (s *wearEventRepositoryStub) UpdateWearEvent(_ context.Context, ownerID, eventID string, expected int, input domain.WearEventInput, _ time.Time) (domain.WearEvent, error) {
+func (s *wearEventRepositoryStub) UpdateWearEvent(_ context.Context, ownerID, eventID string, expected int, input WearEventInput, _ time.Time) (WearEvent, error) {
 	s.ownerID, s.eventID, s.expected, s.input = ownerID, eventID, expected, input
-	return domain.WearEvent{ID: eventID, Revision: expected + 1}, s.err
+	return WearEvent{ID: eventID, Revision: expected + 1}, s.err
 }
 func (s *wearEventRepositoryStub) DeleteWearEvent(_ context.Context, ownerID, eventID string, expected int, _ time.Time) error {
 	s.ownerID, s.eventID, s.expected = ownerID, eventID, expected
 	return s.err
 }
 
-func validWearEventInput() domain.WearEventInput {
+func validWearEventInput() WearEventInput {
 	summary := "  Office day  "
-	return domain.WearEventInput{LocalDate: "2026-09-16", TimeZone: "Asia/Shanghai", Completeness: domain.WearEventComplete, ContextSummary: &summary, Items: []domain.OutfitSelection{{ItemID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Revision: 2}}, SourceKind: domain.WearEventUnplanned}
+	return WearEventInput{LocalDate: "2026-09-16", TimeZone: "Asia/Shanghai", Completeness: WearEventComplete, ContextSummary: &summary, Items: []outfitplanapp.OutfitSelection{{ItemID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Revision: 2}}, SourceKind: WearEventUnplanned}
 }
 
 func newWearEventServiceForTest(t *testing.T, repository *wearEventRepositoryStub) *WearEventService {
 	t.Helper()
-	result, err := NewWearEventService(authenticatorStub{user: domain.User{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a11"}}, repository)
+	result, err := NewWearEventService(authenticatorStub{user: accountapp.User{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a11"}}, repository)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,15 +74,15 @@ func TestWearEventNormalizesAndUsesAuthenticatedOwner(t *testing.T) {
 
 func TestWearEventRejectsInvalidFactsBeforeRepository(t *testing.T) {
 	eventID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400a13"
-	tests := map[string]func(*domain.WearEventInput){
-		"future":         func(value *domain.WearEventInput) { value.LocalDate = "2026-09-17" },
-		"duplicate item": func(value *domain.WearEventInput) { value.Items = append(value.Items, value.Items[0]) },
-		"bad timezone":   func(value *domain.WearEventInput) { value.TimeZone = "Local" },
-		"laundry outside selection": func(value *domain.WearEventInput) {
+	tests := map[string]func(*WearEventInput){
+		"future":         func(value *WearEventInput) { value.LocalDate = "2026-09-17" },
+		"duplicate item": func(value *WearEventInput) { value.Items = append(value.Items, value.Items[0]) },
+		"bad timezone":   func(value *WearEventInput) { value.TimeZone = "Local" },
+		"laundry outside selection": func(value *WearEventInput) {
 			value.LaundryItemIDs = []string{"018f1f74-a2d0-7c6d-9c17-4a0ea240099"}
 		},
-		"planned without source": func(value *domain.WearEventInput) { value.SourceKind = domain.WearEventFollowedPlan },
-		"unplanned with source": func(value *domain.WearEventInput) {
+		"planned without source": func(value *WearEventInput) { value.SourceKind = WearEventFollowedPlan },
+		"unplanned with source": func(value *WearEventInput) {
 			id, revision := "018f1f74-a2d0-7c6d-9c17-4a0ea240088", 1
 			value.SourcePlanID, value.SourcePlanRevision = &id, &revision
 		},
@@ -92,7 +93,7 @@ func TestWearEventRejectsInvalidFactsBeforeRepository(t *testing.T) {
 			input := validWearEventInput()
 			mutate(&input)
 			_, err := newWearEventServiceForTest(t, repository).CreateWearEvent(context.Background(), "session", eventID, input)
-			if !errors.Is(err, domain.ErrInvalidWearEventInput) || repository.ownerID != "" {
+			if !errors.Is(err, ErrInvalidWearEventInput) || repository.ownerID != "" {
 				t.Fatal("invalid wear event reached repository")
 			}
 		})
@@ -109,10 +110,10 @@ func TestWearEventCommandsValidateRevisionAndDate(t *testing.T) {
 	if err := service.DeleteWearEvent(context.Background(), "session", eventID, 3); err != nil || repository.expected != 3 {
 		t.Fatal("valid wear event delete did not reach repository")
 	}
-	if _, err := service.ListWearEvents(context.Background(), "session", 0, nil, nil); !errors.Is(err, domain.ErrInvalidWearEventInput) {
+	if _, err := service.ListWearEvents(context.Background(), "session", 0, nil, nil); !errors.Is(err, ErrInvalidWearEventInput) {
 		t.Fatal("invalid list limit was accepted")
 	}
-	if err := service.DeleteWearEvent(context.Background(), "session", eventID, 0); !errors.Is(err, domain.ErrInvalidWearEventInput) {
+	if err := service.DeleteWearEvent(context.Background(), "session", eventID, 0); !errors.Is(err, ErrInvalidWearEventInput) {
 		t.Fatal("zero delete revision was accepted")
 	}
 }

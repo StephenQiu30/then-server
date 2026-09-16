@@ -8,15 +8,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 )
 
-func fixtureProfile() domain.PublicProfile {
+func fixtureProfile() accountapp.PublicProfile {
 	bio := "记录日常穿搭与轻量生活。"
-	return domain.PublicProfile{
+	return accountapp.PublicProfile{
 		Handle: "then_style", DisplayName: "于是用户", Bio: &bio, Revision: 1,
 		CreatedAt: time.Date(2026, 9, 16, 8, 0, 0, 0, time.UTC),
 		UpdatedAt: time.Date(2026, 9, 16, 8, 0, 0, 0, time.UTC),
@@ -89,10 +90,10 @@ func TestProfileErrorsUseStableBoundaries(t *testing.T) {
 		code       string
 		clearToken bool
 	}{
-		{name: "not found", err: domain.ErrProfileNotFound, status: http.StatusNotFound, code: "NOT_FOUND"},
-		{name: "stale", err: domain.ErrProfileConflict, status: http.StatusConflict, code: "REVISION_CONFLICT"},
-		{name: "handle", err: domain.ErrHandleConflict, status: http.StatusConflict, code: "HANDLE_UNAVAILABLE"},
-		{name: "session", err: domain.ErrAuthentication, status: http.StatusUnauthorized, code: "AUTHENTICATION_FAILED", clearToken: true},
+		{name: "not found", err: accountapp.ErrProfileNotFound, status: http.StatusNotFound, code: "NOT_FOUND"},
+		{name: "stale", err: accountapp.ErrProfileConflict, status: http.StatusConflict, code: "REVISION_CONFLICT"},
+		{name: "handle", err: accountapp.ErrHandleConflict, status: http.StatusConflict, code: "HANDLE_UNAVAILABLE"},
+		{name: "session", err: accountapp.ErrAuthentication, status: http.StatusUnauthorized, code: "AUTHENTICATION_FAILED", clearToken: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

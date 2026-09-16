@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+
 	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
 	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
 	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
 	weareventapp "github.com/StephenQiu30/then-server/backend/internal/application/wearevent"
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -48,9 +49,9 @@ func TestDiaryPersistenceCalendarAndOwnershipLifecycle(t *testing.T) {
 
 	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
 	serviceOK(t, "construct diary account service", err)
-	owner, err := accounts.Register(ctx, domain.RegisterAccountInput{Email: "diary-owner@example.test", DisplayName: "Owner", Password: "correct-password-owner"})
+	owner, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "diary-owner@example.test", DisplayName: "Owner", Password: "correct-password-owner"})
 	serviceOK(t, "register diary owner", err)
-	other, err := accounts.Register(ctx, domain.RegisterAccountInput{Email: "diary-other@example.test", DisplayName: "Other", Password: "correct-password-other"})
+	other, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "diary-other@example.test", DisplayName: "Other", Password: "correct-password-other"})
 	serviceOK(t, "register diary other", err)
 	wardrobe, err := wardrobeapp.NewWardrobeService(accounts, store.NewWardrobeRepository(database))
 	serviceOK(t, "construct diary wardrobe service", err)
@@ -66,54 +67,54 @@ func TestDiaryPersistenceCalendarAndOwnershipLifecycle(t *testing.T) {
 	today := time.Now().In(location).Format("2006-01-02")
 	tomorrow := time.Now().In(location).AddDate(0, 0, 1).Format("2006-01-02")
 	body := "今天的穿搭"
-	if _, err := diaries.Create(ctx, owner.Token, "10000000-0000-4000-8000-000000000001", domain.DiaryEntryInput{LocalDate: tomorrow, TimeZone: "Asia/Shanghai", Body: &body}); !errors.Is(err, domain.ErrInvalidDiaryInput) {
+	if _, err := diaries.Create(ctx, owner.Token, "10000000-0000-4000-8000-000000000001", diaryapp.DiaryEntryInput{LocalDate: tomorrow, TimeZone: "Asia/Shanghai", Body: &body}); !errors.Is(err, diaryapp.ErrInvalidDiaryInput) {
 		t.Fatalf("future diary error=%v", err)
 	}
 
-	item, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, domain.CreateWardrobeItemInput{ID: "10000000-0000-4000-8000-000000000010", Name: "Diary Shirt", Category: domain.WardrobeTop, Availability: domain.WardrobeWearable, Source: domain.WardrobeSourceWardrobe})
+	item, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, wardrobeapp.CreateWardrobeItemInput{ID: "10000000-0000-4000-8000-000000000010", Name: "Diary Shirt", Category: wardrobeapp.WardrobeTop, Availability: wardrobeapp.WardrobeWearable, Source: wardrobeapp.WardrobeSourceWardrobe})
 	serviceOK(t, "create diary wardrobe item", err)
 	planID := "10000000-0000-4000-8000-000000000011"
-	_, err = outfits.CreateOutfitPlan(ctx, owner.Token, planID, domain.OutfitPlanInput{LocalDate: today, TimeZone: "Asia/Shanghai", Items: []domain.OutfitSelection{{ItemID: item.ID, Revision: item.Revision}}})
+	_, err = outfits.CreateOutfitPlan(ctx, owner.Token, planID, outfitplanapp.OutfitPlanInput{LocalDate: today, TimeZone: "Asia/Shanghai", Items: []outfitplanapp.OutfitSelection{{ItemID: item.ID, Revision: item.Revision}}})
 	serviceOK(t, "create diary linked plan", err)
 	eventID := "10000000-0000-4000-8000-000000000012"
-	event, err := wear.CreateWearEvent(ctx, owner.Token, eventID, domain.WearEventInput{LocalDate: today, TimeZone: "Asia/Shanghai", Completeness: domain.WearEventComplete, Items: []domain.OutfitSelection{{ItemID: item.ID, Revision: item.Revision}}, SourceKind: domain.WearEventUnplanned})
+	event, err := wear.CreateWearEvent(ctx, owner.Token, eventID, weareventapp.WearEventInput{LocalDate: today, TimeZone: "Asia/Shanghai", Completeness: weareventapp.WearEventComplete, Items: []outfitplanapp.OutfitSelection{{ItemID: item.ID, Revision: item.Revision}}, SourceKind: weareventapp.WearEventUnplanned})
 	serviceOK(t, "create diary linked wear event", err)
 
 	mediaRepository := store.NewMediaRepository(database)
-	media, err := mediaRepository.CreateMedia(ctx, owner.User.ID, domain.CreateMediaUploadInput{Purpose: domain.MediaPurposeDiaryImage, ContentType: domain.MediaContentTypeJPEG, ByteSize: 128, SHA256: strings.Repeat("a", 64)}, time.Now().UTC())
+	media, err := mediaRepository.CreateMedia(ctx, owner.User.ID, mediaapp.CreateMediaUploadInput{Purpose: mediaapp.MediaPurposeDiaryImage, ContentType: mediaapp.MediaContentTypeJPEG, ByteSize: 128, SHA256: strings.Repeat("a", 64)}, time.Now().UTC())
 	serviceOK(t, "create ordinary diary media", err)
-	media, err = mediaRepository.CompleteMedia(ctx, owner.User.ID, media.ID, "test-version", domain.ObjectFact{ContentType: domain.MediaContentTypeJPEG, ByteSize: 128, SHA256: strings.Repeat("a", 64)}, time.Now().UTC())
+	media, err = mediaRepository.CompleteMedia(ctx, owner.User.ID, media.ID, "test-version", mediaapp.ObjectFact{ContentType: mediaapp.MediaContentTypeJPEG, ByteSize: 128, SHA256: strings.Repeat("a", 64)}, time.Now().UTC())
 	serviceOK(t, "complete ordinary diary media", err)
 	media, process, err := mediaRepository.BeginMediaCheck(ctx, media.ID, time.Now().UTC())
 	serviceOK(t, "begin ordinary diary media check", err)
-	if !process || media.Purpose != domain.MediaPurposeDiaryImage || media.ConsentID != "" {
+	if !process || media.Purpose != mediaapp.MediaPurposeDiaryImage || media.ConsentID != "" {
 		t.Fatal("ordinary diary media reused person-photo semantics")
 	}
-	serviceOK(t, "finish ordinary diary media check", mediaRepository.CompleteMediaCheck(ctx, "10000000-0000-4000-8000-000000000099", media.ID, nil, 10, 10, domain.MediaReady, "ready", time.Now().UTC()))
+	serviceOK(t, "finish ordinary diary media check", mediaRepository.CompleteMediaCheck(ctx, "10000000-0000-4000-8000-000000000099", media.ID, nil, 10, 10, mediaapp.MediaReady, "ready", time.Now().UTC()))
 
 	firstID := "10000000-0000-4000-8000-000000000020"
-	first, err := diaries.Create(ctx, owner.Token, firstID, domain.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &body})
+	first, err := diaries.Create(ctx, owner.Token, firstID, diaryapp.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &body})
 	serviceOK(t, "create first text diary", err)
-	repeated, err := diaries.Create(ctx, owner.Token, firstID, domain.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &body})
+	repeated, err := diaries.Create(ctx, owner.Token, firstID, diaryapp.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &body})
 	serviceOK(t, "repeat idempotent diary", err)
 	if repeated.Revision != first.Revision || !repeated.CreatedAt.Equal(first.CreatedAt) {
 		t.Fatal("idempotent diary create changed facts")
 	}
 	changed := "不同内容"
-	if _, err := diaries.Create(ctx, owner.Token, firstID, domain.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &changed}); !errors.Is(err, domain.ErrDiaryConflict) {
+	if _, err := diaries.Create(ctx, owner.Token, firstID, diaryapp.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &changed}); !errors.Is(err, diaryapp.ErrDiaryConflict) {
 		t.Fatal("same diary id accepted different content")
 	}
-	if _, err := diaries.Get(ctx, other.Token, firstID); !errors.Is(err, domain.ErrDiaryNotFound) {
+	if _, err := diaries.Get(ctx, other.Token, firstID); !errors.Is(err, diaryapp.ErrDiaryNotFound) {
 		t.Fatal("cross-owner diary read did not return not-found")
 	}
 
 	secondID := "10000000-0000-4000-8000-000000000021"
-	second, err := diaries.Create(ctx, owner.Token, secondID, domain.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", PlanID: &planID, WearEventID: &eventID, MediaIDs: []string{media.ID}})
+	second, err := diaries.Create(ctx, owner.Token, secondID, diaryapp.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", PlanID: &planID, WearEventID: &eventID, MediaIDs: []string{media.ID}})
 	serviceOK(t, "create linked image diary", err)
 	if second.Revision != 1 || len(second.MediaIDs) != 1 || second.PlanID == nil || second.WearEventID == nil {
 		t.Fatal("linked diary lost ordered facts")
 	}
-	if _, err := diaries.Create(ctx, other.Token, "10000000-0000-4000-8000-000000000022", domain.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &body, PlanID: &planID}); !errors.Is(err, domain.ErrDiaryNotFound) {
+	if _, err := diaries.Create(ctx, other.Token, "10000000-0000-4000-8000-000000000022", diaryapp.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &body, PlanID: &planID}); !errors.Is(err, diaryapp.ErrDiaryNotFound) {
 		t.Fatalf("cross-owner diary association error=%v", err)
 	}
 
@@ -130,7 +131,7 @@ func TestDiaryPersistenceCalendarAndOwnershipLifecycle(t *testing.T) {
 
 	calendar, err := diaries.Calendar(ctx, owner.Token, today[:7])
 	serviceOK(t, "read diary calendar", err)
-	var day domain.CalendarDay
+	var day diaryapp.CalendarDay
 	for _, candidate := range calendar.Days {
 		if candidate.LocalDate == today {
 			day = candidate
@@ -141,12 +142,12 @@ func TestDiaryPersistenceCalendarAndOwnershipLifecycle(t *testing.T) {
 	}
 
 	updatedBody := "编辑后的记录"
-	updated, err := diaries.Update(ctx, owner.Token, secondID, second.Revision, domain.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &updatedBody, PlanID: &planID, WearEventID: &eventID, MediaIDs: []string{media.ID}})
+	updated, err := diaries.Update(ctx, owner.Token, secondID, second.Revision, diaryapp.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &updatedBody, PlanID: &planID, WearEventID: &eventID, MediaIDs: []string{media.ID}})
 	serviceOK(t, "update linked diary", err)
 	if updated.Revision != 2 || updated.Body == nil || *updated.Body != updatedBody {
 		t.Fatal("diary update lost revision or body")
 	}
-	if _, err := diaries.Update(ctx, owner.Token, secondID, second.Revision, domain.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &body}); !errors.Is(err, domain.ErrDiaryConflict) {
+	if _, err := diaries.Update(ctx, owner.Token, secondID, second.Revision, diaryapp.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &body}); !errors.Is(err, diaryapp.ErrDiaryConflict) {
 		t.Fatal("stale diary update succeeded")
 	}
 
@@ -178,7 +179,7 @@ func TestDiaryPersistenceCalendarAndOwnershipLifecycle(t *testing.T) {
 		t.Fatalf("unexpected diary deletion impact: %+v", impact)
 	}
 	serviceOK(t, "delete diary", diaries.Delete(ctx, owner.Token, secondID, persisted.Revision))
-	if _, err := diaries.Create(ctx, owner.Token, secondID, domain.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &body}); !errors.Is(err, domain.ErrDiaryConflict) {
+	if _, err := diaries.Create(ctx, owner.Token, secondID, diaryapp.DiaryEntryInput{LocalDate: today, TimeZone: "Asia/Shanghai", Body: &body}); !errors.Is(err, diaryapp.ErrDiaryConflict) {
 		t.Fatal("deleted diary was resurrected")
 	}
 }

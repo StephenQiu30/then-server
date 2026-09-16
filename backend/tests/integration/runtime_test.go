@@ -113,7 +113,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(t.TempDir(), "then-backend")
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd")
+	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd/then-server")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v %s", err, output)
 	}

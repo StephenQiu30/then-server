@@ -12,35 +12,36 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 )
 
 type accountServiceStub struct {
-	registered domain.RegisterAccountInput
-	loggedIn   domain.CreateSessionInput
-	updated    domain.UpdateCurrentUserInput
-	user       domain.User
-	profile    domain.PublicProfile
-	profilePut domain.PutProfileInput
+	registered accountapp.RegisterAccountInput
+	loggedIn   accountapp.CreateSessionInput
+	updated    accountapp.UpdateCurrentUserInput
+	user       accountapp.User
+	profile    accountapp.PublicProfile
+	profilePut accountapp.PutProfileInput
 	token      string
 	err        error
 	registers  int
 	logins     int
 }
 
-func (s *accountServiceStub) Register(_ context.Context, input domain.RegisterAccountInput) (domain.AuthenticatedUser, error) {
+func (s *accountServiceStub) Register(_ context.Context, input accountapp.RegisterAccountInput) (accountapp.AuthenticatedUser, error) {
 	s.registered = input
 	s.registers++
-	return domain.AuthenticatedUser{User: s.user, Token: s.token, ExpiresAt: time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)}, s.err
+	return accountapp.AuthenticatedUser{User: s.user, Token: s.token, ExpiresAt: time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)}, s.err
 }
 
-func (s *accountServiceStub) Login(_ context.Context, input domain.CreateSessionInput) (domain.AuthenticatedUser, error) {
+func (s *accountServiceStub) Login(_ context.Context, input accountapp.CreateSessionInput) (accountapp.AuthenticatedUser, error) {
 	s.loggedIn = input
 	s.logins++
-	return domain.AuthenticatedUser{User: s.user, Token: s.token, ExpiresAt: time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)}, s.err
+	return accountapp.AuthenticatedUser{User: s.user, Token: s.token, ExpiresAt: time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)}, s.err
 }
 
 type authRateLimiterStub struct {
@@ -63,26 +64,26 @@ func (s *authRateLimiterStub) Allow(_ context.Context, scope, subject string, li
 	return s.counts[key] <= limit, window, nil
 }
 
-func (s *accountServiceStub) CurrentUser(_ context.Context, token string) (domain.User, error) {
+func (s *accountServiceStub) CurrentUser(_ context.Context, token string) (accountapp.User, error) {
 	s.token = token
 	return s.user, s.err
 }
 
-func (s *accountServiceStub) UpdateCurrentUser(_ context.Context, token string, input domain.UpdateCurrentUserInput) (domain.User, error) {
+func (s *accountServiceStub) UpdateCurrentUser(_ context.Context, token string, input accountapp.UpdateCurrentUserInput) (accountapp.User, error) {
 	s.token, s.updated = token, input
 	return s.user, s.err
 }
 
-func (s *accountServiceStub) CurrentProfile(_ context.Context, token string) (domain.PublicProfile, error) {
+func (s *accountServiceStub) CurrentProfile(_ context.Context, token string) (accountapp.PublicProfile, error) {
 	s.token = token
 	return s.profile, s.err
 }
 
-func (s *accountServiceStub) PublicProfile(_ context.Context, _ string) (domain.PublicProfile, error) {
+func (s *accountServiceStub) PublicProfile(_ context.Context, _ string) (accountapp.PublicProfile, error) {
 	return s.profile, s.err
 }
 
-func (s *accountServiceStub) PutCurrentProfile(_ context.Context, token string, input domain.PutProfileInput) (domain.PublicProfile, error) {
+func (s *accountServiceStub) PutCurrentProfile(_ context.Context, token string, input accountapp.PutProfileInput) (accountapp.PublicProfile, error) {
 	s.token, s.profilePut = token, input
 	return s.profile, s.err
 }
@@ -118,10 +119,10 @@ func authRequest(method, path, body, remoteAddr string) *http.Request {
 	return request
 }
 
-func fixtureUser() domain.User {
-	return domain.User{
+func fixtureUser() accountapp.User {
+	return accountapp.User{
 		ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a11", Email: "person@example.test", DisplayName: "示例用户",
-		Status: domain.AccountActive, Role: domain.AccountUser, Revision: 1,
+		Status: accountapp.AccountActive, Role: accountapp.AccountUser, Revision: 1,
 		CreatedAt: time.Date(2026, 9, 14, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 9, 14, 8, 0, 0, 0, time.UTC),
 	}
 }
@@ -186,7 +187,7 @@ func TestCurrentUserRequiresSession(t *testing.T) {
 }
 
 func TestRejectedAuthenticatedSessionClearsStaleCookie(t *testing.T) {
-	service := &accountServiceStub{user: fixtureUser(), err: domain.ErrAuthentication}
+	service := &accountServiceStub{user: fixtureUser(), err: accountapp.ErrAuthentication}
 	router := accountRouter(t, service, true)
 	request := httptest.NewRequest(http.MethodGet, "/users/me", nil)
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
@@ -202,7 +203,7 @@ func TestRejectedAuthenticatedSessionClearsStaleCookie(t *testing.T) {
 }
 
 func TestFailedLoginDoesNotClearExistingSessionCookie(t *testing.T) {
-	service := &accountServiceStub{user: fixtureUser(), err: domain.ErrAuthentication}
+	service := &accountServiceStub{user: fixtureUser(), err: accountapp.ErrAuthentication}
 	router := accountRouter(t, service, true)
 	request := httptest.NewRequest(http.MethodPost, "/auth/sessions", strings.NewReader(`{"email":"person@example.test","password":"wrong-password"}`))
 	request.Header.Set("Content-Type", "application/json")
@@ -324,7 +325,7 @@ func TestLogoutClearsOnlyCurrentCookie(t *testing.T) {
 }
 
 func TestAccountDeletionRequiresPrivateMediaDeletionFirst(t *testing.T) {
-	service := &accountServiceStub{user: fixtureUser(), err: domain.ErrAccountMediaConflict}
+	service := &accountServiceStub{user: fixtureUser(), err: accountapp.ErrAccountMediaConflict}
 	router := accountRouter(t, service, false)
 	request := httptest.NewRequest(http.MethodDelete, "/users/me", nil)
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})

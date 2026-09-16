@@ -17,7 +17,7 @@ import (
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
-	"github.com/StephenQiu30/then-server/backend/internal/application/mediaworker"
+	mediaworkerapp "github.com/StephenQiu30/then-server/backend/internal/application/mediaworker"
 	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
 	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
 	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
@@ -64,7 +64,7 @@ func Run(log *slog.Logger) error {
 			return err
 		}
 	}
-	var runner *mediaworker.Runner
+	var runner *mediaworkerapp.Runner
 	var broker *messagequeue.Broker
 	if cfg.Role == "worker" || cfg.Role == "all" {
 		broker, err = messagequeue.Open(cfg.RabbitMQURL)
@@ -72,7 +72,7 @@ func Run(log *slog.Logger) error {
 			return err
 		}
 		defer broker.Close()
-		runner, err = mediaworker.New(postgres.NewMediaRepository(pool.ORM()), broker, objects)
+		runner, err = mediaworkerapp.New(postgres.NewMediaRepository(pool.ORM()), broker, objects)
 		if err != nil {
 			return err
 		}

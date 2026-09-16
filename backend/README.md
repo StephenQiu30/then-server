@@ -1,6 +1,6 @@
 # OOTD Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。`cmd/main.go` 通过 `internal/bootstrap` 组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着、私人穿搭日记与日历，以及私有图片上传/检查/删除 API 已经实现。
+这是“于是”当前的 Go/Gin 模块化单体。`cmd/then-server/main.go` 通过 `internal/bootstrap` 组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着、私人穿搭日记与日历，以及私有图片上传/检查/删除 API 已经实现。
 
 ## 本地运行
 
@@ -12,7 +12,7 @@ brew services start redis
 cd backend
 DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' \
 REDIS_URL='redis://127.0.0.1:6379/0' \
-go run ./cmd
+go run ./cmd/then-server
 ```
 
 进程连接数据库后会在监听端口前执行 GORM `AutoMigrate`。当前处于无历史数据的开发阶段，数据库结构由 [`internal/adapter/postgres`](internal/adapter/postgres) 的 GORM record 统一声明；项目不维护 Atlas 配置或 SQL migration。需要破坏性调整时更新 record 并重建本地开发库。
@@ -23,7 +23,7 @@ go run ./cmd
 API_DOCS_ENABLED=true \
 DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' \
 REDIS_URL='redis://127.0.0.1:6379/0' \
-go run ./cmd
+go run ./cmd/then-server
 ```
 
 默认入口：

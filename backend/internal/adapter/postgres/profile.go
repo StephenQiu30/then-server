@@ -5,7 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -30,23 +31,23 @@ type profileRow struct {
 	UpdatedAt   time.Time `gorm:"column:updated_at"`
 }
 
-func (r *AccountRepository) FindProfileByUserID(ctx context.Context, userID string) (domain.PublicProfile, error) {
+func (r *AccountRepository) FindProfileByUserID(ctx context.Context, userID string) (accountapp.PublicProfile, error) {
 	return findProfile(ctx, r.database, "p.user_id = ?", userID)
 }
 
-func (r *AccountRepository) FindProfileByHandle(ctx context.Context, handle string) (domain.PublicProfile, error) {
+func (r *AccountRepository) FindProfileByHandle(ctx context.Context, handle string) (accountapp.PublicProfile, error) {
 	return findProfile(ctx, r.database, "p.handle = ?", handle)
 }
 
-func (r *AccountRepository) PutProfile(ctx context.Context, userID string, input domain.PutProfileInput, at time.Time) (domain.PublicProfile, error) {
-	var result domain.PublicProfile
+func (r *AccountRepository) PutProfile(ctx context.Context, userID string, input accountapp.PutProfileInput, at time.Time) (accountapp.PublicProfile, error) {
+	var result accountapp.PublicProfile
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user userRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "display_name", "status").Where("id = ?", userID).First(&user).Error; err != nil {
 			return err
 		}
-		if user.Status != string(domain.AccountActive) {
-			return domain.ErrAuthentication
+		if user.Status != string(accountapp.AccountActive) {
+			return accountapp.ErrAuthentication
 		}
 
 		var current userProfileRecord
@@ -54,7 +55,7 @@ func (r *AccountRepository) PutProfile(ctx context.Context, userID string, input
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			if input.ExpectedRevision != 0 {
-				return domain.ErrProfileConflict
+				return accountapp.ErrProfileConflict
 			}
 			current = userProfileRecord{
 				UserID: userID, Handle: input.Handle, Bio: input.Bio, Revision: 1,
@@ -67,7 +68,7 @@ func (r *AccountRepository) PutProfile(ctx context.Context, userID string, input
 			return err
 		default:
 			if input.ExpectedRevision != current.Revision {
-				return domain.ErrProfileConflict
+				return accountapp.ErrProfileConflict
 			}
 			update := tx.Model(&userProfileRecord{}).
 				Where("user_id = ? AND revision = ?", userID, current.Revision).
@@ -79,7 +80,7 @@ func (r *AccountRepository) PutProfile(ctx context.Context, userID string, input
 				return update.Error
 			}
 			if update.RowsAffected != 1 {
-				return domain.ErrProfileConflict
+				return accountapp.ErrProfileConflict
 			}
 		}
 		profile, err := findProfile(ctx, tx, "p.user_id = ?", userID)
@@ -90,12 +91,12 @@ func (r *AccountRepository) PutProfile(ctx context.Context, userID string, input
 		return nil
 	})
 	if err != nil {
-		return domain.PublicProfile{}, mapDatabaseError(err)
+		return accountapp.PublicProfile{}, mapDatabaseError(err)
 	}
 	return result, nil
 }
 
-func findProfile(ctx context.Context, database *gorm.DB, predicate string, value string) (domain.PublicProfile, error) {
+func findProfile(ctx context.Context, database *gorm.DB, predicate string, value string) (accountapp.PublicProfile, error) {
 	query := `
 		SELECT p.handle, u.display_name, p.bio, p.revision, p.created_at, p.updated_at
 		FROM user_profiles AS p
@@ -104,13 +105,13 @@ func findProfile(ctx context.Context, database *gorm.DB, predicate string, value
 		LIMIT 1`
 	rows, err := gorm.G[profileRow](database).Raw(query, value).Find(ctx)
 	if err != nil {
-		return domain.PublicProfile{}, domain.ErrAccountUnavailable
+		return accountapp.PublicProfile{}, accountapp.ErrAccountUnavailable
 	}
 	if len(rows) != 1 {
-		return domain.PublicProfile{}, domain.ErrProfileNotFound
+		return accountapp.PublicProfile{}, accountapp.ErrProfileNotFound
 	}
 	row := rows[0]
-	return domain.PublicProfile{
+	return accountapp.PublicProfile{
 		Handle: row.Handle, DisplayName: row.DisplayName, Bio: row.Bio,
 		Revision: row.Revision, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}, nil

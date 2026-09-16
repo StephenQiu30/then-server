@@ -20,20 +20,74 @@ var externalTestSuites = map[string]string{
 const internalImportPrefix = "github.com/StephenQiu30/then-server/backend/internal/"
 
 var allowedInternalImports = map[string]map[string]bool{
-	"domain":      {},
-	"application": {"domain": true},
-	"adapter":     {"domain": true},
+	"application": {},
+	"adapter":     {"application": true},
 	"bootstrap":   {"adapter": true, "application": true, "platform": true},
 	"platform":    {"platform": true},
 }
 
+var allowedApplicationImports = map[string]map[string]bool{
+	"account":     {},
+	"privacy":     {"account": true},
+	"wardrobe":    {"account": true},
+	"outfitplan":  {"account": true, "wardrobe": true},
+	"wearevent":   {"account": true, "outfitplan": true},
+	"diary":       {"account": true},
+	"community":   {"account": true},
+	"media":       {"account": true},
+	"mediaworker": {"media": true},
+}
+
 var forbiddenFrameworkImports = map[string][]string{
-	"domain":               {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
 	"application":          {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
 	"adapter/httpapi":      {"gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
 	"adapter/postgres":     {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
 	"adapter/objectstore":  {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/"},
 	"adapter/messagequeue": {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/redis/", "github.com/minio/"},
+}
+
+func TestApplicationPackageDependencyDirection(t *testing.T) {
+	root := filepath.Join("internal", "application")
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".go" {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		source := strings.Split(filepath.ToSlash(relative), "/")[0]
+		allowed, exists := allowedApplicationImports[source]
+		if !exists {
+			t.Errorf("%s belongs to unregistered application package %q", path, source)
+			return nil
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			importPath, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return err
+			}
+			const prefix = internalImportPrefix + "application/"
+			if !strings.HasPrefix(importPath, prefix) {
+				continue
+			}
+			destination := strings.Split(strings.TrimPrefix(importPath, prefix), "/")[0]
+			if destination != source && !allowed[destination] {
+				t.Errorf("%s: application/%s must not import application/%s", path, source, destination)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestInternalPackageDependencyDirection(t *testing.T) {
@@ -72,7 +126,8 @@ func TestInternalPackageDependencyDirection(t *testing.T) {
 }
 
 func TestCommandEntrypointIsThin(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), filepath.Join("cmd", "main.go"), nil, parser.ImportsOnly)
+	command := filepath.Join("cmd", "then-server", "main.go")
+	file, err := parser.ParseFile(token.NewFileSet(), command, nil, parser.ImportsOnly)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +137,7 @@ func TestCommandEntrypointIsThin(t *testing.T) {
 			t.Fatal(err)
 		}
 		if strings.HasPrefix(importPath, internalImportPrefix) && importPath != internalImportPrefix+"bootstrap" {
-			t.Errorf("cmd/main.go must delegate only to internal/bootstrap, imported %s", importPath)
+			t.Errorf("%s must delegate only to internal/bootstrap, imported %s", command, importPath)
 		}
 	}
 }

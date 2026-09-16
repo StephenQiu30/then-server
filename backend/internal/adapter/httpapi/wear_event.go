@@ -6,15 +6,18 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
+	weareventapp "github.com/StephenQiu30/then-server/backend/internal/application/wearevent"
+
 	"github.com/danielgtaylor/huma/v2"
 )
 
 type WearEventHTTPService interface {
-	CreateWearEvent(context.Context, string, string, domain.WearEventInput) (domain.WearEvent, error)
-	ListWearEvents(context.Context, string, int, *string, *string) (domain.WearEventPage, error)
-	GetWearEvent(context.Context, string, string) (domain.WearEvent, error)
-	UpdateWearEvent(context.Context, string, string, int, domain.WearEventInput) (domain.WearEvent, error)
+	CreateWearEvent(context.Context, string, string, weareventapp.WearEventInput) (weareventapp.WearEvent, error)
+	ListWearEvents(context.Context, string, int, *string, *string) (weareventapp.WearEventPage, error)
+	GetWearEvent(context.Context, string, string) (weareventapp.WearEvent, error)
+	UpdateWearEvent(context.Context, string, string, int, weareventapp.WearEventInput) (weareventapp.WearEvent, error)
 	DeleteWearEvent(context.Context, string, string, int) error
 }
 
@@ -33,17 +36,17 @@ type WearEventCandidateResponse struct {
 }
 
 type WearEventFieldsRequest struct {
-	LocalDate               string                       `json:"local_date" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
-	TimeZone                string                       `json:"time_zone" minLength:"1" maxLength:"255"`
-	Completeness            domain.WearEventCompleteness `json:"completeness" enum:"partial,complete"`
-	ContextSummary          *string                      `json:"context_summary,omitempty" maxLength:"120"`
-	Items                   []OutfitSelectionRequest     `json:"items" minItems:"1" maxItems:"20"`
-	LaundryItemIDs          []string                     `json:"laundry_item_ids" maxItems:"20"`
-	ConfirmedUnavailableIDs []string                     `json:"confirmed_unavailable_ids" maxItems:"20"`
-	SourcePlanID            *string                      `json:"source_plan_id,omitempty" format:"uuid"`
-	SourcePlanRevision      *int                         `json:"source_plan_revision,omitempty" minimum:"1"`
-	SourceKind              domain.WearEventSourceKind   `json:"source_kind" enum:"followed_plan,changed_plan,different_outfit,unplanned"`
-	DuplicateConfirmations  []WearEventCandidateResponse `json:"duplicate_confirmations" maxItems:"50"`
+	LocalDate               string                             `json:"local_date" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
+	TimeZone                string                             `json:"time_zone" minLength:"1" maxLength:"255"`
+	Completeness            weareventapp.WearEventCompleteness `json:"completeness" enum:"partial,complete"`
+	ContextSummary          *string                            `json:"context_summary,omitempty" maxLength:"120"`
+	Items                   []OutfitSelectionRequest           `json:"items" minItems:"1" maxItems:"20"`
+	LaundryItemIDs          []string                           `json:"laundry_item_ids" maxItems:"20"`
+	ConfirmedUnavailableIDs []string                           `json:"confirmed_unavailable_ids" maxItems:"20"`
+	SourcePlanID            *string                            `json:"source_plan_id,omitempty" format:"uuid"`
+	SourcePlanRevision      *int                               `json:"source_plan_revision,omitempty" minimum:"1"`
+	SourceKind              weareventapp.WearEventSourceKind   `json:"source_kind" enum:"followed_plan,changed_plan,different_outfit,unplanned"`
+	DuplicateConfirmations  []WearEventCandidateResponse       `json:"duplicate_confirmations" maxItems:"50"`
 }
 
 type CreateWearEventRequest struct {
@@ -57,18 +60,18 @@ type UpdateWearEventRequest struct {
 }
 
 type WearEventResponse struct {
-	ID                 string                       `json:"id" format:"uuid"`
-	LocalDate          string                       `json:"local_date" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
-	TimeZone           string                       `json:"time_zone" minLength:"1" maxLength:"255"`
-	Completeness       domain.WearEventCompleteness `json:"completeness" enum:"partial,complete"`
-	ContextSummary     *string                      `json:"context_summary,omitempty" maxLength:"120"`
-	SourcePlanID       *string                      `json:"source_plan_id,omitempty" format:"uuid"`
-	SourcePlanRevision *int                         `json:"source_plan_revision,omitempty" minimum:"1"`
-	SourceKind         domain.WearEventSourceKind   `json:"source_kind" enum:"followed_plan,changed_plan,different_outfit,unplanned"`
-	Revision           int                          `json:"revision" minimum:"1"`
-	CreatedAt          time.Time                    `json:"created_at" format:"date-time"`
-	UpdatedAt          time.Time                    `json:"updated_at" format:"date-time"`
-	Items              []OutfitPlanItemResponse     `json:"items" minItems:"1" maxItems:"20"`
+	ID                 string                             `json:"id" format:"uuid"`
+	LocalDate          string                             `json:"local_date" pattern:"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
+	TimeZone           string                             `json:"time_zone" minLength:"1" maxLength:"255"`
+	Completeness       weareventapp.WearEventCompleteness `json:"completeness" enum:"partial,complete"`
+	ContextSummary     *string                            `json:"context_summary,omitempty" maxLength:"120"`
+	SourcePlanID       *string                            `json:"source_plan_id,omitempty" format:"uuid"`
+	SourcePlanRevision *int                               `json:"source_plan_revision,omitempty" minimum:"1"`
+	SourceKind         weareventapp.WearEventSourceKind   `json:"source_kind" enum:"followed_plan,changed_plan,different_outfit,unplanned"`
+	Revision           int                                `json:"revision" minimum:"1"`
+	CreatedAt          time.Time                          `json:"created_at" format:"date-time"`
+	UpdatedAt          time.Time                          `json:"updated_at" format:"date-time"`
+	Items              []OutfitPlanItemResponse           `json:"items" minItems:"1" maxItems:"20"`
 }
 
 type WearEventPageResponse struct {
@@ -202,48 +205,48 @@ func (h *WearEventHandler) delete(ctx context.Context, input *deleteWearEventInp
 
 func (h *WearEventHandler) error(ctx context.Context, err error) error {
 	switch {
-	case errors.Is(err, domain.ErrInvalidWearEventInput):
+	case errors.Is(err, weareventapp.ErrInvalidWearEventInput):
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
-	case errors.Is(err, domain.ErrWearEventNotFound):
+	case errors.Is(err, weareventapp.ErrWearEventNotFound):
 		return newErrorResponse(http.StatusNotFound, requestID(ctx))
-	case errors.Is(err, domain.ErrWearEventDuplicate):
+	case errors.Is(err, weareventapp.ErrWearEventDuplicate):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Confirm the current similar wear events before saving."
-		var duplicate *domain.WearEventDuplicateError
+		var duplicate *weareventapp.WearEventDuplicateError
 		if errors.As(err, &duplicate) {
 			for _, candidate := range duplicate.Candidates {
 				response.DuplicateCandidates = append(response.DuplicateCandidates, WearEventCandidateResponse{ID: candidate.ID, Revision: candidate.Revision})
 			}
 		}
 		return response
-	case errors.Is(err, domain.ErrWearEventConflict):
+	case errors.Is(err, weareventapp.ErrWearEventConflict):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Wear event, outfit plan, or wardrobe facts changed."
 		return response
-	case errors.Is(err, domain.ErrWearEventItemsUnavailable):
+	case errors.Is(err, weareventapp.ErrWearEventItemsUnavailable):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Confirm every currently unavailable wardrobe item."
 		return response
-	case errors.Is(err, domain.ErrAuthentication):
+	case errors.Is(err, accountapp.ErrAuthentication):
 		return authenticatedSessionError(ctx, h.secureCookie)
 	default:
 		return newErrorResponse(http.StatusInternalServerError, requestID(ctx))
 	}
 }
 
-func wearEventFields(request WearEventFieldsRequest) domain.WearEventInput {
-	items := make([]domain.OutfitSelection, 0, len(request.Items))
+func wearEventFields(request WearEventFieldsRequest) weareventapp.WearEventInput {
+	items := make([]outfitplanapp.OutfitSelection, 0, len(request.Items))
 	for _, item := range request.Items {
-		items = append(items, domain.OutfitSelection{ItemID: item.ItemID, Revision: item.Revision})
+		items = append(items, outfitplanapp.OutfitSelection{ItemID: item.ItemID, Revision: item.Revision})
 	}
-	confirmations := make([]domain.WearEventCandidate, 0, len(request.DuplicateConfirmations))
+	confirmations := make([]weareventapp.WearEventCandidate, 0, len(request.DuplicateConfirmations))
 	for _, candidate := range request.DuplicateConfirmations {
-		confirmations = append(confirmations, domain.WearEventCandidate{ID: candidate.ID, Revision: candidate.Revision})
+		confirmations = append(confirmations, weareventapp.WearEventCandidate{ID: candidate.ID, Revision: candidate.Revision})
 	}
-	return domain.WearEventInput{LocalDate: request.LocalDate, TimeZone: request.TimeZone, Completeness: request.Completeness, ContextSummary: request.ContextSummary, Items: items, LaundryItemIDs: request.LaundryItemIDs, ConfirmedUnavailableIDs: request.ConfirmedUnavailableIDs, SourcePlanID: request.SourcePlanID, SourcePlanRevision: request.SourcePlanRevision, SourceKind: request.SourceKind, DuplicateConfirmations: confirmations}
+	return weareventapp.WearEventInput{LocalDate: request.LocalDate, TimeZone: request.TimeZone, Completeness: request.Completeness, ContextSummary: request.ContextSummary, Items: items, LaundryItemIDs: request.LaundryItemIDs, ConfirmedUnavailableIDs: request.ConfirmedUnavailableIDs, SourcePlanID: request.SourcePlanID, SourcePlanRevision: request.SourcePlanRevision, SourceKind: request.SourceKind, DuplicateConfirmations: confirmations}
 }
 
-func wearEventResponse(event domain.WearEvent) WearEventResponse {
+func wearEventResponse(event weareventapp.WearEvent) WearEventResponse {
 	items := make([]OutfitPlanItemResponse, 0, len(event.Items))
 	for _, item := range event.Items {
 		response := OutfitPlanItemResponse{Ordinal: item.Ordinal}

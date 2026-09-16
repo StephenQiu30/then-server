@@ -10,30 +10,32 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
+	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+	weareventapp "github.com/StephenQiu30/then-server/backend/internal/application/wearevent"
 )
 
 type wearEventTransportStub struct {
 	token    string
 	eventID  string
-	input    domain.WearEventInput
+	input    weareventapp.WearEventInput
 	expected int
 	err      error
 }
 
-func (s *wearEventTransportStub) CreateWearEvent(_ context.Context, token, eventID string, input domain.WearEventInput) (domain.WearEvent, error) {
+func (s *wearEventTransportStub) CreateWearEvent(_ context.Context, token, eventID string, input weareventapp.WearEventInput) (weareventapp.WearEvent, error) {
 	s.token, s.eventID, s.input = token, eventID, input
 	return wearEventFixture(), s.err
 }
-func (s *wearEventTransportStub) ListWearEvents(_ context.Context, token string, _ int, _, _ *string) (domain.WearEventPage, error) {
+func (s *wearEventTransportStub) ListWearEvents(_ context.Context, token string, _ int, _, _ *string) (weareventapp.WearEventPage, error) {
 	s.token = token
-	return domain.WearEventPage{Events: []domain.WearEvent{wearEventFixture()}}, s.err
+	return weareventapp.WearEventPage{Events: []weareventapp.WearEvent{wearEventFixture()}}, s.err
 }
-func (s *wearEventTransportStub) GetWearEvent(_ context.Context, token, eventID string) (domain.WearEvent, error) {
+func (s *wearEventTransportStub) GetWearEvent(_ context.Context, token, eventID string) (weareventapp.WearEvent, error) {
 	s.token, s.eventID = token, eventID
 	return wearEventFixture(), s.err
 }
-func (s *wearEventTransportStub) UpdateWearEvent(_ context.Context, token, eventID string, expected int, input domain.WearEventInput) (domain.WearEvent, error) {
+func (s *wearEventTransportStub) UpdateWearEvent(_ context.Context, token, eventID string, expected int, input weareventapp.WearEventInput) (weareventapp.WearEvent, error) {
 	s.token, s.eventID, s.expected, s.input = token, eventID, expected, input
 	event := wearEventFixture()
 	event.Revision = expected + 1
@@ -44,9 +46,9 @@ func (s *wearEventTransportStub) DeleteWearEvent(_ context.Context, token, event
 	return s.err
 }
 
-func wearEventFixture() domain.WearEvent {
+func wearEventFixture() weareventapp.WearEvent {
 	now := time.Date(2026, 9, 16, 3, 0, 0, 0, time.UTC)
-	return domain.WearEvent{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400e11", LocalDate: "2026-09-16", TimeZone: "Asia/Shanghai", Completeness: domain.WearEventComplete, SourceKind: domain.WearEventUnplanned, Revision: 1, CreatedAt: now, UpdatedAt: now, Items: []domain.OutfitPlanItemSnapshot{{Ordinal: 0, Content: &domain.OutfitItemContent{ItemID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", ItemRevision: 2, Name: "Blue Shirt", Category: domain.WardrobeTop, Availability: domain.WardrobeWearable}}}}
+	return weareventapp.WearEvent{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400e11", LocalDate: "2026-09-16", TimeZone: "Asia/Shanghai", Completeness: weareventapp.WearEventComplete, SourceKind: weareventapp.WearEventUnplanned, Revision: 1, CreatedAt: now, UpdatedAt: now, Items: []outfitplanapp.OutfitPlanItemSnapshot{{Ordinal: 0, Content: &outfitplanapp.OutfitItemContent{ItemID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", ItemRevision: 2, Name: "Blue Shirt", Category: wardrobeapp.WardrobeTop, Availability: wardrobeapp.WardrobeWearable}}}}
 }
 
 func wearEventRouter(t *testing.T, service WearEventHTTPService) *Router {
@@ -111,8 +113,8 @@ func TestWearEventHTTPCommandsAndDuplicateCandidates(t *testing.T) {
 			t.Fatalf("%s %s status=%d body=%s", request.Method, request.URL.Path, response.Code, response.Body.String())
 		}
 	}
-	candidate := domain.WearEventCandidate{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400e22", Revision: 4}
-	service.err = &domain.WearEventDuplicateError{Candidates: []domain.WearEventCandidate{candidate}}
+	candidate := weareventapp.WearEventCandidate{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400e22", Revision: 4}
+	service.err = &weareventapp.WearEventDuplicateError{Candidates: []weareventapp.WearEventCandidate{candidate}}
 	request := httptest.NewRequest(http.MethodGet, "/wear-events/"+eventID, nil)
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
 	response := httptest.NewRecorder()

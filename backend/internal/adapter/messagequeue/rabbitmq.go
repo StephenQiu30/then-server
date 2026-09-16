@@ -8,7 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -73,7 +74,7 @@ func (b *Broker) Probe(context.Context) error {
 	return nil
 }
 
-func (b *Broker) Publish(ctx context.Context, event domain.OutboxEvent) error {
+func (b *Broker) Publish(ctx context.Context, event mediaapp.OutboxEvent) error {
 	if b == nil || b.publisher == nil || event.ID == "" || event.AggregateID == "" || (event.EventType != "media.uploaded" && event.EventType != "media.deletion_requested") {
 		return errors.New("message event invalid")
 	}
@@ -94,7 +95,7 @@ func (b *Broker) Publish(ctx context.Context, event domain.OutboxEvent) error {
 	return nil
 }
 
-func (b *Broker) Consume(ctx context.Context, queue string, handler func(context.Context, domain.OutboxEvent) error) error {
+func (b *Broker) Consume(ctx context.Context, queue string, handler func(context.Context, mediaapp.OutboxEvent) error) error {
 	if b == nil || b.connection == nil || handler == nil || (queue != "then.media-check" && queue != "then.media-delete") {
 		return errors.New("message consumer invalid")
 	}
@@ -123,7 +124,7 @@ func (b *Broker) Consume(ctx context.Context, queue string, handler func(context
 				_ = delivery.Nack(false, false)
 				continue
 			}
-			event := domain.OutboxEvent{ID: wire.ID, EventType: wire.EventType, AggregateID: wire.AggregateID, CreatedAt: delivery.Timestamp}
+			event := mediaapp.OutboxEvent{ID: wire.ID, EventType: wire.EventType, AggregateID: wire.AggregateID, CreatedAt: delivery.Timestamp}
 			if err := handler(ctx, event); err != nil {
 				_ = delivery.Nack(false, true)
 				continue

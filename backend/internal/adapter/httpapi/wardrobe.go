@@ -6,17 +6,19 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+
 	"github.com/danielgtaylor/huma/v2"
 )
 
 type WardrobeHTTPService interface {
-	CreateWardrobeItem(context.Context, string, domain.CreateWardrobeItemInput) (domain.WardrobeItem, error)
-	ListWardrobeItems(context.Context, string, int, *string) (domain.WardrobePage, error)
-	GetWardrobeItem(context.Context, string, string) (domain.WardrobeItem, error)
-	UpdateWardrobeItem(context.Context, string, string, int, domain.UpdateWardrobeItemInput) (domain.WardrobeItem, error)
-	GetWardrobeDeletionImpact(context.Context, string, string) (domain.WardrobeDeletionImpact, error)
-	DeleteWardrobeItem(context.Context, string, string, int, domain.WardrobeHistoryPolicy, string) error
+	CreateWardrobeItem(context.Context, string, wardrobeapp.CreateWardrobeItemInput) (wardrobeapp.WardrobeItem, error)
+	ListWardrobeItems(context.Context, string, int, *string) (wardrobeapp.WardrobePage, error)
+	GetWardrobeItem(context.Context, string, string) (wardrobeapp.WardrobeItem, error)
+	UpdateWardrobeItem(context.Context, string, string, int, wardrobeapp.UpdateWardrobeItemInput) (wardrobeapp.WardrobeItem, error)
+	GetWardrobeDeletionImpact(context.Context, string, string) (wardrobeapp.WardrobeDeletionImpact, error)
+	DeleteWardrobeItem(context.Context, string, string, int, wardrobeapp.WardrobeHistoryPolicy, string) error
 }
 
 type WardrobeHandler struct {
@@ -29,42 +31,42 @@ func NewWardrobeHandler(service WardrobeHTTPService, secureCookie bool) *Wardrob
 }
 
 type CreateWardrobeItemRequest struct {
-	ID           string                      `json:"id" format:"uuid" doc:"客户端生成的稳定衣物 ID"`
-	Name         string                      `json:"name" minLength:"1" maxLength:"80" doc:"用户确认的衣物名称"`
-	Category     domain.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
-	Availability domain.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
-	Source       domain.WardrobeSource       `json:"source" enum:"wardrobe,quick_add"`
-	Attributes   WardrobeAttributesRequest   `json:"attributes" doc:"用户明确确认的可选衣物属性；空对象表示全部未知"`
+	ID           string                           `json:"id" format:"uuid" doc:"客户端生成的稳定衣物 ID"`
+	Name         string                           `json:"name" minLength:"1" maxLength:"80" doc:"用户确认的衣物名称"`
+	Category     wardrobeapp.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
+	Availability wardrobeapp.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
+	Source       wardrobeapp.WardrobeSource       `json:"source" enum:"wardrobe,quick_add"`
+	Attributes   WardrobeAttributesRequest        `json:"attributes" doc:"用户明确确认的可选衣物属性；空对象表示全部未知"`
 }
 
 type UpdateWardrobeItemRequest struct {
-	ExpectedRevision int                         `json:"expected_revision" minimum:"1"`
-	Name             string                      `json:"name" minLength:"1" maxLength:"80"`
-	Category         domain.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
-	Availability     domain.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
-	Attributes       WardrobeAttributesRequest   `json:"attributes" doc:"完整替换的用户确认属性；NULL 表示清除为未知"`
+	ExpectedRevision int                              `json:"expected_revision" minimum:"1"`
+	Name             string                           `json:"name" minLength:"1" maxLength:"80"`
+	Category         wardrobeapp.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
+	Availability     wardrobeapp.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
+	Attributes       WardrobeAttributesRequest        `json:"attributes" doc:"完整替换的用户确认属性；NULL 表示清除为未知"`
 }
 
 type WardrobeAttributesRequest struct {
-	FormalityBand *domain.WardrobeFormalityBand  `json:"formality_band,omitempty" enum:"casual,smart_casual,formal" doc:"用户确认的正式度；省略或 NULL 表示未知"`
-	WarmthBand    *domain.WardrobeWarmthBand     `json:"warmth_band,omitempty" enum:"light,medium,warm" doc:"用户确认的保暖感受；省略或 NULL 表示未知"`
-	RainUse       *domain.WardrobeUseSuitability `json:"rain_use,omitempty" enum:"suitable,unsuitable" doc:"用户确认的雨天适用判断；省略或 NULL 表示未知"`
-	WalkingUse    *domain.WardrobeUseSuitability `json:"walking_use,omitempty" enum:"suitable,unsuitable" doc:"用户确认的步行适用判断；省略或 NULL 表示未知"`
+	FormalityBand *wardrobeapp.WardrobeFormalityBand  `json:"formality_band,omitempty" enum:"casual,smart_casual,formal" doc:"用户确认的正式度；省略或 NULL 表示未知"`
+	WarmthBand    *wardrobeapp.WardrobeWarmthBand     `json:"warmth_band,omitempty" enum:"light,medium,warm" doc:"用户确认的保暖感受；省略或 NULL 表示未知"`
+	RainUse       *wardrobeapp.WardrobeUseSuitability `json:"rain_use,omitempty" enum:"suitable,unsuitable" doc:"用户确认的雨天适用判断；省略或 NULL 表示未知"`
+	WalkingUse    *wardrobeapp.WardrobeUseSuitability `json:"walking_use,omitempty" enum:"suitable,unsuitable" doc:"用户确认的步行适用判断；省略或 NULL 表示未知"`
 }
 
 type WardrobeFormalityAttributeResponse struct {
-	Value  domain.WardrobeFormalityBand   `json:"value" enum:"casual,smart_casual,formal"`
-	Source domain.WardrobeAttributeSource `json:"source" enum:"user_confirmed"`
+	Value  wardrobeapp.WardrobeFormalityBand   `json:"value" enum:"casual,smart_casual,formal"`
+	Source wardrobeapp.WardrobeAttributeSource `json:"source" enum:"user_confirmed"`
 }
 
 type WardrobeWarmthAttributeResponse struct {
-	Value  domain.WardrobeWarmthBand      `json:"value" enum:"light,medium,warm"`
-	Source domain.WardrobeAttributeSource `json:"source" enum:"user_confirmed"`
+	Value  wardrobeapp.WardrobeWarmthBand      `json:"value" enum:"light,medium,warm"`
+	Source wardrobeapp.WardrobeAttributeSource `json:"source" enum:"user_confirmed"`
 }
 
 type WardrobeSuitabilityAttributeResponse struct {
-	Value  domain.WardrobeUseSuitability  `json:"value" enum:"suitable,unsuitable"`
-	Source domain.WardrobeAttributeSource `json:"source" enum:"user_confirmed"`
+	Value  wardrobeapp.WardrobeUseSuitability  `json:"value" enum:"suitable,unsuitable"`
+	Source wardrobeapp.WardrobeAttributeSource `json:"source" enum:"user_confirmed"`
 }
 
 type WardrobeAttributesResponse struct {
@@ -75,15 +77,15 @@ type WardrobeAttributesResponse struct {
 }
 
 type WardrobeItemResponse struct {
-	ID           string                      `json:"id" format:"uuid"`
-	Name         string                      `json:"name" minLength:"1" maxLength:"80"`
-	Category     domain.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
-	Availability domain.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
-	Source       domain.WardrobeSource       `json:"source" enum:"wardrobe,quick_add"`
-	Attributes   WardrobeAttributesResponse  `json:"attributes"`
-	Revision     int                         `json:"revision" minimum:"1"`
-	CreatedAt    time.Time                   `json:"created_at" format:"date-time"`
-	UpdatedAt    time.Time                   `json:"updated_at" format:"date-time"`
+	ID           string                           `json:"id" format:"uuid"`
+	Name         string                           `json:"name" minLength:"1" maxLength:"80"`
+	Category     wardrobeapp.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
+	Availability wardrobeapp.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
+	Source       wardrobeapp.WardrobeSource       `json:"source" enum:"wardrobe,quick_add"`
+	Attributes   WardrobeAttributesResponse       `json:"attributes"`
+	Revision     int                              `json:"revision" minimum:"1"`
+	CreatedAt    time.Time                        `json:"created_at" format:"date-time"`
+	UpdatedAt    time.Time                        `json:"updated_at" format:"date-time"`
 }
 
 type WardrobePageResponse struct {
@@ -116,11 +118,11 @@ type updateWardrobeItemInput struct {
 	Body    UpdateWardrobeItemRequest
 }
 type deleteWardrobeItemInput struct {
-	Session          string                       `cookie:"then_session" hidden:"true"`
-	ID               string                       `path:"item_id" format:"uuid"`
-	ExpectedRevision int                          `query:"expected_revision" minimum:"1"`
-	HistoryPolicy    domain.WardrobeHistoryPolicy `query:"history_policy" enum:"redact_snapshots,delete_affected_history"`
-	ExpectedImpact   string                       `query:"expected_impact" minLength:"64" maxLength:"64" pattern:"^[0-9a-f]{64}$"`
+	Session          string                            `cookie:"then_session" hidden:"true"`
+	ID               string                            `path:"item_id" format:"uuid"`
+	ExpectedRevision int                               `query:"expected_revision" minimum:"1"`
+	HistoryPolicy    wardrobeapp.WardrobeHistoryPolicy `query:"history_policy" enum:"redact_snapshots,delete_affected_history"`
+	ExpectedImpact   string                            `query:"expected_impact" minLength:"64" maxLength:"64" pattern:"^[0-9a-f]{64}$"`
 }
 
 type wardrobeItemOutput struct {
@@ -167,7 +169,7 @@ func (h *WardrobeHandler) create(ctx context.Context, input *createWardrobeItemI
 	if err := h.available(ctx, input.Session); err != nil {
 		return nil, err
 	}
-	item, err := h.service.CreateWardrobeItem(ctx, input.Session, domain.CreateWardrobeItemInput{ID: input.Body.ID, Name: input.Body.Name, Category: input.Body.Category, Availability: input.Body.Availability, Source: input.Body.Source, Attributes: wardrobeAttributes(input.Body.Attributes)})
+	item, err := h.service.CreateWardrobeItem(ctx, input.Session, wardrobeapp.CreateWardrobeItemInput{ID: input.Body.ID, Name: input.Body.Name, Category: input.Body.Category, Availability: input.Body.Availability, Source: input.Body.Source, Attributes: wardrobeAttributes(input.Body.Attributes)})
 	if err != nil {
 		return nil, h.error(ctx, err)
 	}
@@ -208,7 +210,7 @@ func (h *WardrobeHandler) update(ctx context.Context, input *updateWardrobeItemI
 	if err := h.available(ctx, input.Session); err != nil {
 		return nil, err
 	}
-	item, err := h.service.UpdateWardrobeItem(ctx, input.Session, input.ID, input.Body.ExpectedRevision, domain.UpdateWardrobeItemInput{Name: input.Body.Name, Category: input.Body.Category, Availability: input.Body.Availability, Attributes: wardrobeAttributes(input.Body.Attributes)})
+	item, err := h.service.UpdateWardrobeItem(ctx, input.Session, input.ID, input.Body.ExpectedRevision, wardrobeapp.UpdateWardrobeItemInput{Name: input.Body.Name, Category: input.Body.Category, Availability: input.Body.Availability, Attributes: wardrobeAttributes(input.Body.Attributes)})
 	if err != nil {
 		return nil, h.error(ctx, err)
 	}
@@ -238,42 +240,42 @@ func (h *WardrobeHandler) deletionImpact(ctx context.Context, input *wardrobeIte
 
 func (h *WardrobeHandler) error(ctx context.Context, err error) error {
 	switch {
-	case errors.Is(err, domain.ErrInvalidWardrobeInput):
+	case errors.Is(err, wardrobeapp.ErrInvalidWardrobeInput):
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
-	case errors.Is(err, domain.ErrWardrobeNotFound):
+	case errors.Is(err, wardrobeapp.ErrWardrobeNotFound):
 		return newErrorResponse(http.StatusNotFound, requestID(ctx))
-	case errors.Is(err, domain.ErrWardrobeConflict):
+	case errors.Is(err, wardrobeapp.ErrWardrobeConflict):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Wardrobe item changed or the stable ID is already used."
 		return response
-	case errors.Is(err, domain.ErrAuthentication):
+	case errors.Is(err, accountapp.ErrAuthentication):
 		return authenticatedSessionError(ctx, h.secureCookie)
 	default:
 		return newErrorResponse(http.StatusInternalServerError, requestID(ctx))
 	}
 }
 
-func wardrobeResponse(item domain.WardrobeItem) WardrobeItemResponse {
+func wardrobeResponse(item wardrobeapp.WardrobeItem) WardrobeItemResponse {
 	return WardrobeItemResponse{ID: item.ID, Name: item.Name, Category: item.Category, Availability: item.Availability, Source: item.Source, Attributes: wardrobeAttributesResponse(item.Attributes), Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
-func wardrobeAttributes(value WardrobeAttributesRequest) domain.WardrobeAttributes {
-	return domain.WardrobeAttributes{FormalityBand: value.FormalityBand, WarmthBand: value.WarmthBand, RainUse: value.RainUse, WalkingUse: value.WalkingUse}
+func wardrobeAttributes(value WardrobeAttributesRequest) wardrobeapp.WardrobeAttributes {
+	return wardrobeapp.WardrobeAttributes{FormalityBand: value.FormalityBand, WarmthBand: value.WarmthBand, RainUse: value.RainUse, WalkingUse: value.WalkingUse}
 }
 
-func wardrobeAttributesResponse(value domain.WardrobeAttributes) WardrobeAttributesResponse {
+func wardrobeAttributesResponse(value wardrobeapp.WardrobeAttributes) WardrobeAttributesResponse {
 	response := WardrobeAttributesResponse{}
 	if value.FormalityBand != nil {
-		response.FormalityBand = &WardrobeFormalityAttributeResponse{Value: *value.FormalityBand, Source: domain.WardrobeAttributeUserConfirmed}
+		response.FormalityBand = &WardrobeFormalityAttributeResponse{Value: *value.FormalityBand, Source: wardrobeapp.WardrobeAttributeUserConfirmed}
 	}
 	if value.WarmthBand != nil {
-		response.WarmthBand = &WardrobeWarmthAttributeResponse{Value: *value.WarmthBand, Source: domain.WardrobeAttributeUserConfirmed}
+		response.WarmthBand = &WardrobeWarmthAttributeResponse{Value: *value.WarmthBand, Source: wardrobeapp.WardrobeAttributeUserConfirmed}
 	}
 	if value.RainUse != nil {
-		response.RainUse = &WardrobeSuitabilityAttributeResponse{Value: *value.RainUse, Source: domain.WardrobeAttributeUserConfirmed}
+		response.RainUse = &WardrobeSuitabilityAttributeResponse{Value: *value.RainUse, Source: wardrobeapp.WardrobeAttributeUserConfirmed}
 	}
 	if value.WalkingUse != nil {
-		response.WalkingUse = &WardrobeSuitabilityAttributeResponse{Value: *value.WalkingUse, Source: domain.WardrobeAttributeUserConfirmed}
+		response.WalkingUse = &WardrobeSuitabilityAttributeResponse{Value: *value.WalkingUse, Source: wardrobeapp.WardrobeAttributeUserConfirmed}
 	}
 	return response
 }

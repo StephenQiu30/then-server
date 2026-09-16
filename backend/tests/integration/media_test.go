@@ -44,7 +44,7 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 	minioAddress := mappedAddress(t, ctx, minioContainer, "9000/tcp")
 	rabbitAddress := mappedAddress(t, ctx, rabbitContainer, "5672/tcp")
 	binary := filepath.Join(t.TempDir(), "then-backend")
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd")
+	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd/then-server")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build actual binary: %v %s", err, output)
 	}

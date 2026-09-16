@@ -4,17 +4,17 @@ import (
 	"context"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 )
 
 type PrivacyAuthenticator interface {
-	CurrentUser(context.Context, string) (domain.User, error)
+	CurrentUser(context.Context, string) (accountapp.User, error)
 }
 
 type PrivacyRepository interface {
-	GetSelfAdultDeclaration(context.Context, string, string) (domain.SelfAdultDeclaration, error)
-	ConfirmSelfAdultDeclaration(context.Context, string, string, time.Time) (domain.SelfAdultDeclaration, error)
-	WithdrawSelfAdultDeclaration(context.Context, string, string, time.Time) (domain.SelfAdultDeclaration, error)
+	GetSelfAdultDeclaration(context.Context, string, string) (SelfAdultDeclaration, error)
+	ConfirmSelfAdultDeclaration(context.Context, string, string, time.Time) (SelfAdultDeclaration, error)
+	WithdrawSelfAdultDeclaration(context.Context, string, string, time.Time) (SelfAdultDeclaration, error)
 }
 
 type PrivacyService struct {
@@ -25,34 +25,34 @@ type PrivacyService struct {
 
 func NewPrivacyService(authenticator PrivacyAuthenticator, repository PrivacyRepository) (*PrivacyService, error) {
 	if authenticator == nil || repository == nil {
-		return nil, domain.ErrPrivacyUnavailable
+		return nil, ErrPrivacyUnavailable
 	}
 	return &PrivacyService{authenticator: authenticator, repository: repository, now: time.Now}, nil
 }
 
-func (s *PrivacyService) CurrentSelfAdultDeclaration(ctx context.Context, token string) (domain.SelfAdultDeclaration, error) {
+func (s *PrivacyService) CurrentSelfAdultDeclaration(ctx context.Context, token string) (SelfAdultDeclaration, error) {
 	user, err := s.authenticator.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.SelfAdultDeclaration{}, err
+		return SelfAdultDeclaration{}, err
 	}
-	return s.repository.GetSelfAdultDeclaration(ctx, user.ID, domain.CurrentSelfAdultPolicyVersion)
+	return s.repository.GetSelfAdultDeclaration(ctx, user.ID, CurrentSelfAdultPolicyVersion)
 }
 
-func (s *PrivacyService) ConfirmSelfAdultDeclaration(ctx context.Context, token string, input domain.ConfirmSelfAdultDeclarationInput) (domain.SelfAdultDeclaration, error) {
-	if input.PolicyVersion != domain.CurrentSelfAdultPolicyVersion || !input.ConfirmsSelfAndAdult {
-		return domain.SelfAdultDeclaration{}, domain.ErrInvalidPrivacyInput
+func (s *PrivacyService) ConfirmSelfAdultDeclaration(ctx context.Context, token string, input ConfirmSelfAdultDeclarationInput) (SelfAdultDeclaration, error) {
+	if input.PolicyVersion != CurrentSelfAdultPolicyVersion || !input.ConfirmsSelfAndAdult {
+		return SelfAdultDeclaration{}, ErrInvalidPrivacyInput
 	}
 	user, err := s.authenticator.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.SelfAdultDeclaration{}, err
+		return SelfAdultDeclaration{}, err
 	}
-	return s.repository.ConfirmSelfAdultDeclaration(ctx, user.ID, domain.CurrentSelfAdultPolicyVersion, s.now().UTC())
+	return s.repository.ConfirmSelfAdultDeclaration(ctx, user.ID, CurrentSelfAdultPolicyVersion, s.now().UTC())
 }
 
-func (s *PrivacyService) WithdrawSelfAdultDeclaration(ctx context.Context, token string) (domain.SelfAdultDeclaration, error) {
+func (s *PrivacyService) WithdrawSelfAdultDeclaration(ctx context.Context, token string) (SelfAdultDeclaration, error) {
 	user, err := s.authenticator.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.SelfAdultDeclaration{}, err
+		return SelfAdultDeclaration{}, err
 	}
-	return s.repository.WithdrawSelfAdultDeclaration(ctx, user.ID, domain.CurrentSelfAdultPolicyVersion, s.now().UTC())
+	return s.repository.WithdrawSelfAdultDeclaration(ctx, user.ID, CurrentSelfAdultPolicyVersion, s.now().UTC())
 }

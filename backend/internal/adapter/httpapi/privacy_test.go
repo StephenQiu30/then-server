@@ -10,35 +10,35 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
 )
 
 type privacyServiceStub struct {
-	declaration domain.SelfAdultDeclaration
+	declaration privacyapp.SelfAdultDeclaration
 	err         error
 	token       string
-	input       domain.ConfirmSelfAdultDeclarationInput
+	input       privacyapp.ConfirmSelfAdultDeclarationInput
 }
 
-func (s *privacyServiceStub) CurrentSelfAdultDeclaration(_ context.Context, token string) (domain.SelfAdultDeclaration, error) {
+func (s *privacyServiceStub) CurrentSelfAdultDeclaration(_ context.Context, token string) (privacyapp.SelfAdultDeclaration, error) {
 	s.token = token
 	return s.declaration, s.err
 }
 
-func (s *privacyServiceStub) ConfirmSelfAdultDeclaration(_ context.Context, token string, input domain.ConfirmSelfAdultDeclarationInput) (domain.SelfAdultDeclaration, error) {
+func (s *privacyServiceStub) ConfirmSelfAdultDeclaration(_ context.Context, token string, input privacyapp.ConfirmSelfAdultDeclarationInput) (privacyapp.SelfAdultDeclaration, error) {
 	s.token, s.input = token, input
 	return s.declaration, s.err
 }
 
-func (s *privacyServiceStub) WithdrawSelfAdultDeclaration(_ context.Context, token string) (domain.SelfAdultDeclaration, error) {
+func (s *privacyServiceStub) WithdrawSelfAdultDeclaration(_ context.Context, token string) (privacyapp.SelfAdultDeclaration, error) {
 	s.token = token
 	return s.declaration, s.err
 }
 
 func TestPrivacyDeclarationHTTPContract(t *testing.T) {
 	confirmedAt := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
-	service := &privacyServiceStub{declaration: domain.SelfAdultDeclaration{
-		PolicyVersion: domain.CurrentSelfAdultPolicyVersion, Confirmed: true, ConfirmedAt: &confirmedAt,
+	service := &privacyServiceStub{declaration: privacyapp.SelfAdultDeclaration{
+		PolicyVersion: privacyapp.CurrentSelfAdultPolicyVersion, Confirmed: true, ConfirmedAt: &confirmedAt,
 	}}
 	router := privacyRouter(t, service)
 	request := httptest.NewRequest(http.MethodPut, "/privacy/self-adult-declaration", strings.NewReader(`{"policy_version":"self-adult-v1","confirms_self_and_adult":true}`))
@@ -49,7 +49,7 @@ func TestPrivacyDeclarationHTTPContract(t *testing.T) {
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"confirmed":true`) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
-	if service.token != strings.Repeat("a", 43) || service.input.PolicyVersion != domain.CurrentSelfAdultPolicyVersion || !service.input.ConfirmsSelfAndAdult {
+	if service.token != strings.Repeat("a", 43) || service.input.PolicyVersion != privacyapp.CurrentSelfAdultPolicyVersion || !service.input.ConfirmsSelfAndAdult {
 		t.Fatal("privacy transport lost the authenticated declaration input")
 	}
 }

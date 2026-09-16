@@ -21,14 +21,14 @@ B0 不伪造业务 API。B1/B2 只实现 17-19 已批准的本人照片准备子
 
 ## Go代码与依赖边界
 
-- `cmd/main.go` 只委托 bootstrap；业务按 `httpapi → application → domain` 进入，PostgreSQL/MinIO/RabbitMQ 作为 adapter 由 bootstrap 注入。
+- `cmd/then-server/main.go` 只委托 bootstrap；业务按 `httpapi → application/<feature>` 进入，PostgreSQL/MinIO/RabbitMQ 作为 adapter 由 bootstrap 注入。
 - 包级单元测试与源码同目录，文件使用 `_test.go`；这是 Go 工具链的原生边界，生产构建不会编译这些文件。跨包真实依赖和进程验收位于 `backend/tests`。
 - `backend/tests/services`、`integration`、`container` 分别对应本机依赖、实际进程和 OCI 镜像，使用同名 build tag；根目录不直接放 Go 文件。`tests/internal` 只共享测试资源所有权代码。
 - `backend/tests` 仍属于唯一 Go module，不增加 test 服务或第二个 module。测试专用 SDK 不进入生产二进制依赖图。
 - 生产配置使用 `APP_*`、`DATABASE_URL` 等运行变量；本机测试连接只使用 `THEN_TEST_*`。测试不回退读取生产变量，不加载项目 `.env`，也不输出 SDK 原始错误。
 - 本机 services 测试只允许 loopback；PostgreSQL 使用临时表，MinIO 使用随机桶，Redis 默认 DB 15 与随机 key，RabbitMQ 使用随机 quorum queue，所有资源由测试清理。
 
-Go 官方建议将服务器实现放入 `internal`，服务命令放入 `cmd`，并通过 `_test.go` 与 `go test` 使用内建测试能力；本项目固定 `cmd/main.go` 与 `internal/bootstrap`，包内单元测试继续跟随被测 package。依据：[Organizing a Go module](https://go.dev/doc/modules/layout)、[Add a test](https://go.dev/doc/tutorial/add-a-test)。build tag 只隔离真实依赖测试，不用于生产功能分支。
+Go 官方建议将服务器实现放入 `internal`，服务命令放入命名的 `cmd/<binary>`，并通过 `_test.go` 与 `go test` 使用内建测试能力；本项目固定 `cmd/then-server/main.go` 与 `internal/bootstrap`，包内单元测试继续跟随被测 package。依据：[Organizing a Go module](https://go.dev/doc/modules/layout)、[Add a test](https://go.dev/doc/tutorial/add-a-test)。build tag 只隔离真实依赖测试，不用于生产功能分支。
 
 ## 独立测试矩阵
 

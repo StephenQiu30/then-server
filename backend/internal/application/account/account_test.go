@@ -8,47 +8,46 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type accountRepositoryStub struct {
-	createdUser     domain.User
+	createdUser     User
 	createdHash     string
-	createdSession  domain.Session
-	credential      domain.Credential
+	createdSession  Session
+	credential      Credential
 	credentialError error
-	sessionUser     domain.User
+	sessionUser     User
 	sessionError    error
 	updatedEmail    *string
 	updatedDisplay  *string
 	updatedRevision int
-	profile         domain.PublicProfile
+	profile         PublicProfile
 	profileError    error
-	profileInput    domain.PutProfileInput
+	profileInput    PutProfileInput
 	deletedSession  []byte
 	deletedUser     string
 }
 
-func (r *accountRepositoryStub) CreateAccount(_ context.Context, user domain.User, hash string, session domain.Session) (domain.User, error) {
+func (r *accountRepositoryStub) CreateAccount(_ context.Context, user User, hash string, session Session) (User, error) {
 	r.createdUser, r.createdHash, r.createdSession = user, hash, session
 	return user, nil
 }
 
-func (r *accountRepositoryStub) FindCredentialByEmail(context.Context, string) (domain.Credential, error) {
+func (r *accountRepositoryStub) FindCredentialByEmail(context.Context, string) (Credential, error) {
 	return r.credential, r.credentialError
 }
 
-func (r *accountRepositoryStub) CreateSession(_ context.Context, session domain.Session) error {
+func (r *accountRepositoryStub) CreateSession(_ context.Context, session Session) error {
 	r.createdSession = session
 	return nil
 }
 
-func (r *accountRepositoryStub) FindUserBySession(_ context.Context, _ []byte, _ time.Time) (domain.User, error) {
+func (r *accountRepositoryStub) FindUserBySession(_ context.Context, _ []byte, _ time.Time) (User, error) {
 	return r.sessionUser, r.sessionError
 }
 
-func (r *accountRepositoryStub) UpdateUser(_ context.Context, _ string, expectedRevision int, email, displayName *string, now time.Time) (domain.User, error) {
+func (r *accountRepositoryStub) UpdateUser(_ context.Context, _ string, expectedRevision int, email, displayName *string, now time.Time) (User, error) {
 	r.updatedEmail, r.updatedDisplay, r.updatedRevision = email, displayName, expectedRevision
 	user := r.sessionUser
 	if email != nil {
@@ -62,15 +61,15 @@ func (r *accountRepositoryStub) UpdateUser(_ context.Context, _ string, expected
 	return user, nil
 }
 
-func (r *accountRepositoryStub) FindProfileByUserID(context.Context, string) (domain.PublicProfile, error) {
+func (r *accountRepositoryStub) FindProfileByUserID(context.Context, string) (PublicProfile, error) {
 	return r.profile, r.profileError
 }
 
-func (r *accountRepositoryStub) FindProfileByHandle(context.Context, string) (domain.PublicProfile, error) {
+func (r *accountRepositoryStub) FindProfileByHandle(context.Context, string) (PublicProfile, error) {
 	return r.profile, r.profileError
 }
 
-func (r *accountRepositoryStub) PutProfile(_ context.Context, _ string, input domain.PutProfileInput, _ time.Time) (domain.PublicProfile, error) {
+func (r *accountRepositoryStub) PutProfile(_ context.Context, _ string, input PutProfileInput, _ time.Time) (PublicProfile, error) {
 	r.profileInput = input
 	return r.profile, r.profileError
 }
@@ -103,7 +102,7 @@ func newAccountServiceForTest(t *testing.T, repository *accountRepositoryStub) *
 func TestRegisterNormalizesAndProtectsCredentials(t *testing.T) {
 	repository := new(accountRepositoryStub)
 	service := newAccountServiceForTest(t, repository)
-	result, err := service.Register(context.Background(), domain.RegisterAccountInput{
+	result, err := service.Register(context.Background(), RegisterAccountInput{
 		Email: "  PERSON@Example.Test ", DisplayName: "  示例用户  ", Password: "correct-password",
 	})
 	if err != nil {
@@ -112,7 +111,7 @@ func TestRegisterNormalizesAndProtectsCredentials(t *testing.T) {
 	if result.User.Email != "person@example.test" || result.User.DisplayName != "示例用户" {
 		t.Fatal("account input was not normalized")
 	}
-	if result.User.Status != domain.AccountActive || result.User.Role != domain.AccountUser || result.User.Revision != 1 {
+	if result.User.Status != AccountActive || result.User.Role != AccountUser || result.User.Revision != 1 {
 		t.Fatal("new account did not receive the safe default state")
 	}
 	if repository.createdHash == "correct-password" || bcrypt.CompareHashAndPassword([]byte(repository.createdHash), []byte("correct-password")) != nil {
@@ -127,13 +126,13 @@ func TestRegisterNormalizesAndProtectsCredentials(t *testing.T) {
 }
 
 func TestRegisterRejectsInvalidInputs(t *testing.T) {
-	for _, input := range []domain.RegisterAccountInput{
+	for _, input := range []RegisterAccountInput{
 		{Email: "invalid", DisplayName: "Name", Password: "correct-password"},
 		{Email: "person@example.test", DisplayName: " ", Password: "correct-password"},
 		{Email: "person@example.test", DisplayName: "Name", Password: "short"},
 	} {
 		service := newAccountServiceForTest(t, new(accountRepositoryStub))
-		if _, err := service.Register(context.Background(), input); !errors.Is(err, domain.ErrInvalidAccountInput) {
+		if _, err := service.Register(context.Background(), input); !errors.Is(err, ErrInvalidAccountInput) {
 			t.Fatal("invalid registration was accepted")
 		}
 	}
@@ -145,25 +144,25 @@ func TestLoginDoesNotRevealAccountExistence(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, repository := range []*accountRepositoryStub{
-		{credentialError: domain.ErrAuthentication},
-		{credential: domain.Credential{PasswordHash: string(wrongHash)}},
+		{credentialError: ErrAuthentication},
+		{credential: Credential{PasswordHash: string(wrongHash)}},
 	} {
 		service := newAccountServiceForTest(t, repository)
-		if _, err := service.Login(context.Background(), domain.CreateSessionInput{Email: "person@example.test", Password: "correct-password"}); !errors.Is(err, domain.ErrAuthentication) {
+		if _, err := service.Login(context.Background(), CreateSessionInput{Email: "person@example.test", Password: "correct-password"}); !errors.Is(err, ErrAuthentication) {
 			t.Fatal("invalid login did not use the stable authentication error")
 		}
 	}
 }
 
 func TestAuthenticatedUpdateLogoutAndDeleteUseSessionOwner(t *testing.T) {
-	repository := &accountRepositoryStub{sessionUser: domain.User{ID: "user-id", Email: "old@example.test", DisplayName: "Old", Status: domain.AccountActive, Role: domain.AccountUser, Revision: 1}}
+	repository := &accountRepositoryStub{sessionUser: User{ID: "user-id", Email: "old@example.test", DisplayName: "Old", Status: AccountActive, Role: AccountUser, Revision: 1}}
 	service := newAccountServiceForTest(t, repository)
-	registered, err := service.Register(context.Background(), domain.RegisterAccountInput{Email: "first@example.test", DisplayName: "First", Password: "correct-password"})
+	registered, err := service.Register(context.Background(), RegisterAccountInput{Email: "first@example.test", DisplayName: "First", Password: "correct-password"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	email, name := " NEW@Example.Test ", " New Name "
-	updated, err := service.UpdateCurrentUser(context.Background(), registered.Token, domain.UpdateCurrentUserInput{Email: &email, DisplayName: &name, ExpectedRevision: 1})
+	updated, err := service.UpdateCurrentUser(context.Background(), registered.Token, UpdateCurrentUserInput{Email: &email, DisplayName: &name, ExpectedRevision: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,11 +182,11 @@ func TestAuthenticatedUpdateLogoutAndDeleteUseSessionOwner(t *testing.T) {
 
 func TestAccountUpdateRejectsStaleRevisionBeforeWriting(t *testing.T) {
 	name := "New Name"
-	repository := &accountRepositoryStub{sessionUser: domain.User{ID: "user-id", Revision: 3}}
+	repository := &accountRepositoryStub{sessionUser: User{ID: "user-id", Revision: 3}}
 	service := newAccountServiceForTest(t, repository)
-	if _, err := service.UpdateCurrentUser(context.Background(), strings.Repeat("K", encodedTokenLength), domain.UpdateCurrentUserInput{
+	if _, err := service.UpdateCurrentUser(context.Background(), strings.Repeat("K", encodedTokenLength), UpdateCurrentUserInput{
 		DisplayName: &name, ExpectedRevision: 2,
-	}); !errors.Is(err, domain.ErrAccountConflict) {
+	}); !errors.Is(err, ErrAccountConflict) {
 		t.Fatalf("stale account revision error=%v", err)
 	}
 	if repository.updatedDisplay != nil {

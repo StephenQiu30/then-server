@@ -9,7 +9,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
+	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+	weareventapp "github.com/StephenQiu30/then-server/backend/internal/application/wearevent"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -65,15 +68,15 @@ type wearEventDeletionRecord struct {
 
 func (wearEventDeletionRecord) TableName() string { return "wear_event_deletions" }
 
-func (r *WearEventRepository) CreateWearEvent(ctx context.Context, ownerID, eventID string, input domain.WearEventInput, at time.Time) (domain.WearEvent, error) {
-	var result domain.WearEvent
+func (r *WearEventRepository) CreateWearEvent(ctx context.Context, ownerID, eventID string, input weareventapp.WearEventInput, at time.Time) (weareventapp.WearEvent, error) {
+	var result weareventapp.WearEvent
 	fingerprint := wearEventCreateFingerprint(input)
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existingRecord wearEventRecord
 		err := tx.Where("owner_id = ? AND id = ?", ownerID, eventID).First(&existingRecord).Error
 		if err == nil {
 			if existingRecord.CreateFingerprint != fingerprint {
-				return domain.ErrWearEventConflict
+				return weareventapp.ErrWearEventConflict
 			}
 			result, err = readWearEvent(tx, ownerID, eventID)
 			return err
@@ -86,18 +89,18 @@ func (r *WearEventRepository) CreateWearEvent(ctx context.Context, ownerID, even
 			return err
 		}
 		if deleted != 0 {
-			return domain.ErrWearEventConflict
+			return weareventapp.ErrWearEventConflict
 		}
 		result, err = writeWearEvent(tx, ownerID, eventID, nil, input, fingerprint, at)
 		return err
 	})
 	if err != nil {
-		return domain.WearEvent{}, wearEventWriteError(err)
+		return weareventapp.WearEvent{}, wearEventWriteError(err)
 	}
 	return result, nil
 }
 
-func (r *WearEventRepository) ListWearEvents(ctx context.Context, ownerID string, limit int, afterID, localDate *string) (domain.WearEventPage, error) {
+func (r *WearEventRepository) ListWearEvents(ctx context.Context, ownerID string, limit int, afterID, localDate *string) (weareventapp.WearEventPage, error) {
 	query := r.database.WithContext(ctx).Where("owner_id = ?", ownerID)
 	if localDate != nil {
 		query = query.Where("local_date = ?", *localDate)
@@ -109,13 +112,13 @@ func (r *WearEventRepository) ListWearEvents(ctx context.Context, ownerID string
 			cursorQuery = cursorQuery.Where("local_date = ?", *localDate)
 		}
 		if err := cursorQuery.First(&cursor).Error; err != nil {
-			return domain.WearEventPage{}, wearEventLookupError(err)
+			return weareventapp.WearEventPage{}, wearEventLookupError(err)
 		}
 		query = query.Where("local_date < ? OR (local_date = ? AND created_at < ?) OR (local_date = ? AND created_at = ? AND id > ?)", cursor.LocalDate, cursor.LocalDate, cursor.CreatedAt, cursor.LocalDate, cursor.CreatedAt, cursor.ID)
 	}
 	var records []wearEventRecord
 	if err := query.Order("local_date DESC").Order("created_at DESC").Order("id ASC").Limit(limit + 1).Find(&records).Error; err != nil {
-		return domain.WearEventPage{}, domain.ErrWearEventServiceUnavailable
+		return weareventapp.WearEventPage{}, weareventapp.ErrWearEventServiceUnavailable
 	}
 	hasMore := len(records) > limit
 	if hasMore {
@@ -123,9 +126,9 @@ func (r *WearEventRepository) ListWearEvents(ctx context.Context, ownerID string
 	}
 	items, err := readWearItemsForEvents(r.database.WithContext(ctx), ownerID, records)
 	if err != nil {
-		return domain.WearEventPage{}, domain.ErrWearEventServiceUnavailable
+		return weareventapp.WearEventPage{}, weareventapp.ErrWearEventServiceUnavailable
 	}
-	page := domain.WearEventPage{Events: make([]domain.WearEvent, 0, len(records))}
+	page := weareventapp.WearEventPage{Events: make([]weareventapp.WearEvent, 0, len(records))}
 	for _, record := range records {
 		page.Events = append(page.Events, wearEventFromRecord(record, items[record.ID]))
 	}
@@ -136,19 +139,19 @@ func (r *WearEventRepository) ListWearEvents(ctx context.Context, ownerID string
 	return page, nil
 }
 
-func (r *WearEventRepository) GetWearEvent(ctx context.Context, ownerID, eventID string) (domain.WearEvent, error) {
+func (r *WearEventRepository) GetWearEvent(ctx context.Context, ownerID, eventID string) (weareventapp.WearEvent, error) {
 	return readWearEvent(r.database.WithContext(ctx), ownerID, eventID)
 }
 
-func (r *WearEventRepository) UpdateWearEvent(ctx context.Context, ownerID, eventID string, expectedRevision int, input domain.WearEventInput, at time.Time) (domain.WearEvent, error) {
-	var result domain.WearEvent
+func (r *WearEventRepository) UpdateWearEvent(ctx context.Context, ownerID, eventID string, expectedRevision int, input weareventapp.WearEventInput, at time.Time) (weareventapp.WearEvent, error) {
+	var result weareventapp.WearEvent
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var record wearEventRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, eventID).First(&record).Error; err != nil {
 			return err
 		}
 		if record.Revision != expectedRevision || record.TimeZone != input.TimeZone {
-			return domain.ErrWearEventConflict
+			return weareventapp.ErrWearEventConflict
 		}
 		old, err := readWearEvent(tx, ownerID, eventID)
 		if err != nil {
@@ -158,7 +161,7 @@ func (r *WearEventRepository) UpdateWearEvent(ctx context.Context, ownerID, even
 		return err
 	})
 	if err != nil {
-		return domain.WearEvent{}, wearEventWriteError(err)
+		return weareventapp.WearEvent{}, wearEventWriteError(err)
 	}
 	return result, nil
 }
@@ -170,7 +173,7 @@ func (r *WearEventRepository) DeleteWearEvent(ctx context.Context, ownerID, even
 			return err
 		}
 		if record.Revision != expectedRevision {
-			return domain.ErrWearEventConflict
+			return weareventapp.ErrWearEventConflict
 		}
 		if err := createWearEventTombstone(tx, ownerID, eventID, at); err != nil {
 			return err
@@ -189,20 +192,20 @@ func (r *WearEventRepository) DeleteWearEvent(ctx context.Context, ownerID, even
 	return wearEventWriteError(err)
 }
 
-func writeWearEvent(tx *gorm.DB, ownerID, eventID string, old *domain.WearEvent, input domain.WearEventInput, createFingerprint string, at time.Time) (domain.WearEvent, error) {
+func writeWearEvent(tx *gorm.DB, ownerID, eventID string, old *weareventapp.WearEvent, input weareventapp.WearEventInput, createFingerprint string, at time.Time) (weareventapp.WearEvent, error) {
 	candidates, err := duplicateWearEvents(tx, ownerID, eventID, input.LocalDate, input.Items)
 	if err != nil {
-		return domain.WearEvent{}, err
+		return weareventapp.WearEvent{}, err
 	}
 	if !sameWearCandidates(candidates, input.DuplicateConfirmations) {
-		return domain.WearEvent{}, &domain.WearEventDuplicateError{Candidates: candidates}
+		return weareventapp.WearEvent{}, &weareventapp.WearEventDuplicateError{Candidates: candidates}
 	}
 	if err := validateWearSourcePlan(tx, ownerID, old, input); err != nil {
-		return domain.WearEvent{}, err
+		return weareventapp.WearEvent{}, err
 	}
 	items, wardrobe, err := snapshotWearItems(tx, ownerID, eventID, input)
 	if err != nil {
-		return domain.WearEvent{}, err
+		return weareventapp.WearEvent{}, err
 	}
 	date, _ := time.Parse("2006-01-02", input.LocalDate)
 	revision := 1
@@ -214,36 +217,36 @@ func writeWearEvent(tx *gorm.DB, ownerID, eventID string, old *domain.WearEvent,
 			at = old.UpdatedAt
 		}
 		if err := tx.Where("owner_id = ? AND event_id = ?", ownerID, eventID).Delete(&wearEventItemRecord{}).Error; err != nil {
-			return domain.WearEvent{}, err
+			return weareventapp.WearEvent{}, err
 		}
 	}
 	record := wearEventRecord{OwnerID: ownerID, ID: eventID, LocalDate: date, TimeZone: input.TimeZone, Completeness: string(input.Completeness), ContextSummary: input.ContextSummary, SourcePlanID: input.SourcePlanID, SourcePlanRevision: input.SourcePlanRevision, SourceKind: string(input.SourceKind), CreateFingerprint: createFingerprint, Revision: revision, CreatedAt: createdAt, UpdatedAt: at}
 	if old == nil {
 		created := tx.Clauses(clause.OnConflict{DoNothing: true}).Omit("Items").Create(&record)
 		if created.Error != nil {
-			return domain.WearEvent{}, created.Error
+			return weareventapp.WearEvent{}, created.Error
 		}
 		if created.RowsAffected == 0 {
 			var existing wearEventRecord
 			if err := tx.Where("owner_id = ? AND id = ?", ownerID, eventID).First(&existing).Error; err != nil || existing.CreateFingerprint != createFingerprint {
-				return domain.WearEvent{}, domain.ErrWearEventConflict
+				return weareventapp.WearEvent{}, weareventapp.ErrWearEventConflict
 			}
 			return readWearEvent(tx, ownerID, eventID)
 		}
 	} else {
 		updated := tx.Model(&wearEventRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, eventID, old.Revision).Updates(map[string]any{"local_date": date, "completeness": record.Completeness, "context_summary": record.ContextSummary, "source_plan_id": record.SourcePlanID, "source_plan_revision": record.SourcePlanRevision, "source_kind": record.SourceKind, "revision": revision, "updated_at": at})
 		if updated.Error != nil {
-			return domain.WearEvent{}, updated.Error
+			return weareventapp.WearEvent{}, updated.Error
 		}
 		if updated.RowsAffected != 1 {
-			return domain.WearEvent{}, domain.ErrWearEventConflict
+			return weareventapp.WearEvent{}, weareventapp.ErrWearEventConflict
 		}
 	}
 	if err := tx.Create(&items).Error; err != nil {
-		return domain.WearEvent{}, err
+		return weareventapp.WearEvent{}, err
 	}
 	if err := applyLaundrySelection(tx, wardrobe, input.LaundryItemIDs, at); err != nil {
-		return domain.WearEvent{}, err
+		return weareventapp.WearEvent{}, err
 	}
 	planIDs := map[string]bool{}
 	if old != nil && old.SourcePlanID != nil {
@@ -254,31 +257,31 @@ func writeWearEvent(tx *gorm.DB, ownerID, eventID string, old *domain.WearEvent,
 	}
 	for planID := range planIDs {
 		if err := recomputeOutfitPlanStatus(tx, ownerID, planID, at); err != nil {
-			return domain.WearEvent{}, err
+			return weareventapp.WearEvent{}, err
 		}
 	}
 	return wearEventFromRecord(record, items), nil
 }
 
-func validateWearSourcePlan(tx *gorm.DB, ownerID string, old *domain.WearEvent, input domain.WearEventInput) error {
+func validateWearSourcePlan(tx *gorm.DB, ownerID string, old *weareventapp.WearEvent, input weareventapp.WearEventInput) error {
 	if input.SourcePlanID == nil {
 		return nil
 	}
 	var plan outfitPlanRecord
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, *input.SourcePlanID).First(&plan).Error; err != nil {
-		return domain.ErrWearEventConflict
+		return weareventapp.ErrWearEventConflict
 	}
 	preserves := old != nil && old.SourcePlanID != nil && *old.SourcePlanID == *input.SourcePlanID && old.SourcePlanRevision != nil && *old.SourcePlanRevision == *input.SourcePlanRevision
 	if !preserves && plan.Revision != *input.SourcePlanRevision {
-		return domain.ErrWearEventConflict
+		return weareventapp.ErrWearEventConflict
 	}
-	if plan.Status != string(domain.OutfitPlanActive) && plan.Status != string(domain.OutfitPlanCompleted) {
-		return domain.ErrWearEventConflict
+	if plan.Status != string(outfitplanapp.OutfitPlanActive) && plan.Status != string(outfitplanapp.OutfitPlanCompleted) {
+		return weareventapp.ErrWearEventConflict
 	}
 	return nil
 }
 
-func snapshotWearItems(tx *gorm.DB, ownerID, eventID string, input domain.WearEventInput) ([]wearEventItemRecord, map[string]wardrobeItemRecord, error) {
+func snapshotWearItems(tx *gorm.DB, ownerID, eventID string, input weareventapp.WearEventInput) ([]wearEventItemRecord, map[string]wardrobeItemRecord, error) {
 	ids := make([]string, len(input.Items))
 	for index, item := range input.Items {
 		ids[index] = item.ItemID
@@ -288,7 +291,7 @@ func snapshotWearItems(tx *gorm.DB, ownerID, eventID string, input domain.WearEv
 		return nil, nil, err
 	}
 	if len(records) != len(ids) {
-		return nil, nil, domain.ErrWearEventConflict
+		return nil, nil, weareventapp.ErrWearEventConflict
 	}
 	byID := make(map[string]wardrobeItemRecord, len(records))
 	for _, item := range records {
@@ -299,14 +302,14 @@ func snapshotWearItems(tx *gorm.DB, ownerID, eventID string, input domain.WearEv
 	for ordinal, selected := range input.Items {
 		item, exists := byID[selected.ItemID]
 		if !exists || item.Revision != selected.Revision {
-			return nil, nil, domain.ErrWearEventConflict
+			return nil, nil, weareventapp.ErrWearEventConflict
 		}
-		unavailable := item.Availability != string(domain.WardrobeWearable)
+		unavailable := item.Availability != string(wardrobeapp.WardrobeWearable)
 		if unavailable != confirmed[item.ID] {
 			if unavailable {
-				return nil, nil, domain.ErrWearEventItemsUnavailable
+				return nil, nil, weareventapp.ErrWearEventItemsUnavailable
 			}
-			return nil, nil, domain.ErrWearEventConflict
+			return nil, nil, weareventapp.ErrWearEventConflict
 		}
 		itemID, revision, name, category, availability := item.ID, item.Revision, item.Name, item.Category, item.Availability
 		items = append(items, wearEventItemRecord{OwnerID: ownerID, EventID: eventID, Ordinal: ordinal, WardrobeItemID: &itemID, ItemRevision: &revision, Name: &name, Category: &category, Availability: &availability, FormalityBand: copyString(item.FormalityBand), WarmthBand: copyString(item.WarmthBand), RainUse: copyString(item.RainUse), WalkingUse: copyString(item.WalkingUse)})
@@ -317,25 +320,25 @@ func snapshotWearItems(tx *gorm.DB, ownerID, eventID string, input domain.WearEv
 func applyLaundrySelection(tx *gorm.DB, wardrobe map[string]wardrobeItemRecord, selected []string, at time.Time) error {
 	for _, itemID := range selected {
 		item := wardrobe[itemID]
-		if item.Availability == string(domain.WardrobeLaundry) {
+		if item.Availability == string(wardrobeapp.WardrobeLaundry) {
 			continue
 		}
 		updatedAt := at
 		if updatedAt.Before(item.UpdatedAt) {
 			updatedAt = item.UpdatedAt
 		}
-		updated := tx.Model(&wardrobeItemRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", item.OwnerID, item.ID, item.Revision).Updates(map[string]any{"availability": string(domain.WardrobeLaundry), "revision": item.Revision + 1, "updated_at": updatedAt})
+		updated := tx.Model(&wardrobeItemRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", item.OwnerID, item.ID, item.Revision).Updates(map[string]any{"availability": string(wardrobeapp.WardrobeLaundry), "revision": item.Revision + 1, "updated_at": updatedAt})
 		if updated.Error != nil {
 			return updated.Error
 		}
 		if updated.RowsAffected != 1 {
-			return domain.ErrWearEventConflict
+			return weareventapp.ErrWearEventConflict
 		}
 	}
 	return nil
 }
 
-func duplicateWearEvents(tx *gorm.DB, ownerID, eventID, localDate string, selected []domain.OutfitSelection) ([]domain.WearEventCandidate, error) {
+func duplicateWearEvents(tx *gorm.DB, ownerID, eventID, localDate string, selected []outfitplanapp.OutfitSelection) ([]weareventapp.WearEventCandidate, error) {
 	var records []wearEventRecord
 	if err := tx.Select("owner_id", "id", "revision").Where("owner_id = ? AND local_date = ? AND id <> ?", ownerID, localDate, eventID).Order("id ASC").Find(&records).Error; err != nil {
 		return nil, err
@@ -344,7 +347,7 @@ func duplicateWearEvents(tx *gorm.DB, ownerID, eventID, localDate string, select
 	for _, item := range selected {
 		selectedIDs[item.ItemID] = true
 	}
-	result := []domain.WearEventCandidate{}
+	result := []weareventapp.WearEventCandidate{}
 	for _, record := range records {
 		var items []wearEventItemRecord
 		if err := tx.Select("wardrobe_item_id").Where("owner_id = ? AND event_id = ? AND wardrobe_item_id IS NOT NULL", ownerID, record.ID).Find(&items).Error; err != nil {
@@ -365,7 +368,7 @@ func duplicateWearEvents(tx *gorm.DB, ownerID, eventID, localDate string, select
 			}
 		}
 		if union > 0 && float64(intersection)/float64(union) >= 0.8 {
-			result = append(result, domain.WearEventCandidate{ID: record.ID, Revision: record.Revision})
+			result = append(result, weareventapp.WearEventCandidate{ID: record.ID, Revision: record.Revision})
 		}
 	}
 	return result, nil
@@ -379,16 +382,16 @@ func recomputeOutfitPlanStatus(tx *gorm.DB, ownerID, planID string, at time.Time
 		}
 		return err
 	}
-	if plan.Status == string(domain.OutfitPlanCancelled) || plan.Status == string(domain.OutfitPlanNotWorn) {
+	if plan.Status == string(outfitplanapp.OutfitPlanCancelled) || plan.Status == string(outfitplanapp.OutfitPlanNotWorn) {
 		return nil
 	}
 	var count int64
 	if err := tx.Model(&wearEventRecord{}).Where("owner_id = ? AND source_plan_id = ?", ownerID, planID).Count(&count).Error; err != nil {
 		return err
 	}
-	desired := string(domain.OutfitPlanActive)
+	desired := string(outfitplanapp.OutfitPlanActive)
 	if count > 0 {
-		desired = string(domain.OutfitPlanCompleted)
+		desired = string(outfitplanapp.OutfitPlanCompleted)
 	}
 	if plan.Status == desired {
 		return nil
@@ -399,14 +402,14 @@ func recomputeOutfitPlanStatus(tx *gorm.DB, ownerID, planID string, at time.Time
 	return tx.Model(&outfitPlanRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, planID, plan.Revision).Updates(map[string]any{"status": desired, "revision": plan.Revision + 1, "updated_at": at}).Error
 }
 
-func readWearEvent(tx *gorm.DB, ownerID, eventID string) (domain.WearEvent, error) {
+func readWearEvent(tx *gorm.DB, ownerID, eventID string) (weareventapp.WearEvent, error) {
 	var record wearEventRecord
 	if err := tx.Where("owner_id = ? AND id = ?", ownerID, eventID).First(&record).Error; err != nil {
-		return domain.WearEvent{}, wearEventLookupError(err)
+		return weareventapp.WearEvent{}, wearEventLookupError(err)
 	}
 	items, err := readWearItemsForEvents(tx, ownerID, []wearEventRecord{record})
 	if err != nil {
-		return domain.WearEvent{}, domain.ErrWearEventServiceUnavailable
+		return weareventapp.WearEvent{}, weareventapp.ErrWearEventServiceUnavailable
 	}
 	return wearEventFromRecord(record, items[eventID]), nil
 }
@@ -430,31 +433,31 @@ func readWearItemsForEvents(tx *gorm.DB, ownerID string, events []wearEventRecor
 	return result, nil
 }
 
-func wearEventFromRecord(record wearEventRecord, items []wearEventItemRecord) domain.WearEvent {
-	result := domain.WearEvent{ID: record.ID, OwnerID: record.OwnerID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, Completeness: domain.WearEventCompleteness(record.Completeness), ContextSummary: copyString(record.ContextSummary), SourcePlanID: copyString(record.SourcePlanID), SourcePlanRevision: copyInt(record.SourcePlanRevision), SourceKind: domain.WearEventSourceKind(record.SourceKind), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Items: make([]domain.OutfitPlanItemSnapshot, 0, len(items))}
+func wearEventFromRecord(record wearEventRecord, items []wearEventItemRecord) weareventapp.WearEvent {
+	result := weareventapp.WearEvent{ID: record.ID, OwnerID: record.OwnerID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, Completeness: weareventapp.WearEventCompleteness(record.Completeness), ContextSummary: copyString(record.ContextSummary), SourcePlanID: copyString(record.SourcePlanID), SourcePlanRevision: copyInt(record.SourcePlanRevision), SourceKind: weareventapp.WearEventSourceKind(record.SourceKind), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Items: make([]outfitplanapp.OutfitPlanItemSnapshot, 0, len(items))}
 	for _, item := range items {
-		snapshot := domain.OutfitPlanItemSnapshot{Ordinal: item.Ordinal}
+		snapshot := outfitplanapp.OutfitPlanItemSnapshot{Ordinal: item.Ordinal}
 		if !item.Redacted && item.WardrobeItemID != nil && item.ItemRevision != nil && item.Name != nil && item.Category != nil && item.Availability != nil {
-			snapshot.Content = &domain.OutfitItemContent{ItemID: *item.WardrobeItemID, ItemRevision: *item.ItemRevision, Name: *item.Name, Category: domain.WardrobeCategory(*item.Category), Availability: domain.WardrobeAvailability(*item.Availability), Attributes: domain.WardrobeAttributes{FormalityBand: typedPointer[domain.WardrobeFormalityBand](item.FormalityBand), WarmthBand: typedPointer[domain.WardrobeWarmthBand](item.WarmthBand), RainUse: typedPointer[domain.WardrobeUseSuitability](item.RainUse), WalkingUse: typedPointer[domain.WardrobeUseSuitability](item.WalkingUse)}}
+			snapshot.Content = &outfitplanapp.OutfitItemContent{ItemID: *item.WardrobeItemID, ItemRevision: *item.ItemRevision, Name: *item.Name, Category: wardrobeapp.WardrobeCategory(*item.Category), Availability: wardrobeapp.WardrobeAvailability(*item.Availability), Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: typedPointer[wardrobeapp.WardrobeFormalityBand](item.FormalityBand), WarmthBand: typedPointer[wardrobeapp.WardrobeWarmthBand](item.WarmthBand), RainUse: typedPointer[wardrobeapp.WardrobeUseSuitability](item.RainUse), WalkingUse: typedPointer[wardrobeapp.WardrobeUseSuitability](item.WalkingUse)}}
 		}
 		result.Items = append(result.Items, snapshot)
 	}
 	return result
 }
 
-func wearEventCreateFingerprint(input domain.WearEventInput) string {
+func wearEventCreateFingerprint(input weareventapp.WearEventInput) string {
 	payload := struct {
 		LocalDate               string
 		TimeZone                string
-		Completeness            domain.WearEventCompleteness
+		Completeness            weareventapp.WearEventCompleteness
 		ContextSummary          *string
-		Items                   []domain.OutfitSelection
+		Items                   []outfitplanapp.OutfitSelection
 		LaundryItemIDs          []string
 		ConfirmedUnavailableIDs []string
 		SourcePlanID            *string
 		SourcePlanRevision      *int
-		SourceKind              domain.WearEventSourceKind
-		DuplicateConfirmations  []domain.WearEventCandidate
+		SourceKind              weareventapp.WearEventSourceKind
+		DuplicateConfirmations  []weareventapp.WearEventCandidate
 	}{
 		LocalDate:               input.LocalDate,
 		TimeZone:                input.TimeZone,
@@ -466,7 +469,7 @@ func wearEventCreateFingerprint(input domain.WearEventInput) string {
 		SourcePlanID:            input.SourcePlanID,
 		SourcePlanRevision:      input.SourcePlanRevision,
 		SourceKind:              input.SourceKind,
-		DuplicateConfirmations:  append([]domain.WearEventCandidate(nil), input.DuplicateConfirmations...),
+		DuplicateConfirmations:  append([]weareventapp.WearEventCandidate(nil), input.DuplicateConfirmations...),
 	}
 	sort.Strings(payload.LaundryItemIDs)
 	sort.Strings(payload.ConfirmedUnavailableIDs)
@@ -478,11 +481,11 @@ func wearEventCreateFingerprint(input domain.WearEventInput) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func sameWearCandidates(left, right []domain.WearEventCandidate) bool {
+func sameWearCandidates(left, right []weareventapp.WearEventCandidate) bool {
 	if len(left) != len(right) {
 		return false
 	}
-	l, r := append([]domain.WearEventCandidate(nil), left...), append([]domain.WearEventCandidate(nil), right...)
+	l, r := append([]weareventapp.WearEventCandidate(nil), left...), append([]weareventapp.WearEventCandidate(nil), right...)
 	sort.Slice(l, func(i, j int) bool { return l[i].ID < l[j].ID })
 	sort.Slice(r, func(i, j int) bool { return r[i].ID < r[j].ID })
 	for index := range l {
@@ -514,23 +517,23 @@ func createWearEventTombstone(tx *gorm.DB, ownerID, eventID string, at time.Time
 }
 
 func wearEventLookupError(err error) error {
-	if errors.Is(err, domain.ErrWearEventNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.ErrWearEventNotFound
+	if errors.Is(err, weareventapp.ErrWearEventNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
+		return weareventapp.ErrWearEventNotFound
 	}
-	return domain.ErrWearEventServiceUnavailable
+	return weareventapp.ErrWearEventServiceUnavailable
 }
 
 func wearEventWriteError(err error) error {
 	if err == nil {
 		return nil
 	}
-	for _, known := range []error{domain.ErrInvalidWearEventInput, domain.ErrWearEventNotFound, domain.ErrWearEventConflict, domain.ErrWearEventDuplicate, domain.ErrWearEventItemsUnavailable} {
+	for _, known := range []error{weareventapp.ErrInvalidWearEventInput, weareventapp.ErrWearEventNotFound, weareventapp.ErrWearEventConflict, weareventapp.ErrWearEventDuplicate, weareventapp.ErrWearEventItemsUnavailable} {
 		if errors.Is(err, known) {
 			return err
 		}
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.ErrWearEventNotFound
+		return weareventapp.ErrWearEventNotFound
 	}
-	return domain.ErrWearEventServiceUnavailable
+	return weareventapp.ErrWearEventServiceUnavailable
 }

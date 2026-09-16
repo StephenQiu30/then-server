@@ -8,7 +8,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -59,8 +61,8 @@ type diaryEntryDeletionRecord struct {
 
 func (diaryEntryDeletionRecord) TableName() string { return "diary_entry_deletions" }
 
-func (r *DiaryRepository) CreateDiaryEntry(ctx context.Context, ownerID, entryID string, input domain.DiaryEntryInput, at time.Time) (domain.DiaryEntry, error) {
-	var result domain.DiaryEntry
+func (r *DiaryRepository) CreateDiaryEntry(ctx context.Context, ownerID, entryID string, input diaryapp.DiaryEntryInput, at time.Time) (diaryapp.DiaryEntry, error) {
+	var result diaryapp.DiaryEntry
 	fingerprint := diaryFingerprint(input)
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		existing, err := readDiaryEntry(tx, ownerID, entryID)
@@ -70,12 +72,12 @@ func (r *DiaryRepository) CreateDiaryEntry(ctx context.Context, ownerID, entryID
 				return err
 			}
 			if record.CreateFingerprint != fingerprint {
-				return domain.ErrDiaryConflict
+				return diaryapp.ErrDiaryConflict
 			}
 			result = existing
 			return nil
 		}
-		if !errors.Is(err, domain.ErrDiaryNotFound) {
+		if !errors.Is(err, diaryapp.ErrDiaryNotFound) {
 			return err
 		}
 		var deleted int64
@@ -83,7 +85,7 @@ func (r *DiaryRepository) CreateDiaryEntry(ctx context.Context, ownerID, entryID
 			return err
 		}
 		if deleted != 0 {
-			return domain.ErrDiaryConflict
+			return diaryapp.ErrDiaryConflict
 		}
 		if err := validateDiaryReferences(tx, ownerID, input); err != nil {
 			return err
@@ -95,7 +97,7 @@ func (r *DiaryRepository) CreateDiaryEntry(ctx context.Context, ownerID, entryID
 			return created.Error
 		}
 		if created.RowsAffected == 0 {
-			return domain.ErrDiaryConflict
+			return diaryapp.ErrDiaryConflict
 		}
 		media := diaryMediaRecords(ownerID, entryID, input.MediaIDs)
 		if len(media) > 0 {
@@ -107,12 +109,12 @@ func (r *DiaryRepository) CreateDiaryEntry(ctx context.Context, ownerID, entryID
 		return nil
 	})
 	if err != nil {
-		return domain.DiaryEntry{}, diaryWriteError(err)
+		return diaryapp.DiaryEntry{}, diaryWriteError(err)
 	}
 	return result, nil
 }
 
-func (r *DiaryRepository) ListDiaryEntries(ctx context.Context, ownerID string, limit int, afterID, dateFrom, dateTo *string) (domain.DiaryEntryPage, error) {
+func (r *DiaryRepository) ListDiaryEntries(ctx context.Context, ownerID string, limit int, afterID, dateFrom, dateTo *string) (diaryapp.DiaryEntryPage, error) {
 	query := r.database.WithContext(ctx).Where("owner_id = ?", ownerID)
 	if dateFrom != nil {
 		query = query.Where("local_date >= ?", *dateFrom)
@@ -123,13 +125,13 @@ func (r *DiaryRepository) ListDiaryEntries(ctx context.Context, ownerID string, 
 	if afterID != nil {
 		var cursor diaryEntryRecord
 		if err := r.database.WithContext(ctx).Select("id", "local_date", "created_at").Where("owner_id = ? AND id = ?", ownerID, *afterID).First(&cursor).Error; err != nil {
-			return domain.DiaryEntryPage{}, diaryLookupError(err)
+			return diaryapp.DiaryEntryPage{}, diaryLookupError(err)
 		}
 		query = query.Where("local_date < ? OR (local_date = ? AND created_at < ?) OR (local_date = ? AND created_at = ? AND id < ?)", cursor.LocalDate, cursor.LocalDate, cursor.CreatedAt, cursor.LocalDate, cursor.CreatedAt, cursor.ID)
 	}
 	var records []diaryEntryRecord
 	if err := query.Order("local_date DESC").Order("created_at DESC").Order("id DESC").Limit(limit + 1).Find(&records).Error; err != nil {
-		return domain.DiaryEntryPage{}, domain.ErrDiaryUnavailable
+		return diaryapp.DiaryEntryPage{}, diaryapp.ErrDiaryUnavailable
 	}
 	hasMore := len(records) > limit
 	if hasMore {
@@ -137,9 +139,9 @@ func (r *DiaryRepository) ListDiaryEntries(ctx context.Context, ownerID string, 
 	}
 	mediaByEntry, err := readDiaryMediaForEntries(r.database.WithContext(ctx), ownerID, records)
 	if err != nil {
-		return domain.DiaryEntryPage{}, domain.ErrDiaryUnavailable
+		return diaryapp.DiaryEntryPage{}, diaryapp.ErrDiaryUnavailable
 	}
-	page := domain.DiaryEntryPage{Entries: make([]domain.DiaryEntry, 0, len(records))}
+	page := diaryapp.DiaryEntryPage{Entries: make([]diaryapp.DiaryEntry, 0, len(records))}
 	for _, record := range records {
 		page.Entries = append(page.Entries, diaryFromRecord(record, mediaByEntry[record.ID]))
 	}
@@ -150,20 +152,20 @@ func (r *DiaryRepository) ListDiaryEntries(ctx context.Context, ownerID string, 
 	return page, nil
 }
 
-func (r *DiaryRepository) GetDiaryEntry(ctx context.Context, ownerID, entryID string) (domain.DiaryEntry, error) {
+func (r *DiaryRepository) GetDiaryEntry(ctx context.Context, ownerID, entryID string) (diaryapp.DiaryEntry, error) {
 	entry, err := readDiaryEntry(r.database.WithContext(ctx), ownerID, entryID)
 	return entry, diaryLookupError(err)
 }
 
-func (r *DiaryRepository) UpdateDiaryEntry(ctx context.Context, ownerID, entryID string, expectedRevision int, input domain.DiaryEntryInput, at time.Time) (domain.DiaryEntry, error) {
-	var result domain.DiaryEntry
+func (r *DiaryRepository) UpdateDiaryEntry(ctx context.Context, ownerID, entryID string, expectedRevision int, input diaryapp.DiaryEntryInput, at time.Time) (diaryapp.DiaryEntry, error) {
+	var result diaryapp.DiaryEntry
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var record diaryEntryRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, entryID).First(&record).Error; err != nil {
 			return err
 		}
 		if record.Revision != expectedRevision {
-			return domain.ErrDiaryConflict
+			return diaryapp.ErrDiaryConflict
 		}
 		if err := validateDiaryReferences(tx, ownerID, input); err != nil {
 			return err
@@ -175,7 +177,7 @@ func (r *DiaryRepository) UpdateDiaryEntry(ctx context.Context, ownerID, entryID
 			return updated.Error
 		}
 		if updated.RowsAffected != 1 {
-			return domain.ErrDiaryConflict
+			return diaryapp.ErrDiaryConflict
 		}
 		if err := tx.Where("owner_id = ? AND entry_id = ?", ownerID, entryID).Delete(&diaryEntryMediaRecord{}).Error; err != nil {
 			return err
@@ -193,17 +195,17 @@ func (r *DiaryRepository) UpdateDiaryEntry(ctx context.Context, ownerID, entryID
 		return nil
 	})
 	if err != nil {
-		return domain.DiaryEntry{}, diaryWriteError(err)
+		return diaryapp.DiaryEntry{}, diaryWriteError(err)
 	}
 	return result, nil
 }
 
-func (r *DiaryRepository) DiaryDeletionImpact(ctx context.Context, ownerID, entryID string) (domain.DiaryDeletionImpact, error) {
+func (r *DiaryRepository) DiaryDeletionImpact(ctx context.Context, ownerID, entryID string) (diaryapp.DiaryDeletionImpact, error) {
 	entry, err := readDiaryEntry(r.database.WithContext(ctx), ownerID, entryID)
 	if err != nil {
-		return domain.DiaryDeletionImpact{}, diaryLookupError(err)
+		return diaryapp.DiaryDeletionImpact{}, diaryLookupError(err)
 	}
-	return domain.DiaryDeletionImpact{EntryID: entry.ID, Revision: entry.Revision, MediaCount: len(entry.MediaIDs), PublishedPostCount: 0, MediaRetained: true}, nil
+	return diaryapp.DiaryDeletionImpact{EntryID: entry.ID, Revision: entry.Revision, MediaCount: len(entry.MediaIDs), PublishedPostCount: 0, MediaRetained: true}, nil
 }
 
 func (r *DiaryRepository) DeleteDiaryEntry(ctx context.Context, ownerID, entryID string, expectedRevision int, at time.Time) error {
@@ -213,7 +215,7 @@ func (r *DiaryRepository) DeleteDiaryEntry(ctx context.Context, ownerID, entryID
 			return err
 		}
 		if record.Revision != expectedRevision {
-			return domain.ErrDiaryConflict
+			return diaryapp.ErrDiaryConflict
 		}
 		if err := tx.Where("owner_id = ? AND entry_id = ?", ownerID, entryID).Delete(&diaryEntryMediaRecord{}).Error; err != nil {
 			return err
@@ -226,40 +228,40 @@ func (r *DiaryRepository) DeleteDiaryEntry(ctx context.Context, ownerID, entryID
 	return diaryWriteError(err)
 }
 
-func (r *DiaryRepository) CalendarMonth(ctx context.Context, ownerID, month string) (domain.CalendarMonth, error) {
+func (r *DiaryRepository) CalendarMonth(ctx context.Context, ownerID, month string) (diaryapp.CalendarMonth, error) {
 	start, _ := time.Parse("2006-01", month)
 	end := start.AddDate(0, 1, 0)
 	type countRow struct {
 		LocalDate time.Time `gorm:"column:local_date"`
 		Count     int       `gorm:"column:count"`
 	}
-	counts := make(map[string]*domain.CalendarDay)
+	counts := make(map[string]*diaryapp.CalendarDay)
 	queries := []struct {
 		table string
-		apply func(*domain.CalendarDay, int)
+		apply func(*diaryapp.CalendarDay, int)
 		where string
 	}{
-		{"outfit_plans", func(day *domain.CalendarDay, count int) { day.PlanCount = count }, " AND status <> 'cancelled'"},
-		{"wear_events", func(day *domain.CalendarDay, count int) { day.WearEventCount = count }, ""},
-		{"diary_entries", func(day *domain.CalendarDay, count int) { day.DiaryCount = count }, ""},
+		{"outfit_plans", func(day *diaryapp.CalendarDay, count int) { day.PlanCount = count }, " AND status <> 'cancelled'"},
+		{"wear_events", func(day *diaryapp.CalendarDay, count int) { day.WearEventCount = count }, ""},
+		{"diary_entries", func(day *diaryapp.CalendarDay, count int) { day.DiaryCount = count }, ""},
 	}
 	for _, query := range queries {
 		var rows []countRow
 		statement := "SELECT local_date, COUNT(*)::int AS count FROM " + query.table + " WHERE owner_id = ? AND local_date >= ? AND local_date < ?" + query.where + " GROUP BY local_date ORDER BY local_date"
 		if err := r.database.WithContext(ctx).Raw(statement, ownerID, start, end).Scan(&rows).Error; err != nil {
-			return domain.CalendarMonth{}, domain.ErrDiaryUnavailable
+			return diaryapp.CalendarMonth{}, diaryapp.ErrDiaryUnavailable
 		}
 		for _, row := range rows {
 			date := row.LocalDate.Format("2006-01-02")
 			day := counts[date]
 			if day == nil {
-				day = &domain.CalendarDay{LocalDate: date}
+				day = &diaryapp.CalendarDay{LocalDate: date}
 				counts[date] = day
 			}
 			query.apply(day, row.Count)
 		}
 	}
-	result := domain.CalendarMonth{Month: month, Days: make([]domain.CalendarDay, 0, len(counts))}
+	result := diaryapp.CalendarMonth{Month: month, Days: make([]diaryapp.CalendarDay, 0, len(counts))}
 	for date := start; date.Before(end); date = date.AddDate(0, 0, 1) {
 		if day := counts[date.Format("2006-01-02")]; day != nil {
 			result.Days = append(result.Days, *day)
@@ -268,14 +270,14 @@ func (r *DiaryRepository) CalendarMonth(ctx context.Context, ownerID, month stri
 	return result, nil
 }
 
-func validateDiaryReferences(tx *gorm.DB, ownerID string, input domain.DiaryEntryInput) error {
+func validateDiaryReferences(tx *gorm.DB, ownerID string, input diaryapp.DiaryEntryInput) error {
 	if input.PlanID != nil {
 		var count int64
 		if err := tx.Model(&outfitPlanRecord{}).Where("owner_id = ? AND id = ?", ownerID, *input.PlanID).Count(&count).Error; err != nil {
 			return err
 		}
 		if count != 1 {
-			return domain.ErrDiaryNotFound
+			return diaryapp.ErrDiaryNotFound
 		}
 	}
 	if input.WearEventID != nil {
@@ -284,32 +286,32 @@ func validateDiaryReferences(tx *gorm.DB, ownerID string, input domain.DiaryEntr
 			return err
 		}
 		if event.LocalDate.Format("2006-01-02") != input.LocalDate {
-			return domain.ErrDiaryConflict
+			return diaryapp.ErrDiaryConflict
 		}
 	}
 	if len(input.MediaIDs) > 0 {
 		var count int64
-		if err := tx.Model(&mediaAssetRecord{}).Where("owner_id = ? AND id IN ? AND purpose = ? AND category = ? AND status = ?", ownerID, input.MediaIDs, domain.MediaPurposeDiaryImage, domain.MediaCategoryOrdinaryImage, string(domain.MediaReady)).Count(&count).Error; err != nil {
+		if err := tx.Model(&mediaAssetRecord{}).Where("owner_id = ? AND id IN ? AND purpose = ? AND category = ? AND status = ?", ownerID, input.MediaIDs, mediaapp.MediaPurposeDiaryImage, mediaapp.MediaCategoryOrdinaryImage, string(mediaapp.MediaReady)).Count(&count).Error; err != nil {
 			return err
 		}
 		if count != int64(len(input.MediaIDs)) {
-			return domain.ErrDiaryConflict
+			return diaryapp.ErrDiaryConflict
 		}
 	}
 	return nil
 }
 
-func readDiaryEntry(database *gorm.DB, ownerID, entryID string) (domain.DiaryEntry, error) {
+func readDiaryEntry(database *gorm.DB, ownerID, entryID string) (diaryapp.DiaryEntry, error) {
 	var record diaryEntryRecord
 	if err := database.Where("owner_id = ? AND id = ?", ownerID, entryID).First(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return domain.DiaryEntry{}, domain.ErrDiaryNotFound
+			return diaryapp.DiaryEntry{}, diaryapp.ErrDiaryNotFound
 		}
-		return domain.DiaryEntry{}, domain.ErrDiaryUnavailable
+		return diaryapp.DiaryEntry{}, diaryapp.ErrDiaryUnavailable
 	}
 	media, err := readDiaryMediaForEntries(database, ownerID, []diaryEntryRecord{record})
 	if err != nil {
-		return domain.DiaryEntry{}, domain.ErrDiaryUnavailable
+		return diaryapp.DiaryEntry{}, diaryapp.ErrDiaryUnavailable
 	}
 	return diaryFromRecord(record, media[record.ID]), nil
 }
@@ -341,37 +343,37 @@ func diaryMediaRecords(ownerID, entryID string, mediaIDs []string) []diaryEntryM
 	return records
 }
 
-func diaryFromRecord(record diaryEntryRecord, mediaIDs []string) domain.DiaryEntry {
-	return domain.DiaryEntry{ID: record.ID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, Title: record.Title, Body: record.Body, Mood: record.Mood, Occasion: record.Occasion, PlanID: record.PlanID, WearEventID: record.WearEventID, MediaIDs: append([]string(nil), mediaIDs...), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+func diaryFromRecord(record diaryEntryRecord, mediaIDs []string) diaryapp.DiaryEntry {
+	return diaryapp.DiaryEntry{ID: record.ID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, Title: record.Title, Body: record.Body, Mood: record.Mood, Occasion: record.Occasion, PlanID: record.PlanID, WearEventID: record.WearEventID, MediaIDs: append([]string(nil), mediaIDs...), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
 }
 
-func diaryFingerprint(input domain.DiaryEntryInput) string {
+func diaryFingerprint(input diaryapp.DiaryEntryInput) string {
 	encoded, _ := json.Marshal(input)
 	digest := sha256.Sum256(encoded)
 	return hex.EncodeToString(digest[:])
 }
 
 func diaryLookupError(err error) error {
-	if err == nil || errors.Is(err, domain.ErrDiaryNotFound) {
+	if err == nil || errors.Is(err, diaryapp.ErrDiaryNotFound) {
 		return err
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.ErrDiaryNotFound
+		return diaryapp.ErrDiaryNotFound
 	}
-	return domain.ErrDiaryUnavailable
+	return diaryapp.ErrDiaryUnavailable
 }
 
 func diaryWriteError(err error) error {
 	if err == nil {
 		return nil
 	}
-	for _, expected := range []error{domain.ErrDiaryNotFound, domain.ErrDiaryConflict, domain.ErrInvalidDiaryInput} {
+	for _, expected := range []error{diaryapp.ErrDiaryNotFound, diaryapp.ErrDiaryConflict, diaryapp.ErrInvalidDiaryInput} {
 		if errors.Is(err, expected) {
 			return expected
 		}
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.ErrDiaryNotFound
+		return diaryapp.ErrDiaryNotFound
 	}
-	return domain.ErrDiaryUnavailable
+	return diaryapp.ErrDiaryUnavailable
 }

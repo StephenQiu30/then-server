@@ -11,7 +11,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 )
 
 type workerObjectStoreStub struct{ data []byte }
@@ -38,7 +38,7 @@ func TestNormalizedJPEGChecksDigestAndPixelBudget(t *testing.T) {
 	data := source.Bytes()
 	digest := fmt.Sprintf("%x", sha256.Sum256(data))
 	runner := &Runner{objects: &workerObjectStoreStub{data: data}}
-	media := domain.MediaAsset{RawObjectKey: "source.jpg", ObjectVersionID: "fixed-version", ByteSize: int64(len(data)), SHA256: digest}
+	media := mediaapp.MediaAsset{RawObjectKey: "source.jpg", ObjectVersionID: "fixed-version", ByteSize: int64(len(data)), SHA256: digest}
 	normalized, width, height, reason, err := runner.normalizedJPEG(context.Background(), media)
 	if err != nil || width != 8 || height != 6 || reason != "" || len(normalized) == 0 {
 		t.Fatalf("valid synthetic JPEG rejected: size=%dx%d reason=%s err=%v", width, height, reason, err)
@@ -56,7 +56,7 @@ func TestNormalizedJPEGRejectsAppendedSecondFrame(t *testing.T) {
 	}
 	data := append(bytes.Clone(source.Bytes()), source.Bytes()...)
 	runner := &Runner{objects: &workerObjectStoreStub{data: data}}
-	media := domain.MediaAsset{RawObjectKey: "source.jpg", ObjectVersionID: "fixed-version", ByteSize: int64(len(data)), SHA256: fmt.Sprintf("%x", sha256.Sum256(data))}
+	media := mediaapp.MediaAsset{RawObjectKey: "source.jpg", ObjectVersionID: "fixed-version", ByteSize: int64(len(data)), SHA256: fmt.Sprintf("%x", sha256.Sum256(data))}
 	if _, _, _, reason, err := runner.normalizedJPEG(context.Background(), media); err == nil || reason != "invalid_jpeg" {
 		t.Fatal("multi-frame JPEG input was accepted")
 	}

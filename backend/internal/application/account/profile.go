@@ -5,40 +5,38 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
 )
 
 var profileHandlePattern = regexp.MustCompile(`^[a-z0-9_]{3,30}$`)
 
-func (s *AccountService) CurrentProfile(ctx context.Context, token string) (domain.PublicProfile, error) {
+func (s *AccountService) CurrentProfile(ctx context.Context, token string) (PublicProfile, error) {
 	user, err := s.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.PublicProfile{}, err
+		return PublicProfile{}, err
 	}
 	return s.repository.FindProfileByUserID(ctx, user.ID)
 }
 
-func (s *AccountService) PublicProfile(ctx context.Context, handle string) (domain.PublicProfile, error) {
+func (s *AccountService) PublicProfile(ctx context.Context, handle string) (PublicProfile, error) {
 	handle, ok := normalizeProfileHandle(handle)
 	if !ok {
-		return domain.PublicProfile{}, domain.ErrProfileNotFound
+		return PublicProfile{}, ErrProfileNotFound
 	}
 	return s.repository.FindProfileByHandle(ctx, handle)
 }
 
-func (s *AccountService) PutCurrentProfile(ctx context.Context, token string, input domain.PutProfileInput) (domain.PublicProfile, error) {
+func (s *AccountService) PutCurrentProfile(ctx context.Context, token string, input PutProfileInput) (PublicProfile, error) {
 	user, err := s.CurrentUser(ctx, token)
 	if err != nil {
-		return domain.PublicProfile{}, err
+		return PublicProfile{}, err
 	}
 	handle, ok := normalizeProfileHandle(input.Handle)
 	if !ok || input.ExpectedRevision < 0 {
-		return domain.PublicProfile{}, domain.ErrInvalidProfileInput
+		return PublicProfile{}, ErrInvalidProfileInput
 	}
 	bio, ok := normalizeProfileBio(input.Bio)
 	if !ok {
-		return domain.PublicProfile{}, domain.ErrInvalidProfileInput
+		return PublicProfile{}, ErrInvalidProfileInput
 	}
 	input.Handle, input.Bio = handle, bio
 	return s.repository.PutProfile(ctx, user.ID, input, s.now().UTC())

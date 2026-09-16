@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -39,7 +40,7 @@ type wardrobeItemRecord struct {
 
 func (wardrobeItemRecord) TableName() string { return "wardrobe_items" }
 
-func (r *WardrobeRepository) CreateWardrobeItem(ctx context.Context, item domain.WardrobeItem) (domain.WardrobeItem, error) {
+func (r *WardrobeRepository) CreateWardrobeItem(ctx context.Context, item wardrobeapp.WardrobeItem) (wardrobeapp.WardrobeItem, error) {
 	record := wardrobeRecord(item)
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&record)
@@ -54,31 +55,31 @@ func (r *WardrobeRepository) CreateWardrobeItem(ctx context.Context, item domain
 			return err
 		}
 		if existing.Name != item.Name || existing.Category != string(item.Category) || existing.Availability != string(item.Availability) || existing.Source != string(item.Source) || !wardrobeRecordAttributesEqual(existing, item.Attributes) {
-			return domain.ErrWardrobeConflict
+			return wardrobeapp.ErrWardrobeConflict
 		}
 		record = existing
 		return nil
 	})
 	if err != nil {
-		return domain.WardrobeItem{}, wardrobeWriteError(err)
+		return wardrobeapp.WardrobeItem{}, wardrobeWriteError(err)
 	}
 	return wardrobeFromRecord(record), nil
 }
 
-func (r *WardrobeRepository) ListWardrobeItems(ctx context.Context, ownerID string, limit int, afterID *string) (domain.WardrobePage, error) {
+func (r *WardrobeRepository) ListWardrobeItems(ctx context.Context, ownerID string, limit int, afterID *string) (wardrobeapp.WardrobePage, error) {
 	query := r.database.WithContext(ctx).Where("owner_id = ?", ownerID)
 	if afterID != nil {
 		var cursor wardrobeItemRecord
 		if err := r.database.WithContext(ctx).Select("id", "created_at").Where("owner_id = ? AND id = ?", ownerID, *afterID).First(&cursor).Error; err != nil {
-			return domain.WardrobePage{}, wardrobeLookupError(err)
+			return wardrobeapp.WardrobePage{}, wardrobeLookupError(err)
 		}
 		query = query.Where("created_at < ? OR (created_at = ? AND id > ?)", cursor.CreatedAt, cursor.CreatedAt, cursor.ID)
 	}
 	var records []wardrobeItemRecord
 	if err := query.Order("created_at DESC").Order("id ASC").Limit(limit + 1).Find(&records).Error; err != nil {
-		return domain.WardrobePage{}, domain.ErrWardrobeUnavailable
+		return wardrobeapp.WardrobePage{}, wardrobeapp.ErrWardrobeUnavailable
 	}
-	page := domain.WardrobePage{Items: make([]domain.WardrobeItem, 0, min(limit, len(records)))}
+	page := wardrobeapp.WardrobePage{Items: make([]wardrobeapp.WardrobeItem, 0, min(limit, len(records)))}
 	for index, record := range records {
 		if index == limit {
 			last := page.Items[len(page.Items)-1].ID
@@ -90,22 +91,22 @@ func (r *WardrobeRepository) ListWardrobeItems(ctx context.Context, ownerID stri
 	return page, nil
 }
 
-func (r *WardrobeRepository) GetWardrobeItem(ctx context.Context, ownerID, itemID string) (domain.WardrobeItem, error) {
+func (r *WardrobeRepository) GetWardrobeItem(ctx context.Context, ownerID, itemID string) (wardrobeapp.WardrobeItem, error) {
 	var record wardrobeItemRecord
 	if err := r.database.WithContext(ctx).Where("owner_id = ? AND id = ?", ownerID, itemID).First(&record).Error; err != nil {
-		return domain.WardrobeItem{}, wardrobeLookupError(err)
+		return wardrobeapp.WardrobeItem{}, wardrobeLookupError(err)
 	}
 	return wardrobeFromRecord(record), nil
 }
 
-func (r *WardrobeRepository) UpdateWardrobeItem(ctx context.Context, ownerID, itemID string, expectedRevision int, input domain.UpdateWardrobeItemInput, at time.Time) (domain.WardrobeItem, error) {
+func (r *WardrobeRepository) UpdateWardrobeItem(ctx context.Context, ownerID, itemID string, expectedRevision int, input wardrobeapp.UpdateWardrobeItemInput, at time.Time) (wardrobeapp.WardrobeItem, error) {
 	var record wardrobeItemRecord
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, itemID).First(&record).Error; err != nil {
 			return err
 		}
 		if record.Revision != expectedRevision {
-			return domain.ErrWardrobeConflict
+			return wardrobeapp.ErrWardrobeConflict
 		}
 		record.Name, record.Category, record.Availability = input.Name, string(input.Category), string(input.Availability)
 		record.FormalityBand = stringPointer(input.Attributes.FormalityBand)
@@ -124,28 +125,28 @@ func (r *WardrobeRepository) UpdateWardrobeItem(ctx context.Context, ownerID, it
 		}).Error
 	})
 	if err != nil {
-		return domain.WardrobeItem{}, wardrobeWriteError(err)
+		return wardrobeapp.WardrobeItem{}, wardrobeWriteError(err)
 	}
 	return wardrobeFromRecord(record), nil
 }
 
-func (r *WardrobeRepository) GetWardrobeDeletionImpact(ctx context.Context, ownerID, itemID string) (domain.WardrobeDeletionImpact, error) {
+func (r *WardrobeRepository) GetWardrobeDeletionImpact(ctx context.Context, ownerID, itemID string) (wardrobeapp.WardrobeDeletionImpact, error) {
 	var item wardrobeItemRecord
 	if err := r.database.WithContext(ctx).Select("owner_id", "id").Where("owner_id = ? AND id = ?", ownerID, itemID).First(&item).Error; err != nil {
-		return domain.WardrobeDeletionImpact{}, wardrobeLookupError(err)
+		return wardrobeapp.WardrobeDeletionImpact{}, wardrobeLookupError(err)
 	}
 	plans, err := wardrobeAffectedPlans(r.database.WithContext(ctx), ownerID, itemID)
 	if err != nil {
-		return domain.WardrobeDeletionImpact{}, domain.ErrWardrobeUnavailable
+		return wardrobeapp.WardrobeDeletionImpact{}, wardrobeapp.ErrWardrobeUnavailable
 	}
 	events, err := wardrobeAffectedWearEvents(r.database.WithContext(ctx), ownerID, itemID)
 	if err != nil {
-		return domain.WardrobeDeletionImpact{}, domain.ErrWardrobeUnavailable
+		return wardrobeapp.WardrobeDeletionImpact{}, wardrobeapp.ErrWardrobeUnavailable
 	}
-	return domain.WardrobeDeletionImpact{AffectedPlanCount: len(plans), AffectedWearEventCount: len(events), ExpectedImpact: wardrobeImpactDigest(plans, events)}, nil
+	return wardrobeapp.WardrobeDeletionImpact{AffectedPlanCount: len(plans), AffectedWearEventCount: len(events), ExpectedImpact: wardrobeImpactDigest(plans, events)}, nil
 }
 
-func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, itemID string, expectedRevision int, policy domain.WardrobeHistoryPolicy, expectedImpact string, at time.Time) error {
+func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, itemID string, expectedRevision int, policy wardrobeapp.WardrobeHistoryPolicy, expectedImpact string, at time.Time) error {
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		initialPlans, err := wardrobeAffectedPlans(tx, ownerID, itemID)
 		if err != nil {
@@ -154,7 +155,7 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 		for _, planID := range sortedPlanIDs(initialPlans) {
 			var locked outfitPlanRecord
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("owner_id", "id", "revision", "updated_at").Where("owner_id = ? AND id = ?", ownerID, planID).First(&locked).Error; err != nil {
-				return domain.ErrWardrobeConflict
+				return wardrobeapp.ErrWardrobeConflict
 			}
 		}
 		initialEvents, err := wardrobeAffectedWearEvents(tx, ownerID, itemID)
@@ -164,7 +165,7 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 		for _, eventID := range sortedWearEventIDs(initialEvents) {
 			var locked wearEventRecord
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("owner_id", "id", "revision", "updated_at", "source_plan_id").Where("owner_id = ? AND id = ?", ownerID, eventID).First(&locked).Error; err != nil {
-				return domain.ErrWardrobeConflict
+				return wardrobeapp.ErrWardrobeConflict
 			}
 		}
 		var record wardrobeItemRecord
@@ -172,7 +173,7 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 			return err
 		}
 		if record.Revision != expectedRevision {
-			return domain.ErrWardrobeConflict
+			return wardrobeapp.ErrWardrobeConflict
 		}
 		plans, err := wardrobeAffectedPlans(tx, ownerID, itemID)
 		if err != nil {
@@ -183,10 +184,10 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 			return err
 		}
 		if wardrobeImpactDigest(plans, events) != expectedImpact {
-			return domain.ErrWardrobeConflict
+			return wardrobeapp.ErrWardrobeConflict
 		}
 		switch policy {
-		case domain.WardrobeHistoryRedactSnapshots:
+		case wardrobeapp.WardrobeHistoryRedactSnapshots:
 			for _, plan := range plans {
 				if err := tx.Model(&outfitPlanItemRecord{}).Where("owner_id = ? AND plan_id = ? AND wardrobe_item_id = ?", ownerID, plan.ID, itemID).Updates(map[string]any{"wardrobe_item_id": nil, "item_revision": nil, "name": nil, "category": nil, "availability": nil, "formality_band": nil, "warmth_band": nil, "rain_use": nil, "walking_use": nil, "redacted": true}).Error; err != nil {
 					return err
@@ -211,7 +212,7 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 					return err
 				}
 			}
-		case domain.WardrobeHistoryDeleteAffectedHistory:
+		case wardrobeapp.WardrobeHistoryDeleteAffectedHistory:
 			deletedPlans := map[string]bool{}
 			for _, plan := range plans {
 				deletedPlans[plan.ID] = true
@@ -238,7 +239,7 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 				}
 			}
 		default:
-			return domain.ErrInvalidWardrobeInput
+			return wardrobeapp.ErrInvalidWardrobeInput
 		}
 		return tx.Where("owner_id = ? AND id = ? AND revision = ?", ownerID, itemID, expectedRevision).Delete(&wardrobeItemRecord{}).Error
 	})
@@ -290,15 +291,15 @@ func sortedWearEventIDs(events []wearEventRecord) []string {
 	return ids
 }
 
-func wardrobeRecord(item domain.WardrobeItem) wardrobeItemRecord {
+func wardrobeRecord(item wardrobeapp.WardrobeItem) wardrobeItemRecord {
 	return wardrobeItemRecord{OwnerID: item.OwnerID, ID: item.ID, Name: item.Name, Category: string(item.Category), Availability: string(item.Availability), Source: string(item.Source), FormalityBand: stringPointer(item.Attributes.FormalityBand), WarmthBand: stringPointer(item.Attributes.WarmthBand), RainUse: stringPointer(item.Attributes.RainUse), WalkingUse: stringPointer(item.Attributes.WalkingUse), Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
-func wardrobeFromRecord(record wardrobeItemRecord) domain.WardrobeItem {
-	return domain.WardrobeItem{OwnerID: record.OwnerID, ID: record.ID, Name: record.Name, Category: domain.WardrobeCategory(record.Category), Availability: domain.WardrobeAvailability(record.Availability), Source: domain.WardrobeSource(record.Source), Attributes: domain.WardrobeAttributes{FormalityBand: typedPointer[domain.WardrobeFormalityBand](record.FormalityBand), WarmthBand: typedPointer[domain.WardrobeWarmthBand](record.WarmthBand), RainUse: typedPointer[domain.WardrobeUseSuitability](record.RainUse), WalkingUse: typedPointer[domain.WardrobeUseSuitability](record.WalkingUse)}, Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+func wardrobeFromRecord(record wardrobeItemRecord) wardrobeapp.WardrobeItem {
+	return wardrobeapp.WardrobeItem{OwnerID: record.OwnerID, ID: record.ID, Name: record.Name, Category: wardrobeapp.WardrobeCategory(record.Category), Availability: wardrobeapp.WardrobeAvailability(record.Availability), Source: wardrobeapp.WardrobeSource(record.Source), Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: typedPointer[wardrobeapp.WardrobeFormalityBand](record.FormalityBand), WarmthBand: typedPointer[wardrobeapp.WardrobeWarmthBand](record.WarmthBand), RainUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.RainUse), WalkingUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.WalkingUse)}, Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
 }
 
-func wardrobeRecordAttributesEqual(record wardrobeItemRecord, attributes domain.WardrobeAttributes) bool {
+func wardrobeRecordAttributesEqual(record wardrobeItemRecord, attributes wardrobeapp.WardrobeAttributes) bool {
 	return stringsEqual(record.FormalityBand, stringPointer(attributes.FormalityBand)) &&
 		stringsEqual(record.WarmthBand, stringPointer(attributes.WarmthBand)) &&
 		stringsEqual(record.RainUse, stringPointer(attributes.RainUse)) &&
@@ -327,22 +328,22 @@ func typedPointer[T ~string](value *string) *T {
 
 func wardrobeLookupError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.ErrWardrobeNotFound
+		return wardrobeapp.ErrWardrobeNotFound
 	}
-	return domain.ErrWardrobeUnavailable
+	return wardrobeapp.ErrWardrobeUnavailable
 }
 
 func wardrobeWriteError(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, domain.ErrWardrobeConflict):
-		return domain.ErrWardrobeConflict
-	case errors.Is(err, domain.ErrInvalidWardrobeInput):
-		return domain.ErrInvalidWardrobeInput
+	case errors.Is(err, wardrobeapp.ErrWardrobeConflict):
+		return wardrobeapp.ErrWardrobeConflict
+	case errors.Is(err, wardrobeapp.ErrInvalidWardrobeInput):
+		return wardrobeapp.ErrInvalidWardrobeInput
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		return domain.ErrWardrobeNotFound
+		return wardrobeapp.ErrWardrobeNotFound
 	default:
-		return domain.ErrWardrobeUnavailable
+		return wardrobeapp.ErrWardrobeUnavailable
 	}
 }

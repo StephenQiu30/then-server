@@ -6,14 +6,16 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
+
 	"github.com/danielgtaylor/huma/v2"
 )
 
 type PrivacyService interface {
-	CurrentSelfAdultDeclaration(context.Context, string) (domain.SelfAdultDeclaration, error)
-	ConfirmSelfAdultDeclaration(context.Context, string, domain.ConfirmSelfAdultDeclarationInput) (domain.SelfAdultDeclaration, error)
-	WithdrawSelfAdultDeclaration(context.Context, string) (domain.SelfAdultDeclaration, error)
+	CurrentSelfAdultDeclaration(context.Context, string) (privacyapp.SelfAdultDeclaration, error)
+	ConfirmSelfAdultDeclaration(context.Context, string, privacyapp.ConfirmSelfAdultDeclarationInput) (privacyapp.SelfAdultDeclaration, error)
+	WithdrawSelfAdultDeclaration(context.Context, string) (privacyapp.SelfAdultDeclaration, error)
 }
 
 type PrivacyHandler struct {
@@ -83,10 +85,10 @@ func (h *PrivacyHandler) confirm(ctx context.Context, input *confirmSelfAdultDec
 	if input.Session == "" {
 		return nil, newErrorResponse(http.StatusUnauthorized, requestID(ctx))
 	}
-	if input.Body.PolicyVersion != domain.CurrentSelfAdultPolicyVersion || !input.Body.ConfirmsSelfAndAdult {
+	if input.Body.PolicyVersion != privacyapp.CurrentSelfAdultPolicyVersion || !input.Body.ConfirmsSelfAndAdult {
 		return nil, newErrorResponse(http.StatusBadRequest, requestID(ctx))
 	}
-	declaration, err := h.service.ConfirmSelfAdultDeclaration(ctx, input.Session, domain.ConfirmSelfAdultDeclarationInput{
+	declaration, err := h.service.ConfirmSelfAdultDeclaration(ctx, input.Session, privacyapp.ConfirmSelfAdultDeclarationInput{
 		PolicyVersion: input.Body.PolicyVersion, ConfirmsSelfAndAdult: input.Body.ConfirmsSelfAndAdult,
 	})
 	if err != nil {
@@ -110,16 +112,16 @@ func (h *PrivacyHandler) withdraw(ctx context.Context, input *authenticatedInput
 }
 
 func privacyError(ctx context.Context, secureCookie bool, err error) error {
-	if errors.Is(err, domain.ErrAuthentication) {
+	if errors.Is(err, accountapp.ErrAuthentication) {
 		return authenticatedSessionError(ctx, secureCookie)
 	}
-	if errors.Is(err, domain.ErrInvalidPrivacyInput) {
+	if errors.Is(err, privacyapp.ErrInvalidPrivacyInput) {
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
 	}
 	return newErrorResponse(http.StatusInternalServerError, requestID(ctx))
 }
 
-func newSelfAdultDeclarationOutput(ctx context.Context, declaration domain.SelfAdultDeclaration) *selfAdultDeclarationOutput {
+func newSelfAdultDeclarationOutput(ctx context.Context, declaration privacyapp.SelfAdultDeclaration) *selfAdultDeclarationOutput {
 	return &selfAdultDeclarationOutput{RequestID: requestID(ctx), Body: SelfAdultDeclarationResponse{
 		PolicyVersion: declaration.PolicyVersion, Confirmed: declaration.Confirmed,
 		ConfirmedAt: declaration.ConfirmedAt, WithdrawnAt: declaration.WithdrawnAt,

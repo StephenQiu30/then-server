@@ -10,43 +10,44 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/domain"
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
 )
 
 type wardrobeTransportStub struct {
-	created domain.CreateWardrobeItemInput
-	updated domain.UpdateWardrobeItemInput
+	created wardrobeapp.CreateWardrobeItemInput
+	updated wardrobeapp.UpdateWardrobeItemInput
 	token   string
 	err     error
 }
 
-func (s *wardrobeTransportStub) CreateWardrobeItem(_ context.Context, token string, input domain.CreateWardrobeItemInput) (domain.WardrobeItem, error) {
+func (s *wardrobeTransportStub) CreateWardrobeItem(_ context.Context, token string, input wardrobeapp.CreateWardrobeItemInput) (wardrobeapp.WardrobeItem, error) {
 	s.token, s.created = token, input
 	return wardrobeFixture(), s.err
 }
-func (s *wardrobeTransportStub) ListWardrobeItems(_ context.Context, token string, _ int, _ *string) (domain.WardrobePage, error) {
+func (s *wardrobeTransportStub) ListWardrobeItems(_ context.Context, token string, _ int, _ *string) (wardrobeapp.WardrobePage, error) {
 	s.token = token
-	return domain.WardrobePage{Items: []domain.WardrobeItem{wardrobeFixture()}}, s.err
+	return wardrobeapp.WardrobePage{Items: []wardrobeapp.WardrobeItem{wardrobeFixture()}}, s.err
 }
-func (s *wardrobeTransportStub) GetWardrobeItem(_ context.Context, token, _ string) (domain.WardrobeItem, error) {
+func (s *wardrobeTransportStub) GetWardrobeItem(_ context.Context, token, _ string) (wardrobeapp.WardrobeItem, error) {
 	s.token = token
 	return wardrobeFixture(), s.err
 }
-func (s *wardrobeTransportStub) UpdateWardrobeItem(_ context.Context, token, _ string, _ int, input domain.UpdateWardrobeItemInput) (domain.WardrobeItem, error) {
+func (s *wardrobeTransportStub) UpdateWardrobeItem(_ context.Context, token, _ string, _ int, input wardrobeapp.UpdateWardrobeItemInput) (wardrobeapp.WardrobeItem, error) {
 	s.token, s.updated = token, input
 	return wardrobeFixture(), s.err
 }
-func (s *wardrobeTransportStub) GetWardrobeDeletionImpact(_ context.Context, token, _ string) (domain.WardrobeDeletionImpact, error) {
+func (s *wardrobeTransportStub) GetWardrobeDeletionImpact(_ context.Context, token, _ string) (wardrobeapp.WardrobeDeletionImpact, error) {
 	s.token = token
-	return domain.WardrobeDeletionImpact{ExpectedImpact: emptyTransportImpact}, s.err
+	return wardrobeapp.WardrobeDeletionImpact{ExpectedImpact: emptyTransportImpact}, s.err
 }
-func (s *wardrobeTransportStub) DeleteWardrobeItem(_ context.Context, token, _ string, _ int, _ domain.WardrobeHistoryPolicy, _ string) error {
+func (s *wardrobeTransportStub) DeleteWardrobeItem(_ context.Context, token, _ string, _ int, _ wardrobeapp.WardrobeHistoryPolicy, _ string) error {
 	s.token = token
 	return s.err
 }
 
-func wardrobeFixture() domain.WardrobeItem {
-	return domain.WardrobeItem{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", OwnerID: fixtureUser().ID, Name: "Blue Shirt", Category: domain.WardrobeTop, Availability: domain.WardrobeWearable, Source: domain.WardrobeSourceWardrobe, Attributes: domain.WardrobeAttributes{FormalityBand: wardrobeTransportValue(domain.WardrobeFormalitySmartCasual), WalkingUse: wardrobeTransportValue(domain.WardrobeUseSuitable)}, Revision: 1, CreatedAt: time.Date(2026, 9, 15, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 9, 15, 8, 0, 0, 0, time.UTC)}
+func wardrobeFixture() wardrobeapp.WardrobeItem {
+	return wardrobeapp.WardrobeItem{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", OwnerID: fixtureUser().ID, Name: "Blue Shirt", Category: wardrobeapp.WardrobeTop, Availability: wardrobeapp.WardrobeWearable, Source: wardrobeapp.WardrobeSourceWardrobe, Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: wardrobeTransportValue(wardrobeapp.WardrobeFormalitySmartCasual), WalkingUse: wardrobeTransportValue(wardrobeapp.WardrobeUseSuitable)}, Revision: 1, CreatedAt: time.Date(2026, 9, 15, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 9, 15, 8, 0, 0, 0, time.UTC)}
 }
 
 func wardrobeRouter(t *testing.T, service WardrobeHTTPService) *Router {
@@ -70,7 +71,7 @@ func TestWardrobeCreateUsesSessionAndRejectsOwnerField(t *testing.T) {
 	if response.Code != http.StatusCreated || service.token == "" || strings.Contains(response.Body.String(), "owner") || !strings.Contains(response.Body.String(), `"formality_band":{"value":"smart_casual","source":"user_confirmed"}`) {
 		t.Fatalf("valid wardrobe create failed: status=%d body=%s", response.Code, response.Body.String())
 	}
-	if service.created.Attributes.FormalityBand == nil || *service.created.Attributes.FormalityBand != domain.WardrobeFormalitySmartCasual {
+	if service.created.Attributes.FormalityBand == nil || *service.created.Attributes.FormalityBand != wardrobeapp.WardrobeFormalitySmartCasual {
 		t.Fatal("wardrobe create transport lost confirmed attributes")
 	}
 
@@ -114,9 +115,9 @@ func TestWardrobeMapsNotFoundConflictAndAuthentication(t *testing.T) {
 		err    error
 		status int
 	}{
-		{domain.ErrWardrobeNotFound, http.StatusNotFound},
-		{domain.ErrWardrobeConflict, http.StatusConflict},
-		{domain.ErrAuthentication, http.StatusUnauthorized},
+		{wardrobeapp.ErrWardrobeNotFound, http.StatusNotFound},
+		{wardrobeapp.ErrWardrobeConflict, http.StatusConflict},
+		{accountapp.ErrAuthentication, http.StatusUnauthorized},
 	} {
 		service := &wardrobeTransportStub{err: test.err}
 		router := wardrobeRouter(t, service)
@@ -155,7 +156,7 @@ func TestWardrobeListUpdateAndDeleteHTTPContract(t *testing.T) {
 			t.Fatalf("%s status=%d body=%s", request.Method, response.Code, response.Body.String())
 		}
 	}
-	if service.updated.Name != "Updated Shirt" || service.updated.Availability != domain.WardrobeLaundry || service.updated.Attributes.WarmthBand == nil || *service.updated.Attributes.WarmthBand != domain.WardrobeWarmthWarm || service.updated.Attributes.RainUse != nil {
+	if service.updated.Name != "Updated Shirt" || service.updated.Availability != wardrobeapp.WardrobeLaundry || service.updated.Attributes.WarmthBand == nil || *service.updated.Attributes.WarmthBand != wardrobeapp.WardrobeWarmthWarm || service.updated.Attributes.RainUse != nil {
 		t.Fatal("wardrobe update transport lost confirmed fields")
 	}
 }
