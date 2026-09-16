@@ -64,7 +64,7 @@ objectstore, messagequeue, worker -> model
 ## Gin 与接口契约
 
 - 使用 `gin.New()` 并显式注册中间件；受信代理、404、405、panic 恢复和日志行为必须可测试。
-- `/v1` 业务路由通过 Huma operation 注册。每个 operation 声明稳定 `operationId`、method、path、tag、成功状态和预期错误。
+- 业务路由使用无版本前缀的语义根路径并通过 Huma operation 注册。每个 operation 声明稳定 `operationId`、method、path、tag、成功状态和预期错误。
 - 请求/响应字段只在 transport DTO 上使用 `json`、校验和文档 tag；Handler 将它们转换为领域输入。
 - 修改接口后运行 transport 契约测试，再实际访问 `/openapi.json` 验证 Swagger 或 Umi 消费。禁止手写或提交第二份接口 YAML/JSON。
 - 文档默认关闭；本地显式开启时只允许回环监听。Swagger UI 只是阅读与调试入口，生成器读取 `/openapi.json`。

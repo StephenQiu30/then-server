@@ -3,7 +3,7 @@
 ## 状态
 
 - 契约状态：`approved`，依据用户 2026-09-14 最新要求。
-- 执行状态：`completed`。
+- 执行状态：`completed`（2026-09-16 无路径版本前缀跟进已完成）。
 - 前提：当前开发阶段不保留历史数据库数据。
 
 ## 目标
@@ -41,6 +41,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 6. 当前不保留 Atlas、SQL migration、checksum、旧 schema 探测、回填或双写。
 7. Redis 只因已批准的认证限流进入当前 API 运行时；RabbitMQ、MinIO 不因 schema 调整或未来规划提前进入生产 binary。
 8. App 当前没有实际网络调用时，移除依赖物化契约的空 transport target、生成插件和未使用依赖；未来接入另立执行计划。
+9. 公开 API 直接使用语义根路径（例如 `/auth`、`/users`、`/health`），不在 Axios、Next.js rewrites、Huma operation 或 Cookie Path 中配置路径版本；当前尚无生产消费者，不保留旧前缀兼容路由。
 
 ## Checklist
 
@@ -62,15 +63,17 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 - [x] Testcontainers integration 通过，覆盖空库迁移、无建表权限失败、实际 binary、健康、断连恢复和 SIGTERM。
 - [x] Xcode 工程仅保留实际 target/GRDB 依赖；Debug Simulator build 与非 UI 测试通过。
 - [x] 远程 GitHub Actions：服务端 `01937cc` 的 `34860127582` 与 App `8afd8f6` 的 `34860139428` 均成功；后续 main 服务端 `6aba3af` 的 `34952510997`、App `26cc8f4` 的对应 CI 继续成功。
-- [ ] 前端项目和 Umi 生成文件：按用户要求暂不创建 `frontend/`。
+- [x] 顶层 `frontend/` 已按用户后续要求创建，Umi 从运行时 OpenAPI 生成请求文件。
+- [x] 2026-09-16 跟进：移除前后端路径版本前缀，Cookie Path 收敛为 `/`，升级 API 文档版本并重新生成 Umi 客户端。
+- [x] 2026-09-16 跟进：Axios 官方源码对照后的统一 `request.ts`、前端请求测试、Go 契约/单元/race、真实运行时 OpenAPI 与前端 lint/typecheck/build 全部通过。
 
 ## 非目标
 
 - 不切换到 Swaggo。它依赖 CLI 并生成 `docs.go/json/yaml`，与删除物化产物的要求冲突。
 - 不复制 CloudWeGo 的 Hertz/Kitex、微服务、IDL 或生成体系。
 - 不为未来数据保留预建生产迁移平台。
-- 不修改业务 API 语义、账号 Cookie 或当前中间件启用范围。
+- 除已批准的路径去版本化和 Cookie Path 收敛外，不修改业务 API 语义或当前中间件启用范围。
 
 ## 完成判定
 
-代码、规范与运行证据都只保留两份事实源：transport 的运行时接口声明和 repository 的 GORM schema 声明。普通测试、真实本机服务和隔离 PostgreSQL 进程测试通过后，本切片为 `completed`。远程 CI、生产数据迁移和前端页面仍按各自切片验收。
+代码、规范与运行证据都只保留两份事实源：transport 的运行时接口声明和 repository 的 GORM schema 声明。当前本机运行时 OpenAPI 为 API 0.12.0 / 38 个 operation，路径无版本前缀；统一 Axios 请求入口、Umi 再生成和前后端质量门禁均通过，本切片为 `completed`。远程 CI 和生产数据迁移仍按各自切片验收。

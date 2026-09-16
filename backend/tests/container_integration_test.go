@@ -141,7 +141,7 @@ func TestContainerRuntime(t *testing.T) {
 	base := "http://" + net.JoinHostPort(host, port.Port())
 	deadline := time.Now().Add(15 * time.Second)
 	for {
-		response, e := client.Get(base + "/v1/health/ready")
+		response, e := client.Get(base + "/health/ready")
 		if e == nil {
 			response.Body.Close()
 			if response.StatusCode == 200 {
@@ -153,7 +153,7 @@ func TestContainerRuntime(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	response, err := client.Get(base + "/v1/health/live")
+	response, err := client.Get(base + "/health/live")
 	if err != nil {
 		t.Fatal(err)
 	}

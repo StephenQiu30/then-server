@@ -4,23 +4,24 @@
 
 ## 当前实现
 
-Go + Gin/Huma + GORM/AutoMigrate + PostgreSQL 已实现健康检查、注册/登录、Cookie 会话、本人账户 CRUD、本人成年声明、结构化衣橱、账号穿搭计划和实际穿着。运行时 OpenAPI 是 Swagger 与未来 Umi 请求生成的唯一输入。目录与规范见 [后端架构](docs/design/02-后端架构.md)，精确版本见 [技术选型](docs/design/01-技术选型.md)。
+Go + Gin/Huma + GORM/AutoMigrate + PostgreSQL 已实现健康检查、注册/登录、Cookie 会话、本人账户 CRUD、本人成年声明、结构化衣橱、账号穿搭计划和实际穿着。运行时 OpenAPI 是 Swagger 与 Umi 请求生成的唯一输入。目录与规范见 [后端架构](docs/design/02-后端架构.md)，精确版本见 [技术选型](docs/design/01-技术选型.md)。
 
-日常使用本机已安装 PostgreSQL、Redis、RabbitMQ、MinIO；当前 API 以 PostgreSQL 保存账号、会话、声明、结构化衣橱、计划、实际穿着和合成照片媒体事实，Redis 只保存认证限流短期计数。RabbitMQ 与 MinIO 已用于显式开启的合成照片开发闭环，默认仍关闭。`frontend` 按用户要求暂停实现；App 云接入、生成和同步未完成。
+日常使用本机已安装 PostgreSQL、Redis、RabbitMQ、MinIO；当前 API 以 PostgreSQL 保存账号、会话、声明、结构化衣橱、计划、实际穿着和合成照片媒体事实，Redis 只保存认证限流短期计数。RabbitMQ 与 MinIO 已用于显式开启的合成照片开发闭环，默认仍关闭。`frontend` 已建立 Next.js App Router/TypeScript 基础工程与运行时 OpenAPI 生成客户端，账户业务页面尚未实现；App 云接入、生成和同步未完成。
 
 ## 目录与入口
 
 | 位置 | 内容 |
 | --- | --- |
-| [design.md](design.md) | 根目录产品设计规范 |
+| [DESIGN.md](DESIGN.md) | App 与 Web 唯一视觉和交互设计标准；与 `then-app/DESIGN.md` 保持一致 |
 | [backend](backend/README.md) | Go 运行说明、内嵌 Swagger、schema 和独立测试 |
+| [frontend](frontend/README.md) | Next.js App Router Web 基础工程、Umi OpenAPI 与 Axios 请求层 |
 | [docs](docs/README.md) | 当前 Design → PRD → Plan → Acceptance |
 | [产品计划](docs/plan/10-OOTD产品实施计划.md) | 全部切片的当前状态、缺口与下一步 |
 | [系统验收](docs/acceptance/10-OOTD产品系统验收.md) | 局部证据与完整产品的验收边界 |
 | [docker-compose.yml](docker-compose.yml) / [docker-compose-env.yml](docker-compose-env.yml) | 明确需要隔离环境时使用，非日常默认启动 |
 | [AGENTS.md](AGENTS.md) / [CONTRIBUTING.md](CONTRIBUTING.md) | 开发和提交规范 |
 
-不维护 OpenAPI 物化文件、Atlas 迁移账本、生成脚本或旧项目兼容目录。当前业务未进入实现的模块不建空壳。静态内部素材见 [assets](assets/README.md)。
+不维护手写或服务端物化的 OpenAPI 文件、Atlas 迁移账本或旧项目兼容目录。前端生成客户端只由运行时 `/openapi.json` 刷新。当前业务未进入实现的模块不建空壳。静态内部素材见 [assets](assets/README.md)。
 
 ## 本地校验
 
@@ -49,6 +50,18 @@ brew services start rabbitmq
 ```
 
 后端镜像使用 `docker build --tag then-server:local backend` 构建。Swagger 由 Go API 从 Huma operation 与类型标签实时生成，不需要独立 Swagger 容器或 `go generate`。确需隔离依赖时再使用 `docker compose --profile isolated-env up --detach --wait`；Compose 不是日常开发前置，也不代表生产部署已完成。
+
+前端校验：
+
+```bash
+cd frontend
+npm install
+npm run lint
+npm run test
+npm run typecheck
+npm run format:check
+npm run build
+```
 
 GitHub Actions 的 `Go quality`、`PostgreSQL integration` 与 `OCI container` 是每次 push/PR 的必要服务端门禁。需要本机 MinIO、Redis 和 RabbitMQ 的 `services` 测试仍按对应验收显式运行。
 

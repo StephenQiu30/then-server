@@ -333,16 +333,16 @@ requested
 
 以下是领域级安全契约。相关云能力进入 POC 或发布实施阶段时，必须先写入 Go transport 的 Huma operation 与标注类型，验证运行时 OpenAPI、鉴权、授权、幂等、资源上限、删除和契约测试，不能从本文维护第二份接口契约：
 
-- `POST /v1/consents`：记录具体目的、供应商、区域、数据类别和文案版本的主动同意。
-- `GET /v1/consents/{consent_id}`：返回当前状态与撤回信息，不返回敏感输入。
-- `POST /v1/consents/{consent_id}/withdraw`：阻止新的外部处理。
-- `POST /v1/media/uploads`：创建受目的、MIME、大小和数量限制的上传 intent。
-- `POST /v1/media/{media_id}/complete`：完成对象校验和安全处理。
-- `GET /v1/media/{media_id}`：校验 owner 后返回短时读取信息。
-- `DELETE /v1/media/{media_id}`：创建资产血缘删除请求。
-- `POST /v1/deletion-requests`：删除 Avatar、衣物、生成结果、动态预览或账号范围数据。
-- `GET /v1/deletion-requests/{request_id}`：返回阶段、目标范围和备份到期说明。
-- `POST /v1/share-grants`、`DELETE /v1/share-grants/{id}`：只有分享需求获批后才可加入。
+- `POST /consents`：记录具体目的、供应商、区域、数据类别和文案版本的主动同意。
+- `GET /consents/{consent_id}`：返回当前状态与撤回信息，不返回敏感输入。
+- `POST /consents/{consent_id}/withdraw`：阻止新的外部处理。
+- `POST /media/uploads`：创建受目的、MIME、大小和数量限制的上传 intent。
+- `POST /media/{media_id}/complete`：完成对象校验和安全处理。
+- `GET /media/{media_id}`：校验 owner 后返回短时读取信息。
+- `DELETE /media/{media_id}`：创建资产血缘删除请求。
+- `POST /deletion-requests`：删除 Avatar、衣物、生成结果、动态预览或账号范围数据。
+- `GET /deletion-requests/{request_id}`：返回阶段、目标范围和备份到期说明。
+- `POST /share-grants`、`DELETE /share-grants/{id}`：只有分享需求获批后才可加入。
 
 所有生成接口必须携带与实际目的、供应商和策略一致的 `consent_record_id`。服务端不能只相信该 ID 存在，还要验证 owner、状态、策略版本、时间和请求数据类别。
 

@@ -198,7 +198,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 			t.Fatal("process did not start")
 		}
 		client := &http.Client{Timeout: 2 * time.Second}
-		for _, path := range []string{"/docs/", "/docs/swagger-ui-bundle.js", "/openapi.yaml", "/openapi.json", "/v1/health/ready"} {
+		for _, path := range []string{"/docs/", "/docs/swagger-ui-bundle.js", "/openapi.yaml", "/openapi.json", "/health/ready"} {
 			response, err := client.Get("http://" + address + path)
 			if err != nil {
 				t.Fatal(err)
@@ -218,7 +218,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 						Version string `json:"version"`
 					} `json:"info"`
 				}
-				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.11.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) {
+				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.12.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) {
 					t.Fatal("binary did not serve a valid JSON representation of its compiled contract")
 				}
 			}
@@ -250,10 +250,10 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 			defer response.Body.Close()
 			return response.StatusCode
 		}
-		if got := status("/v1/health/ready"); got != http.StatusServiceUnavailable {
+		if got := status("/health/ready"); got != http.StatusServiceUnavailable {
 			t.Fatalf("Redis-disconnected readiness %d", got)
 		}
-		if got := status("/v1/health/live"); got != http.StatusOK {
+		if got := status("/health/live"); got != http.StatusOK {
 			t.Fatalf("Redis-disconnected liveness %d", got)
 		}
 		if _, err := docker.ContainerUnpause(ctx, redisContainer.GetContainerID(), dockerclient.ContainerUnpauseOptions{}); err != nil {
@@ -261,7 +261,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		}
 		redisPaused = false
 		deadline := time.Now().Add(30 * time.Second)
-		for status("/v1/health/ready") != http.StatusOK {
+		for status("/health/ready") != http.StatusOK {
 			if time.Now().After(deadline) {
 				t.Fatal("readiness did not recover after Redis resumed")
 			}
@@ -305,7 +305,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		defer response.Body.Close()
 		return response.StatusCode
 	}
-	if got := status("/v1/health/ready"); got != 200 {
+	if got := status("/health/ready"); got != 200 {
 		t.Fatalf("initial readiness %d", got)
 	}
 	docker, err := testcontainers.NewDockerClient()
@@ -321,17 +321,17 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 		defer cancel()
 		_, _ = docker.ContainerUnpause(cleanup, container.GetContainerID(), dockerclient.ContainerUnpauseOptions{})
 	}()
-	if got := status("/v1/health/ready"); got != 503 {
+	if got := status("/health/ready"); got != 503 {
 		t.Fatalf("disconnected readiness %d", got)
 	}
-	if got := status("/v1/health/live"); got != 200 {
+	if got := status("/health/live"); got != 200 {
 		t.Fatalf("disconnected liveness %d", got)
 	}
 	if _, err := docker.ContainerUnpause(ctx, container.GetContainerID(), dockerclient.ContainerUnpauseOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(30 * time.Second)
-	for status("/v1/health/ready") != 200 {
+	for status("/health/ready") != 200 {
 		if time.Now().After(deadline) {
 			t.Fatal("readiness did not recover")
 		}
@@ -344,59 +344,59 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 	t.Helper()
 	email := "http-" + strings.ToLower(rand.Text()[:16]) + "@example.test"
 	password := "correct-http-password"
-	registration, registrationBody := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/registrations", `{"email":"`+email+`","display_name":"HTTP User","password":"`+password+`"}`, nil, http.StatusCreated)
+	registration, registrationBody := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/auth/registrations", `{"email":"`+email+`","display_name":"HTTP User","password":"`+password+`"}`, nil, http.StatusCreated)
 	registeredUserID := extractUserID(t, registrationBody)
 	registrationCookies := registration.Cookies()
-	if len(registrationCookies) != 1 || registrationCookies[0].Name != "then_session" || registrationCookies[0].Value == "" || registrationCookies[0].Path != "/v1" || !registrationCookies[0].HttpOnly || registrationCookies[0].SameSite != http.SameSiteStrictMode {
+	if len(registrationCookies) != 1 || registrationCookies[0].Name != "then_session" || registrationCookies[0].Value == "" || registrationCookies[0].Path != "/" || !registrationCookies[0].HttpOnly || registrationCookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatal("actual registration response did not set the protected session cookie")
 	}
 	firstSession := registrationCookies[0]
-	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/users/me", "", firstSession, http.StatusOK)
-	_, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/privacy/self-adult-declaration", "", firstSession, http.StatusOK)
+	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/users/me", "", firstSession, http.StatusOK)
+	_, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/privacy/self-adult-declaration", "", firstSession, http.StatusOK)
 	if !strings.Contains(string(body), `"policy_version":"self-adult-v1"`) || !strings.Contains(string(body), `"confirmed":false`) {
 		t.Fatal("actual API process did not expose the initial declaration state")
 	}
-	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/privacy/self-adult-declaration", `{"policy_version":"self-adult-v1","confirms_self_and_adult":false}`, firstSession, http.StatusBadRequest)
-	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/privacy/self-adult-declaration", `{"policy_version":"self-adult-v1","confirms_self_and_adult":true}`, firstSession, http.StatusOK)
+	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/privacy/self-adult-declaration", `{"policy_version":"self-adult-v1","confirms_self_and_adult":false}`, firstSession, http.StatusBadRequest)
+	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/privacy/self-adult-declaration", `{"policy_version":"self-adult-v1","confirms_self_and_adult":true}`, firstSession, http.StatusOK)
 	if !strings.Contains(string(body), `"confirmed":true`) || !strings.Contains(string(body), `"confirmed_at":`) {
 		t.Fatal("actual API process did not persist the declaration")
 	}
-	_, body = accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/privacy/self-adult-declaration", "", firstSession, http.StatusOK)
+	_, body = accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/privacy/self-adult-declaration", "", firstSession, http.StatusOK)
 	if !strings.Contains(string(body), `"confirmed":false`) || !strings.Contains(string(body), `"withdrawn_at":`) {
 		t.Fatal("actual API process did not withdraw the declaration")
 	}
-	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/privacy/self-adult-declaration", `{"policy_version":"self-adult-v1","confirms_self_and_adult":true}`, firstSession, http.StatusOK)
+	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/privacy/self-adult-declaration", `{"policy_version":"self-adult-v1","confirms_self_and_adult":true}`, firstSession, http.StatusOK)
 	exerciseWardrobeHTTPLifecycle(t, ctx, client, baseURL, firstSession)
 
-	logout, _ := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/auth/session", "", firstSession, http.StatusNoContent)
+	logout, _ := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/auth/session", "", firstSession, http.StatusNoContent)
 	assertExpiredSessionCookie(t, logout)
-	privacyReplay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/privacy/self-adult-declaration", "", firstSession, http.StatusUnauthorized)
+	privacyReplay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/privacy/self-adult-declaration", "", firstSession, http.StatusUnauthorized)
 	assertAuthenticationFailure(t, body)
 	assertExpiredSessionCookie(t, privacyReplay)
-	replay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/users/me", "", firstSession, http.StatusUnauthorized)
+	replay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/users/me", "", firstSession, http.StatusUnauthorized)
 	assertAuthenticationFailure(t, body)
 	assertExpiredSessionCookie(t, replay)
 
-	login, _ := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusOK)
+	login, _ := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusOK)
 	loginCookies := login.Cookies()
 	if len(loginCookies) != 1 || loginCookies[0].Name != "then_session" || loginCookies[0].Value == "" {
 		t.Fatal("actual login response did not establish a session")
 	}
 	secondSession := loginCookies[0]
-	deletion, _ := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/users/me", "", secondSession, http.StatusNoContent)
+	deletion, _ := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/users/me", "", secondSession, http.StatusNoContent)
 	assertExpiredSessionCookie(t, deletion)
-	deletedReplay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/users/me", "", secondSession, http.StatusUnauthorized)
+	deletedReplay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/users/me", "", secondSession, http.StatusUnauthorized)
 	assertAuthenticationFailure(t, body)
 	assertExpiredSessionCookie(t, deletedReplay)
-	failedLogin, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusUnauthorized)
+	failedLogin, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusUnauthorized)
 	assertAuthenticationFailure(t, body)
 	if len(failedLogin.Cookies()) != 0 {
 		t.Fatal("invalid credentials unexpectedly changed browser cookies")
 	}
 	for range 8 {
-		accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusUnauthorized)
+		accountRequest(t, ctx, client, http.MethodPost, baseURL+"/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusUnauthorized)
 	}
-	limited, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusTooManyRequests)
+	limited, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusTooManyRequests)
 	if limited.Header.Get("Retry-After") == "" || !strings.Contains(string(body), `"code":"RATE_LIMITED"`) {
 		t.Fatal("actual API process did not expose the authentication rate-limit recovery contract")
 	}
@@ -419,21 +419,21 @@ func exerciseWardrobeHTTPLifecycle(t *testing.T, ctx context.Context, client *ht
 	const wearEventID = "018f1f74-a2d0-7c6d-9c17-4a0ea2400e11"
 	const duplicateWearEventID = "018f1f74-a2d0-7c6d-9c17-4a0ea2400e12"
 	createBody := `{"id":"` + itemID + `","name":"HTTP Shirt","category":"top","availability":"wearable","source":"quick_add","attributes":{"formality_band":"smart_casual","walking_use":"suitable"}}`
-	_, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/wardrobe/items", createBody, session, http.StatusCreated)
+	_, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/wardrobe/items", createBody, session, http.StatusCreated)
 	if !strings.Contains(string(body), `"revision":1`) || !strings.Contains(string(body), `"source":"user_confirmed"`) || strings.Contains(string(body), "owner_id") {
 		t.Fatal("actual wardrobe create lost revision or exposed owner")
 	}
-	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/wardrobe/items", createBody, session, http.StatusCreated)
-	_, body = accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/wardrobe/items?limit=1", "", session, http.StatusOK)
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/wardrobe/items", createBody, session, http.StatusCreated)
+	_, body = accountRequest(t, ctx, client, http.MethodGet, baseURL+"/wardrobe/items?limit=1", "", session, http.StatusOK)
 	if !strings.Contains(string(body), itemID) {
 		t.Fatal("actual wardrobe list omitted the created item")
 	}
 	updateBody := `{"expected_revision":1,"name":"HTTP Blue Shirt","category":"top","availability":"laundry","attributes":{"warmth_band":"warm","rain_use":"unsuitable"}}`
-	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/wardrobe/items/"+itemID, updateBody, session, http.StatusOK)
+	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/wardrobe/items/"+itemID, updateBody, session, http.StatusOK)
 	if !strings.Contains(string(body), `"revision":2`) || !strings.Contains(string(body), `"source":"quick_add"`) || !strings.Contains(string(body), `"value":"warm"`) || strings.Contains(string(body), `"formality_band":{"value"`) {
 		t.Fatal("actual wardrobe update lost revision or immutable source")
 	}
-	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/wardrobe/items/"+itemID, updateBody, session, http.StatusConflict)
+	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/wardrobe/items/"+itemID, updateBody, session, http.StatusConflict)
 
 	location, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {
@@ -441,51 +441,51 @@ func exerciseWardrobeHTTPLifecycle(t *testing.T, ctx context.Context, client *ht
 	}
 	localDate := time.Now().In(location).Format("2006-01-02")
 	planBody := `{"id":"` + planID + `","local_date":"` + localDate + `","time_zone":"Asia/Shanghai","items":[{"item_id":"` + itemID + `","revision":2}],"confirmed_unavailable_ids":[]}`
-	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans", planBody, session, http.StatusConflict)
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/outfit-plans", planBody, session, http.StatusConflict)
 	planBody = `{"id":"` + planID + `","local_date":"` + localDate + `","time_zone":"Asia/Shanghai","context_summary":"HTTP plan","items":[{"item_id":"` + itemID + `","revision":2}],"confirmed_unavailable_ids":["` + itemID + `"]}`
-	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans", planBody, session, http.StatusCreated)
+	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/outfit-plans", planBody, session, http.StatusCreated)
 	if !strings.Contains(string(body), `"revision":1`) || !strings.Contains(string(body), `"name":"HTTP Blue Shirt"`) || strings.Contains(string(body), "owner_id") {
 		t.Fatal("actual outfit plan create lost its server snapshot or exposed owner")
 	}
-	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans", planBody, session, http.StatusCreated)
-	_, body = accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/outfit-plans?limit=1&local_date="+localDate, "", session, http.StatusOK)
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/outfit-plans", planBody, session, http.StatusCreated)
+	_, body = accountRequest(t, ctx, client, http.MethodGet, baseURL+"/outfit-plans?limit=1&local_date="+localDate, "", session, http.StatusOK)
 	if !strings.Contains(string(body), planID) {
 		t.Fatal("actual outfit plan list omitted the created plan")
 	}
-	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/outfit-plans/"+planID, "", session, http.StatusOK)
+	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/outfit-plans/"+planID, "", session, http.StatusOK)
 	planUpdate := `{"expected_revision":1,"local_date":"` + localDate + `","time_zone":"Asia/Shanghai","context_summary":"Updated HTTP plan","items":[{"item_id":"` + itemID + `","revision":2}],"confirmed_unavailable_ids":["` + itemID + `"]}`
-	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/outfit-plans/"+planID, planUpdate, session, http.StatusOK)
+	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/outfit-plans/"+planID, planUpdate, session, http.StatusOK)
 	if !strings.Contains(string(body), `"revision":2`) || !strings.Contains(string(body), `"context_summary":"Updated HTTP plan"`) {
 		t.Fatal("actual outfit plan update missed its revision or replacement content")
 	}
-	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/outfit-plans/"+planID, planUpdate, session, http.StatusConflict)
-	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans/"+planID+"/cancel", `{"expected_revision":2}`, session, http.StatusOK)
+	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/outfit-plans/"+planID, planUpdate, session, http.StatusConflict)
+	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/outfit-plans/"+planID+"/cancel", `{"expected_revision":2}`, session, http.StatusOK)
 	if !strings.Contains(string(body), `"revision":3`) || !strings.Contains(string(body), `"status":"cancelled"`) {
 		t.Fatal("actual outfit plan cancel missed status or revision")
 	}
-	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/outfit-plans/"+planID+"?expected_revision=2", "", session, http.StatusConflict)
-	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/outfit-plans/"+planID+"?expected_revision=3", "", session, http.StatusNoContent)
-	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/outfit-plans/"+planID, "", session, http.StatusNotFound)
-	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans", planBody, session, http.StatusConflict)
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/outfit-plans/"+planID+"?expected_revision=2", "", session, http.StatusConflict)
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/outfit-plans/"+planID+"?expected_revision=3", "", session, http.StatusNoContent)
+	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/outfit-plans/"+planID, "", session, http.StatusNotFound)
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/outfit-plans", planBody, session, http.StatusConflict)
 
 	redactedPlanBody := `{"id":"` + redactedPlanID + `","local_date":"` + localDate + `","time_zone":"Asia/Shanghai","items":[{"item_id":"` + itemID + `","revision":2}],"confirmed_unavailable_ids":["` + itemID + `"]}`
-	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans", redactedPlanBody, session, http.StatusCreated)
-	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans/"+redactedPlanID+"/not-worn", `{"expected_revision":1}`, session, http.StatusOK)
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/outfit-plans", redactedPlanBody, session, http.StatusCreated)
+	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/outfit-plans/"+redactedPlanID+"/not-worn", `{"expected_revision":1}`, session, http.StatusOK)
 	if !strings.Contains(string(body), `"status":"not_worn"`) || !strings.Contains(string(body), `"revision":2`) {
 		t.Fatal("actual outfit plan not-worn transition failed")
 	}
-	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/outfit-plans/"+redactedPlanID+"/restore", `{"expected_revision":2}`, session, http.StatusOK)
+	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/outfit-plans/"+redactedPlanID+"/restore", `{"expected_revision":2}`, session, http.StatusOK)
 	if !strings.Contains(string(body), `"status":"active"`) || !strings.Contains(string(body), `"revision":3`) {
 		t.Fatal("actual outfit plan restore transition failed")
 	}
 	wearBody := `{"id":"` + wearEventID + `","local_date":"` + localDate + `","time_zone":"Asia/Shanghai","completeness":"complete","context_summary":"HTTP wear","items":[{"item_id":"` + itemID + `","revision":2}],"laundry_item_ids":[],"confirmed_unavailable_ids":["` + itemID + `"],"source_plan_id":"` + redactedPlanID + `","source_plan_revision":3,"source_kind":"followed_plan","duplicate_confirmations":[]}`
-	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/wear-events", wearBody, session, http.StatusCreated)
+	_, body = accountRequest(t, ctx, client, http.MethodPost, baseURL+"/wear-events", wearBody, session, http.StatusCreated)
 	if !strings.Contains(string(body), `"revision":1`) || !strings.Contains(string(body), `"name":"HTTP Blue Shirt"`) || strings.Contains(string(body), "owner_id") {
 		t.Fatal("actual wear event create lost its server snapshot or exposed owner")
 	}
-	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/wear-events", wearBody, session, http.StatusCreated)
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/wear-events", wearBody, session, http.StatusCreated)
 	duplicateBody := `{"id":"` + duplicateWearEventID + `","local_date":"` + localDate + `","time_zone":"Asia/Shanghai","completeness":"partial","context_summary":null,"items":[{"item_id":"` + itemID + `","revision":2}],"laundry_item_ids":[],"confirmed_unavailable_ids":["` + itemID + `"],"source_plan_id":null,"source_plan_revision":null,"source_kind":"unplanned","duplicate_confirmations":[]}`
-	_, duplicateError := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/wear-events", duplicateBody, session, http.StatusConflict)
+	_, duplicateError := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/wear-events", duplicateBody, session, http.StatusConflict)
 	var duplicateConflict struct {
 		Candidates []struct {
 			ID       string `json:"id"`
@@ -496,14 +496,14 @@ func exerciseWardrobeHTTPLifecycle(t *testing.T, ctx context.Context, client *ht
 		t.Fatal("actual wear event duplicate conflict lost its candidate")
 	}
 	duplicateBody = strings.Replace(duplicateBody, `"duplicate_confirmations":[]`, `"duplicate_confirmations":[{"id":"`+wearEventID+`","revision":1}]`, 1)
-	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/v1/wear-events", duplicateBody, session, http.StatusCreated)
-	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/wear-events/"+duplicateWearEventID+"?expected_revision=1", "", session, http.StatusNoContent)
+	accountRequest(t, ctx, client, http.MethodPost, baseURL+"/wear-events", duplicateBody, session, http.StatusCreated)
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/wear-events/"+duplicateWearEventID+"?expected_revision=1", "", session, http.StatusNoContent)
 	wearUpdate := `{"expected_revision":1,"local_date":"` + localDate + `","time_zone":"Asia/Shanghai","completeness":"partial","context_summary":"Corrected HTTP wear","items":[{"item_id":"` + itemID + `","revision":2}],"laundry_item_ids":[],"confirmed_unavailable_ids":["` + itemID + `"],"source_plan_id":"` + redactedPlanID + `","source_plan_revision":3,"source_kind":"changed_plan","duplicate_confirmations":[]}`
-	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/v1/wear-events/"+wearEventID, wearUpdate, session, http.StatusOK)
+	_, body = accountRequest(t, ctx, client, http.MethodPut, baseURL+"/wear-events/"+wearEventID, wearUpdate, session, http.StatusOK)
 	if !strings.Contains(string(body), `"revision":2`) || !strings.Contains(string(body), `"context_summary":"Corrected HTTP wear"`) {
 		t.Fatal("actual wear event correction lost its revision or content")
 	}
-	_, impactBody := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/wardrobe/items/"+itemID+"/deletion-impact", "", session, http.StatusOK)
+	_, impactBody := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/wardrobe/items/"+itemID+"/deletion-impact", "", session, http.StatusOK)
 	var impact struct {
 		AffectedPlans  int    `json:"affected_plan_count"`
 		AffectedEvents int    `json:"affected_wear_event_count"`
@@ -513,14 +513,14 @@ func exerciseWardrobeHTTPLifecycle(t *testing.T, ctx context.Context, client *ht
 		t.Fatal("actual wardrobe deletion impact was invalid")
 	}
 	deletionQuery := "&history_policy=redact_snapshots&expected_impact=" + impact.Expected
-	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/wardrobe/items/"+itemID+"?expected_revision=1"+deletionQuery, "", session, http.StatusConflict)
-	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/v1/wardrobe/items/"+itemID+"?expected_revision=2"+deletionQuery, "", session, http.StatusNoContent)
-	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/wardrobe/items/"+itemID, "", session, http.StatusNotFound)
-	_, body = accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/outfit-plans/"+redactedPlanID, "", session, http.StatusOK)
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/wardrobe/items/"+itemID+"?expected_revision=1"+deletionQuery, "", session, http.StatusConflict)
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/wardrobe/items/"+itemID+"?expected_revision=2"+deletionQuery, "", session, http.StatusNoContent)
+	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/wardrobe/items/"+itemID, "", session, http.StatusNotFound)
+	_, body = accountRequest(t, ctx, client, http.MethodGet, baseURL+"/outfit-plans/"+redactedPlanID, "", session, http.StatusOK)
 	if !strings.Contains(string(body), `"revision":5`) || !strings.Contains(string(body), `"content":null`) || strings.Contains(string(body), "HTTP Blue Shirt") {
 		t.Fatal("actual wardrobe delete did not redact the referenced outfit snapshot")
 	}
-	_, body = accountRequest(t, ctx, client, http.MethodGet, baseURL+"/v1/wear-events/"+wearEventID, "", session, http.StatusOK)
+	_, body = accountRequest(t, ctx, client, http.MethodGet, baseURL+"/wear-events/"+wearEventID, "", session, http.StatusOK)
 	if !strings.Contains(string(body), `"revision":3`) || !strings.Contains(string(body), `"content":null`) || strings.Contains(string(body), "HTTP Blue Shirt") {
 		t.Fatal("actual wardrobe delete did not redact the referenced wear snapshot")
 	}
@@ -572,7 +572,7 @@ func accountRequest(t *testing.T, ctx context.Context, client *http.Client, meth
 func assertExpiredSessionCookie(t *testing.T, response *http.Response) {
 	t.Helper()
 	cookies := response.Cookies()
-	if len(cookies) != 1 || cookies[0].Name != "then_session" || cookies[0].Value != "" || cookies[0].MaxAge != -1 || cookies[0].Path != "/v1" || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+	if len(cookies) != 1 || cookies[0].Name != "then_session" || cookies[0].Value != "" || cookies[0].MaxAge != -1 || cookies[0].Path != "/" || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatal("account response did not clear the session cookie")
 	}
 }
