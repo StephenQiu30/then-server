@@ -1,4 +1,36 @@
 declare namespace API {
+  type AdminReportPageResponse = {
+    next_after_id?: string
+    reports: any
+  }
+
+  type AdminReportResponse = {
+    created_at: string
+    detail?: string
+    id: string
+    post_id: string
+    reason_code: string
+    reporter_id: string
+    resolution_code?: string
+    resolved_at?: string
+    status: 'open' | 'resolved' | 'dismissed'
+  }
+
+  type AdminUserPageResponse = {
+    next_after_id?: string
+    users: any
+  }
+
+  type AdminUserResponse = {
+    created_at: string
+    display_name: string
+    id: string
+    revision: number
+    role: 'user' | 'moderator' | 'admin'
+    status: 'active' | 'suspended' | 'deleting'
+    updated_at: string
+  }
+
   type AuthenticatedUserResponse = {
     user: UserResponse
   }
@@ -52,6 +84,17 @@ declare namespace API {
     withdrawn_at?: string
   }
 
+  type ContentReportResponse = {
+    created_at: string
+    detail?: string
+    id: string
+    post_id: string
+    reason_code: string
+    resolution_code?: string
+    resolved_at?: string
+    status: 'open' | 'resolved' | 'dismissed'
+  }
+
   type CreateConsentRequest = {
     actively_agreed: true
     category: 'person_photo'
@@ -80,7 +123,7 @@ declare namespace API {
     byte_size: number
     consent_id?: string
     content_type: 'image/jpeg'
-    purpose: 'avatar_source_preparation' | 'diary_image'
+    purpose: 'avatar_source_preparation' | 'diary_image' | 'community_publish'
     sha256: string
   }
 
@@ -91,6 +134,28 @@ declare namespace API {
     items: any
     local_date: string
     time_zone: string
+  }
+
+  type CreatePostRequest = {
+    body?: string
+    id: string
+    media_ids: any
+    source_diary_id?: string
+    tags: any
+    title?: string
+  }
+
+  type CreateReportRequest = {
+    detail?: string
+    id: string
+    post_id: string
+    reason_code:
+      | 'spam'
+      | 'harassment'
+      | 'sexual'
+      | 'violence'
+      | 'misinformation'
+      | 'other'
   }
 
   type CreateSessionRequest = {
@@ -138,6 +203,18 @@ declare namespace API {
     time_zone: string
   }
 
+  type decidePostModerationParams = {
+    post_id: string
+  }
+
+  type DecidePostRequest = {
+    decision: 'approve' | 'reject'
+    expected_revision: number
+    reason_code: string
+    review_round: number
+    version: number
+  }
+
   type deleteDiaryEntryParams = {
     entry_id: string
     expected_revision?: number
@@ -149,6 +226,11 @@ declare namespace API {
 
   type deleteOutfitPlanParams = {
     plan_id: string
+    expected_revision?: number
+  }
+
+  type deletePostParams = {
+    post_id: string
     expected_revision?: number
   }
 
@@ -213,6 +295,7 @@ declare namespace API {
       | 'CONFLICT'
       | 'PAYLOAD_TOO_LARGE'
       | 'AUTHENTICATION_FAILED'
+      | 'FORBIDDEN'
       | 'RATE_LIMITED'
       | 'NOT_READY'
       | 'NOT_FOUND'
@@ -252,6 +335,30 @@ declare namespace API {
     plan_id: string
   }
 
+  type getOwnPostParams = {
+    post_id: string
+  }
+
+  type getPostModerationCandidateParams = {
+    post_id: string
+    version: number
+  }
+
+  type getPostModerationImageParams = {
+    post_id: string
+    version: number
+    ordinal: number
+  }
+
+  type getPublicPostImageParams = {
+    post_id: string
+    ordinal: number
+  }
+
+  type getPublicPostParams = {
+    post_id: string
+  }
+
   type getPublicProfileParams = {
     /** 公开主页唯一标识 */
     handle: string
@@ -269,6 +376,17 @@ declare namespace API {
     wear_event_id: string
   }
 
+  type listAdminUsersParams = {
+    limit?: number
+    after_id?: string
+  }
+
+  type listCommunityReportsParams = {
+    limit?: number
+    after_id?: string
+    status?: 'open' | 'resolved' | 'dismissed'
+  }
+
   type listDiaryEntriesParams = {
     limit?: number
     after_id?: string
@@ -276,10 +394,32 @@ declare namespace API {
     date_to?: string
   }
 
+  type listModerationActionsParams = {
+    limit?: number
+    after_id?: string
+  }
+
   type listOutfitPlansParams = {
     limit?: number
     after_id?: string
     local_date?: string
+  }
+
+  type listOwnPostsParams = {
+    limit?: number
+    after_id?: string
+    state?: 'draft' | 'pending' | 'published' | 'withdrawn' | 'removed'
+  }
+
+  type listOwnReportsParams = {
+    limit?: number
+    after_id?: string
+    status?: 'open' | 'resolved' | 'dismissed'
+  }
+
+  type listPostModerationCandidatesParams = {
+    limit?: number
+    after_id?: string
   }
 
   type listWardrobeItemsParams = {
@@ -311,7 +451,7 @@ declare namespace API {
     id: string
     pixel_height?: number
     pixel_width?: number
-    purpose: 'avatar_source_preparation' | 'diary_image'
+    purpose: 'avatar_source_preparation' | 'diary_image' | 'community_publish'
     reason?: string
     status:
       | 'pending_upload'
@@ -330,6 +470,42 @@ declare namespace API {
     media: MediaResponse
     method: 'PUT'
     url: string
+  }
+
+  type ModerationActionPageResponse = {
+    actions: any
+    next_after_id?: string
+  }
+
+  type ModerationActionResponse = {
+    action: string
+    actor_id: string
+    created_at: string
+    id: string
+    post_id?: string
+    post_version?: number
+    reason_code: string
+    report_id?: string
+    subject_user_id?: string
+  }
+
+  type ModerationCandidatePageResponse = {
+    candidates: any
+    next_after_id?: string
+  }
+
+  type ModerationCandidateResponse = {
+    author_display_name: string
+    author_handle: string
+    body?: string
+    image_count: number
+    post_id: string
+    post_revision: number
+    review_round: number
+    submitted_at: string
+    tags: any
+    title?: string
+    version: number
   }
 
   type OutfitPlanItemContentResponse = {
@@ -376,6 +552,57 @@ declare namespace API {
     revision: number
   }
 
+  type PostPageResponse = {
+    next_after_id?: string
+    posts: any
+  }
+
+  type PostResponse = {
+    created_at: string
+    current: PostRevisionResponse
+    draft_version?: number
+    id: string
+    pending_version?: number
+    published?: PostRevisionResponse
+    published_at?: string
+    published_version?: number
+    review_round: number
+    revision: number
+    source_diary_id?: string
+    state: 'draft' | 'pending' | 'published' | 'withdrawn' | 'removed'
+    updated_at: string
+    withdrawn_at?: string
+  }
+
+  type PostRevisionRequest = {
+    expected_revision: number
+  }
+
+  type PostRevisionResponse = {
+    body?: string
+    created_at: string
+    media_ids: any
+    reason_code?: string
+    review_round: number
+    review_state: 'draft' | 'pending' | 'approved' | 'rejected' | 'cancelled'
+    reviewed_at?: string
+    submitted_at?: string
+    tags: any
+    title?: string
+    version: number
+  }
+
+  type PublicPostResponse = {
+    author_display_name: string
+    author_handle: string
+    body?: string
+    id: string
+    image_count: number
+    published_at: string
+    tags: any
+    title?: string
+  }
+
   type PublicProfileResponse = {
     bio?: string
     created_at: string
@@ -408,8 +635,35 @@ declare namespace API {
     password: string
   }
 
+  type RemovePostRequest = {
+    expected_revision: number
+    reason_code: string
+  }
+
+  type removePublishedPostParams = {
+    post_id: string
+  }
+
+  type ReportPageResponse = {
+    next_after_id?: string
+    reports: any
+  }
+
+  type resolveCommunityReportParams = {
+    report_id: string
+  }
+
+  type ResolveReportRequest = {
+    resolution_code: string
+    status: 'resolved' | 'dismissed'
+  }
+
   type restoreOutfitPlanParams = {
     plan_id: string
+  }
+
+  type restoreUserParams = {
+    user_id: string
   }
 
   type SelfAdultDeclarationResponse = {
@@ -417,6 +671,19 @@ declare namespace API {
     confirmed_at?: string
     policy_version: 'self-adult-v1'
     withdrawn_at?: string
+  }
+
+  type SetUserStatusRequest = {
+    expected_revision: number
+    reason_code: string
+  }
+
+  type submitPostParams = {
+    post_id: string
+  }
+
+  type suspendUserParams = {
+    user_id: string
   }
 
   type TransitionOutfitPlanRequest = {
@@ -451,6 +718,19 @@ declare namespace API {
     items: any
     local_date: string
     time_zone: string
+  }
+
+  type updatePostParams = {
+    post_id: string
+  }
+
+  type UpdatePostRequest = {
+    body?: string
+    expected_revision: number
+    media_ids: any
+    source_diary_id?: string
+    tags: any
+    title?: string
   }
 
   type updateWardrobeItemParams = {
@@ -602,5 +882,9 @@ declare namespace API {
 
   type withdrawConsentParams = {
     consent_id: string
+  }
+
+  type withdrawPostParams = {
+    post_id: string
   }
 }

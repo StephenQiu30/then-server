@@ -15,6 +15,7 @@ import (
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/objectstore"
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
 	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 	mediaworkerapp "github.com/StephenQiu30/then-server/backend/internal/application/mediaworker"
@@ -130,15 +131,21 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		return err
 	}
 	var mediaHandler *httpapi.MediaHandler
+	var communityHandler *httpapi.CommunityHandler
 	if objects != nil {
 		media, serviceErr := mediaapp.NewMediaService(accounts, postgres.NewMediaRepository(pool.ORM()), objects)
 		if serviceErr != nil {
 			return serviceErr
 		}
 		mediaHandler = httpapi.NewMediaHandler(media, cfg.SessionSecure)
+		community, serviceErr := communityapp.NewService(accounts, postgres.NewCommunityRepository(pool.ORM()))
+		if serviceErr != nil {
+			return serviceErr
+		}
+		communityHandler = httpapi.NewCommunityHandler(community, objects, cfg.SessionSecure)
 		probes = append(probes, objects)
 	}
-	router, err := httpapi.NewRouterWithDiary(startup, cfg.DocsEnabled, probes, httpapi.NewAccountHandler(accounts, cfg.SessionSecure, limiter), httpapi.NewPrivacyHandler(privacy, cfg.SessionSecure), httpapi.NewWardrobeHandler(wardrobe, cfg.SessionSecure), httpapi.NewOutfitPlanHandler(outfits, cfg.SessionSecure), httpapi.NewWearEventHandler(wearEvents, cfg.SessionSecure), httpapi.NewDiaryHandler(diaries, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler)
+	router, err := httpapi.NewRouterWithCommunity(startup, cfg.DocsEnabled, probes, httpapi.NewAccountHandler(accounts, cfg.SessionSecure, limiter), httpapi.NewPrivacyHandler(privacy, cfg.SessionSecure), httpapi.NewWardrobeHandler(wardrobe, cfg.SessionSecure), httpapi.NewOutfitPlanHandler(outfits, cfg.SessionSecure), httpapi.NewWearEventHandler(wearEvents, cfg.SessionSecure), httpapi.NewDiaryHandler(diaries, cfg.SessionSecure), communityHandler, cfg.HealthTimeout, log, mediaHandler)
 	if err != nil {
 		return err
 	}

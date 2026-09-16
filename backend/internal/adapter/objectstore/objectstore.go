@@ -90,10 +90,18 @@ func (s *Store) HeadVersion(ctx context.Context, asset mediaapp.MediaAsset, vers
 }
 
 func (s *Store) OpenVersion(ctx context.Context, objectKey, versionID string) (io.ReadCloser, error) {
+	return s.openVersion(ctx, RawBucket, objectKey, versionID)
+}
+
+func (s *Store) OpenDerivedVersion(ctx context.Context, objectKey, versionID string) (io.ReadCloser, error) {
+	return s.openVersion(ctx, DerivedBucket, objectKey, versionID)
+}
+
+func (s *Store) openVersion(ctx context.Context, bucket, objectKey, versionID string) (io.ReadCloser, error) {
 	if s == nil || s.client == nil || objectKey == "" || versionID == "" {
 		return nil, errors.New("object version unavailable")
 	}
-	object, err := s.client.GetObject(ctx, RawBucket, objectKey, minio.GetObjectOptions{VersionID: versionID})
+	object, err := s.client.GetObject(ctx, bucket, objectKey, minio.GetObjectOptions{VersionID: versionID})
 	if err != nil {
 		return nil, errors.New("object version unavailable")
 	}

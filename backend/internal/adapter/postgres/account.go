@@ -213,6 +213,9 @@ func (r *AccountRepository) DeleteUser(ctx context.Context, userID string) error
 		if activeMedia != 0 {
 			return accountapp.ErrAccountMediaConflict
 		}
+		if err := tx.Model(&postRecord{}).Where("source_diary_owner_id = ?", userID).Updates(map[string]any{"source_diary_owner_id": nil, "source_diary_id": nil}).Error; err != nil {
+			return err
+		}
 		if err := tx.Exec("DELETE FROM inbox_receipts WHERE event_id IN (SELECT id FROM outbox_events WHERE aggregate_id IN (SELECT id FROM media_assets WHERE owner_id = ?))", userID).Error; err != nil {
 			return err
 		}

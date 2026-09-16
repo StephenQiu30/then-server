@@ -1,6 +1,6 @@
 # OOTD Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。`cmd/then-server/main.go` 通过 `internal/bootstrap` 组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着、私人穿搭日记与日历，以及私有图片上传/检查/删除 API 已经实现。
+这是“于是”当前的 Go/Gin 模块化单体。`cmd/then-server/main.go` 通过 `internal/bootstrap` 组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着、私人穿搭日记与日历、社区帖子审核治理，以及私有图片上传/检查/删除 API 已经实现。
 
 ## 本地运行
 
@@ -64,7 +64,7 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `PUT /wardrobe/items/{item_id}`
 - `DELETE /wardrobe/items/{item_id}`
 
-OpenAPI 0.14.0 共 48 个 operation，在既有账号、衣橱、计划与实际事件合同上增加私人日记 CRUD、删除影响和月日历七个接口，并保持业务路径无版本前缀。本人账号和日记更新必须提交 `expected_revision`；公开资料只包含 handle、显示名称、简介和版本，私人日记响应不暴露 owner、对象 key 或同意记录，HttpOnly 会话 Cookie 不进入生成客户端参数。
+OpenAPI 0.15.0 共 70 个 operation，在既有账号、衣橱、计划、实际事件与私人日记合同上增加 22 个社区帖子、审核、举报和账号治理接口，并保持业务路径无版本前缀。本人资源更新必须提交 `expected_revision`；公开帖子只包含批准版本的公开字段，来源日记、媒体 ID、owner、对象 key、对象 version 和同意记录不进入公开响应，HttpOnly 会话 Cookie 不进入生成客户端参数。
 
 ## 账号穿搭计划 API
 
@@ -108,6 +108,10 @@ MinIO 使用 `raw-private` 与 `derived-private` 私有版本桶；RabbitMQ work
 - `GET /calendar?month=YYYY-MM`
 
 日记允许纯文字、普通私有图片或两者组合，可选关联本人的计划和同日实际穿着。普通日记 JPEG 复用媒体净化链但不要求本人照片同意；只有 ready 的 owner 媒体可关联。日记保留原本地日期和 IANA 时区，可同日多条；未来日期、跨账号关联和旧 revision 被拒绝。删除日记保留媒体，删除计划或实际事件只解除关联，月日历分别返回计划、实际穿着和日记数量。
+
+## 社区帖子审核与治理
+
+作者可创建私人草稿、提交人工审核、撤回和删除；公开详情与图片只读取 active 作者当前批准的不可变版本。社区图片使用独立 `community_publish` 用途并从 MinIO 固定 derived version 返回。moderator/admin 可审核、处理举报和下架，admin 还可封禁或恢复账号；封禁会在同一事务撤销全部会话。Feed、搜索、评论、赞藏关注、屏蔽、通知与申诉属于后续切片。
 
 ## 本机中间件验证
 

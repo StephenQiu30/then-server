@@ -205,7 +205,11 @@ func (r *DiaryRepository) DiaryDeletionImpact(ctx context.Context, ownerID, entr
 	if err != nil {
 		return diaryapp.DiaryDeletionImpact{}, diaryLookupError(err)
 	}
-	return diaryapp.DiaryDeletionImpact{EntryID: entry.ID, Revision: entry.Revision, MediaCount: len(entry.MediaIDs), PublishedPostCount: 0, MediaRetained: true}, nil
+	var publishedPostCount int64
+	if err := r.database.WithContext(ctx).Model(&postRecord{}).Where("source_diary_owner_id = ? AND source_diary_id = ? AND state = ?", ownerID, entryID, "published").Count(&publishedPostCount).Error; err != nil {
+		return diaryapp.DiaryDeletionImpact{}, diaryapp.ErrDiaryUnavailable
+	}
+	return diaryapp.DiaryDeletionImpact{EntryID: entry.ID, Revision: entry.Revision, MediaCount: len(entry.MediaIDs), PublishedPostCount: int(publishedPostCount), MediaRetained: true}, nil
 }
 
 func (r *DiaryRepository) DeleteDiaryEntry(ctx context.Context, ownerID, entryID string, expectedRevision int, at time.Time) error {
@@ -216,6 +220,9 @@ func (r *DiaryRepository) DeleteDiaryEntry(ctx context.Context, ownerID, entryID
 		}
 		if record.Revision != expectedRevision {
 			return diaryapp.ErrDiaryConflict
+		}
+		if err := tx.Model(&postRecord{}).Where("source_diary_owner_id = ? AND source_diary_id = ?", ownerID, entryID).Updates(map[string]any{"source_diary_owner_id": nil, "source_diary_id": nil}).Error; err != nil {
+			return err
 		}
 		if err := tx.Where("owner_id = ? AND entry_id = ?", ownerID, entryID).Delete(&diaryEntryMediaRecord{}).Error; err != nil {
 			return err
