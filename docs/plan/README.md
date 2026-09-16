@@ -10,7 +10,7 @@
 - [账号状态与公开资料执行计划](19-02-账号状态与公开资料执行计划.md)（approved/completed）
 - [私人穿搭日记与日历 API 执行计划](19-03-私人穿搭日记与日历API执行计划.md)（completed）
 - [社区帖子审核与治理 API 执行计划](19-04-社区帖子审核与治理API执行计划.md)（approved/completed）
-- [社区发现、互动与通知 API 执行计划](19-05-社区发现互动与通知API执行计划.md)（approved/implemented/awaiting_ci）
+- [社区发现、互动与通知 API 执行计划](19-05-社区发现互动与通知API执行计划.md)（approved/completed）
 
 - [OOTD 产品实施计划](10-OOTD产品实施计划.md)
 - [照片输入与质量门执行计划](11-01-照片输入与质量门执行计划.md)
