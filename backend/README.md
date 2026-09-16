@@ -1,6 +1,6 @@
 # OOTD Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。一个 `main.go` 负责组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着，以及合成本人照片的私有上传/检查/删除 API 已经实现。
+这是“于是”当前的 Go/Gin 模块化单体。`cmd/then-server` 通过 `internal/bootstrap` 组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着，以及合成本人照片的私有上传/检查/删除 API 已经实现。
 
 ## 本地运行
 
@@ -12,10 +12,10 @@ brew services start redis
 cd backend
 DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' \
 REDIS_URL='redis://127.0.0.1:6379/0' \
-go run .
+go run ./cmd/then-server
 ```
 
-进程连接数据库后会在监听端口前执行 GORM `AutoMigrate`。当前处于无历史数据的开发阶段，数据库结构由 [`internal/repository`](internal/repository) 的 GORM record 统一声明；项目不维护 Atlas 配置或 SQL migration。需要破坏性调整时更新 record 并重建本地开发库。
+进程连接数据库后会在监听端口前执行 GORM `AutoMigrate`。当前处于无历史数据的开发阶段，数据库结构由 [`internal/adapter/postgres`](internal/adapter/postgres) 的 GORM record 统一声明；项目不维护 Atlas 配置或 SQL migration。需要破坏性调整时更新 record 并重建本地开发库。
 
 ## Swagger 与 OpenAPI
 
@@ -23,7 +23,7 @@ go run .
 API_DOCS_ENABLED=true \
 DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' \
 REDIS_URL='redis://127.0.0.1:6379/0' \
-go run .
+go run ./cmd/then-server
 ```
 
 默认入口：
@@ -34,7 +34,7 @@ go run .
 
 Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API 启动时从这些声明生成并校验 OpenAPI 3.1.2，Swagger UI 和两个契约地址都读取同一个运行时对象；仓库不保存生成 YAML/JSON，也不运行独立 Swagger 容器。
 
-未来 `frontend` 通过 `@umijs/openapi` 直接读取开发 API 的 `/openapi.json`，生成到前端自己的 generated 目录。`API_DOCS_ENABLED` 默认关闭，开启时只允许回环监听；页面提供筛选、operationId、请求耗时和同源 Try it out。
+`frontend` 通过 `@umijs/openapi` 直接读取开发 API 的 `/openapi.json`，生成到 `frontend/src/api/`。`API_DOCS_ENABLED` 默认关闭，开启时只允许回环监听；页面提供筛选、operationId、请求耗时和同源 Try it out。
 
 ## 账号 API
 
@@ -64,7 +64,7 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `PUT /wardrobe/items/{item_id}`
 - `DELETE /wardrobe/items/{item_id}`
 
-OpenAPI 0.12.0 在无图最小结构上提供正式度、保暖感受、雨天和步行适用四项 nullable 用户确认属性，并移除业务路径版本前缀。POST/PUT 必须提交 `attributes` 对象；空项表示未知，非空响应携带 `user_confirmed`，请求不能提交来源。会话决定 owner；属性参与幂等比较和完整 revision 更新。删除前读取计划与实际事件的共同影响摘要，删除时明确选择清空全部历史快照或删除受影响历史。
+OpenAPI 0.13.0 在既有衣橱、计划与实际事件合同上增加账号状态/revision和公开资料三接口，并保持业务路径无版本前缀。本人账号更新必须提交 `expected_revision`，公开资料只包含 handle、显示名称、简介和版本；HttpOnly 会话 Cookie 不进入生成客户端参数。
 
 ## 账号穿搭计划 API
 
@@ -105,7 +105,7 @@ Redis 只保存认证限流的短期计数；PostgreSQL 是账户、同意、媒
 brew services start minio
 brew services start redis
 brew services start rabbitmq
-go test -race -tags=services ./tests -count=1 -v
+go test -race -tags=services ./tests/... -count=1 -v
 ```
 
 根 `docker-compose-env.yml` 只是显式选择的隔离备用环境。本机服务可用时不启动 Compose 依赖。
@@ -114,17 +114,22 @@ go test -race -tags=services ./tests -count=1 -v
 
 ```text
 backend/
-├── main.go
+├── cmd/then-server/
 ├── internal/
-│   ├── model/
-│   ├── service/
-│   ├── repository/
-│   ├── transport/
-│   ├── objectstore/
-│   ├── messagequeue/
-│   ├── worker/
+│   ├── domain/
+│   ├── application/
+│   ├── adapter/
+│   │   ├── httpapi/
+│   │   ├── postgres/
+│   │   ├── objectstore/
+│   │   └── messagequeue/
+│   ├── bootstrap/
 │   └── platform/
 ├── tests/
+│   ├── services/       # 本机 PostgreSQL/Redis/MinIO/RabbitMQ
+│   ├── integration/    # 实际二进制与 Testcontainers
+│   ├── container/      # 已构建 OCI 镜像
+│   └── internal/       # 测试专用共享夹具
 ├── Dockerfile
 └── .env.example
 ```
@@ -138,8 +143,8 @@ go mod verify
 go vet ./...
 go test ./... -count=1
 go test -race ./... -count=1
-go test -race -tags=services ./tests -count=1 -v
-go test -race -tags=integration ./tests -count=1 -v
+go test -race -tags=services ./tests/... -count=1 -v
+go test -race -tags=integration ./tests/... -count=1 -v
 ```
 
 `services` 使用已经启动的本机 PostgreSQL/MinIO/Redis/RabbitMQ；`integration` 使用 Testcontainers 创建隔离 PostgreSQL 18 与 Redis，并验证实际二进制从空库迁移、启动、认证限流、两项依赖断连恢复和 SIGTERM 退出。镜像验证另见 [17-07](../docs/plan/17-07-后端容器构建与运行验证执行计划.md)。

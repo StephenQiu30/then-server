@@ -21,13 +21,14 @@ B0 不伪造业务 API。B1/B2 只实现 17-19 已批准的本人照片准备子
 
 ## Go代码与依赖边界
 
-- `main.go` 只组装 API 生命周期；业务进入时按 `transport → service → repository/platform` 单向依赖。
-- 包级单元测试与源码同目录，文件使用 `_test.go`；跨包黑盒、真实依赖和进程测试位于 `backend/tests`，使用外部 `tests` 包。
-- `backend/tests` 仍属于唯一 Go module。测试专用 SDK 只由带 build tag 的 `_test.go` 导入，不进入生产二进制依赖图。
+- `cmd/then-server` 只委托 bootstrap；业务按 `httpapi → application → domain` 进入，PostgreSQL/MinIO/RabbitMQ 作为 adapter 由 bootstrap 注入。
+- 包级单元测试与源码同目录，文件使用 `_test.go`；这是 Go 工具链的原生边界，生产构建不会编译这些文件。跨包真实依赖和进程验收位于 `backend/tests`。
+- `backend/tests/services`、`integration`、`container` 分别对应本机依赖、实际进程和 OCI 镜像，使用同名 build tag；根目录不直接放 Go 文件。`tests/internal` 只共享测试资源所有权代码。
+- `backend/tests` 仍属于唯一 Go module，不增加 test 服务或第二个 module。测试专用 SDK 不进入生产二进制依赖图。
 - 生产配置使用 `APP_*`、`DATABASE_URL` 等运行变量；本机测试连接只使用 `THEN_TEST_*`。测试不回退读取生产变量，不加载项目 `.env`，也不输出 SDK 原始错误。
 - 本机 services 测试只允许 loopback；PostgreSQL 使用临时表，MinIO 使用随机桶，Redis 默认 DB 15 与随机 key，RabbitMQ 使用随机 quorum queue，所有资源由测试清理。
 
-Go 官方建议将服务器内部包放入 `internal`，并通过 `_test.go` 与 `go test` 使用内建测试能力；本项目保持现有根 `main.go` 是因为只有一个命令，不为套用通用目录模板迁移到 `cmd/`。依据：[Organizing a Go module](https://go.dev/doc/modules/layout)、[Add a test](https://go.dev/doc/tutorial/add-a-test)。build tag 只隔离真实依赖测试，不用于生产功能分支。
+Go 官方建议将服务器实现放入 `internal`，服务命令放入 `cmd`，并通过 `_test.go` 与 `go test` 使用内建测试能力；本项目固定 `cmd/then-server` 与 `internal/bootstrap`，包内单元测试继续跟随被测 package。依据：[Organizing a Go module](https://go.dev/doc/modules/layout)、[Add a test](https://go.dev/doc/tutorial/add-a-test)。build tag 只隔离真实依赖测试，不用于生产功能分支。
 
 ## 独立测试矩阵
 
@@ -35,9 +36,9 @@ Go 官方建议将服务器内部包放入 `internal`，并通过 `_test.go` 与
 | --- | --- | --- | --- |
 | Unit/contract | 各包 `*_test.go`；`go test ./...` | 无 | 领域/配置/Handler/资源生命周期的确定性规则 |
 | Race | `go test -race ./...` | 无 | 当前测试覆盖内的数据竞争；不等于压力测试 |
-| Local services | `backend/tests/*`；`-tags=services` | 本机 PG/MinIO/Redis/RabbitMQ | 实际协议、鉴权、TTL、confirm/requeue 与清理 |
-| Integration | `backend/tests/*`；`-tags=integration` | Testcontainers PG/Redis/MinIO/RabbitMQ | 实际 `all` 进程、合成照片全链、断连恢复、错误退出与契约分发 |
-| Container | `backend/tests/*`；`-tags=container` | 显式构建的本地镜像与 Docker | `api|worker|all`、非 root、只读根、资源限制、健康和 SIGTERM |
+| Local services | `backend/tests/services`；`-tags=services` | 本机 PG/MinIO/Redis/RabbitMQ | 实际协议、鉴权、TTL、confirm/requeue 与清理 |
+| Integration | `backend/tests/integration`；`-tags=integration` | Testcontainers PG/Redis/MinIO/RabbitMQ | 实际 `all` 进程、合成照片全链、断连恢复、错误退出与契约分发 |
+| Container | `backend/tests/container`；`-tags=container` | 显式构建的本地镜像与 Docker | `api|worker|all`、非 root、只读根、资源限制、健康和 SIGTERM |
 
 各入口独立执行、独立失败。缺少依赖不得跳过并记为通过；services 测试不得连接非 loopback 地址。普通 `go test ./...` 保持快速，不启动 Docker 或本机中间件。
 

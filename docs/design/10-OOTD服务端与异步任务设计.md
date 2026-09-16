@@ -14,7 +14,7 @@
 - 适用对象：面向 C 端的 OOTD 产品服务端与异步任务；本地体验阶段不依赖后端运行。
 - 决策日期：2026-08-30。
 - 核心选择：Go + Gin/Huma、GORM v2 Generics + AutoMigrate、PostgreSQL；Redis、RabbitMQ 与私有对象存储按实际异步业务启用。
-- 进程边界：一个 Go module、一个 `main.go`、一个二进制和一个 OCI 镜像，通过 `APP_ROLE=api|worker|all` 选择角色；生产以同镜像的独立 API/worker 进程部署、扩缩和回滚。
+- 进程边界：一个 Go module、一个 `cmd/then-server` 命令、一个二进制和一个 OCI 镜像，通过 `APP_ROLE=api|worker|all` 选择角色；生产以同镜像的独立 API/worker 进程部署、扩缩和回滚。
 - 契约：单一 OpenAPI 3.1.2 文档，仍遵循 3.1 系列语义。
 
 > 本架构已批准，但服务端能力按实施计划启用：本地衣橱、推荐和记录阶段不启动 Go、RabbitMQ、Redis 或对象存储；第一个云端 AI 生成能力进入受控 POC/发布时，才按本文建立完整后端链路。供应商、地域、删除、成本、SLO 与 feature flag 门禁未通过时，不得接入真实用户流量。

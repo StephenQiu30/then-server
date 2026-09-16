@@ -46,7 +46,7 @@ brew services start postgresql@18
 brew services start minio
 brew services start redis
 brew services start rabbitmq
-(cd backend && go test -race -tags=services ./tests -count=1)
+(cd backend && go test -race -tags=services ./tests/... -count=1)
 ```
 
 后端镜像使用 `docker build --tag then-server:local backend` 构建。Swagger 由 Go API 从 Huma operation 与类型标签实时生成，不需要独立 Swagger 容器或 `go generate`。确需隔离依赖时再使用 `docker compose --profile isolated-env up --detach --wait`；Compose 不是日常开发前置，也不代表生产部署已完成。

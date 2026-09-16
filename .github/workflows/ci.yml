@@ -49,7 +49,7 @@ jobs:
         run: go test -race ./... -count=1
 
       - name: Build
-        run: go build -trimpath -o /tmp/then-server .
+        run: go build -trimpath -o /tmp/then-server ./cmd/then-server
 
   integration:
     name: PostgreSQL integration
@@ -69,7 +69,7 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Run integration tests
-        run: go test -race -tags=integration ./tests -count=1
+        run: go test -race -tags=integration ./tests/... -count=1
 
   container:
     name: OCI container
@@ -94,4 +94,4 @@ jobs:
       - name: Test restricted container
         env:
           THEN_BACKEND_TEST_IMAGE: then-server:ci
-        run: go test -race -tags=container ./tests -count=1
+        run: go test -race -tags=container ./tests/... -count=1

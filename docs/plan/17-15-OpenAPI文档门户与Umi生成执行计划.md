@@ -37,7 +37,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 2. 仓库不得包含 OpenAPI 物化工具或生成 YAML/JSON；CI 不执行 `go generate` 漂移检查。
 3. operationId、请求/响应、错误状态和 Cookie security 只在 transport 声明。
 4. GORM record 必须明确账号表的列类型、非空、唯一、检查约束、索引和用户删除级联。
-5. `repository.Migrate` 集中执行 `AutoMigrate`，Main 在 HTTP 监听前调用；失败时进程不报告启动成功。
+5. `postgres.Migrate` 集中执行 `AutoMigrate`，bootstrap 在 HTTP 监听前调用；失败时进程不报告启动成功。
 6. 当前不保留 Atlas、SQL migration、checksum、旧 schema 探测、回填或双写。
 7. Redis 只因已批准的认证限流进入当前 API 运行时；RabbitMQ、MinIO 不因 schema 调整或未来规划提前进入生产 binary。
 8. App 当前没有实际网络调用时，移除依赖物化契约的空 transport target、生成插件和未使用依赖；未来接入另立执行计划。
@@ -49,7 +49,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 - [x] 删除 `generate_openapi.go` 与仓库内 `openapi.yaml`。
 - [x] 删除 `atlas.hcl`、账号 SQL migration 与 `atlas.sum`。
 - [x] 在 GORM record 上声明 PostgreSQL schema 约束。
-- [x] 新增集中 `repository.Migrate` 并接入 Main 启动顺序。
+- [x] 新增集中 `postgres.Migrate` 并接入 bootstrap 启动顺序。
 - [x] 契约测试直接调用运行时 OpenAPI 生成，不读取磁盘产物。
 - [x] Swagger UI 覆盖当前 GET/POST/PUT/DELETE/PATCH；禁用外部 validator、查询覆盖与授权持久化。实际浏览器展开 PUT 声明接口后可编辑请求并显示 Execute。
 - [x] 进程测试验证运行时 JSON/YAML，不比较仓库文件。
@@ -66,6 +66,7 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 - [x] 顶层 `frontend/` 已按用户后续要求创建，Umi 从运行时 OpenAPI 生成请求文件。
 - [x] 2026-09-16 跟进：移除前后端路径版本前缀，Cookie Path 收敛为 `/`，升级 API 文档版本并重新生成 Umi 客户端。
 - [x] 2026-09-16 跟进：Axios 官方源码对照后的统一 `request.ts`、前端请求测试、Go 契约/单元/race、真实运行时 OpenAPI 与前端 lint/typecheck/build 全部通过。
+- [x] 2026-09-16 跟进：Umi 生成目录迁移为 `frontend/src/api/`，重新从最终 `cmd/then-server` 的 `/openapi.json` 生成 API 0.13.0 / 41 个 operation，并继续只通过 `src/lib/api/request.ts` 发送请求。
 
 ## 非目标
 
@@ -76,4 +77,4 @@ GORM record -> AutoMigrate -> PostgreSQL schema
 
 ## 完成判定
 
-代码、规范与运行证据都只保留两份事实源：transport 的运行时接口声明和 repository 的 GORM schema 声明。当前本机运行时 OpenAPI 为 API 0.12.0 / 38 个 operation，路径无版本前缀；统一 Axios 请求入口、Umi 再生成和前后端质量门禁均通过，本切片为 `completed`。远程 CI 和生产数据迁移仍按各自切片验收。
+代码、规范与运行证据都只保留两份事实源：HTTP adapter 的运行时接口声明和 PostgreSQL adapter 的 GORM schema 声明。当前本机运行时 OpenAPI 为 API 0.13.0 / 41 个 operation，路径无版本前缀；19-02 变更后已从实际 `/openapi.json` 重新生成 `src/api/` 下的 profile/账号 client，并通过 TypeScript 与请求层测试。本切片保持 `completed`；远程 CI 和生产数据迁移仍按各自切片验收。

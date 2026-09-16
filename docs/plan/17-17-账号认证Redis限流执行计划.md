@@ -31,8 +31,8 @@
 | --- | --- |
 | `backend/internal/platform/config/config.go` | 校验单一 `REDIS_URL`；本机明文只允许 loopback，远端必须 `rediss` |
 | `backend/internal/platform/ratelimit/redis.go` | Redis 连接、原子固定窗口、散列 key、探测与关闭 |
-| `backend/internal/transport/account.go` | 从已验证请求上下文取得源 IP、选择固定策略、映射 429/503 |
-| `backend/main.go` | 组装 Redis limiter，并把 PG/Redis 合成 readiness 依赖 |
+| `backend/internal/adapter/httpapi/account.go` | 从已验证请求上下文取得源 IP、选择固定策略、映射 429/503 |
+| `backend/internal/bootstrap/application.go` | 组装 Redis limiter，并把 PG/Redis 合成 readiness 依赖 |
 | `backend/tests/` | 真实 Redis 原子窗口、实际进程和 OCI 依赖验证 |
 
 ## Checklist
