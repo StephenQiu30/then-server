@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
 )
 
@@ -24,12 +25,12 @@ func (s *communityTransportStub) CreatePost(_ context.Context, _, id string, inp
 	return communityPostFixture(id), s.err
 }
 
-func (s *communityTransportStub) GetPublicPost(_ context.Context, id string) (communityapp.PublicPost, error) {
+func (s *communityTransportStub) GetPublicPostForViewer(_ context.Context, _ string, id string) (communityapp.PublicPost, error) {
 	body := "public body"
 	return communityapp.PublicPost{ID: id, AuthorHandle: "public_author", AuthorDisplayName: "Public Author", Body: &body, Tags: []string{"ootd"}, ImageCount: 1, PublishedVersion: 8, PublishedAt: time.Date(2026, 9, 16, 8, 0, 0, 0, time.UTC)}, s.err
 }
 
-func (s *communityTransportStub) GetPublicPostImage(context.Context, string, int) (communityapp.MediaObjectReference, error) {
+func (s *communityTransportStub) GetPublicPostImageForViewer(context.Context, string, string, int) (communityapp.MediaObjectReference, error) {
 	return communityapp.MediaObjectReference{ObjectKey: "private/key.jpg", ObjectVersionID: "private-version"}, s.err
 }
 
@@ -114,5 +115,21 @@ func TestCommunityHTTPRejectsPrivateInjectionAndMapsOperatorAuthorization(t *tes
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"FORBIDDEN"`) {
 		t.Fatalf("operator authorization mapping failed: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestOptionalCommunitySessionRejectsAndClearsStaleCookie(t *testing.T) {
+	service := &communityTransportStub{err: accountapp.ErrAuthentication}
+	router := communityRouter(t, service)
+	request := httptest.NewRequest(http.MethodGet, "/posts/11111111-1111-4111-8111-111111111111", nil)
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("stale optional session status=%d body=%s", response.Code, response.Body.String())
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != sessionCookieName || cookies[0].Value != "" || cookies[0].MaxAge != -1 || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatal("optional authenticated public read did not clear stale session")
 	}
 }

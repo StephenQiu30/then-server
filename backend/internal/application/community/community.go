@@ -18,7 +18,7 @@ type Authenticator interface {
 	CurrentUser(context.Context, string) (accountapp.User, error)
 }
 
-type Repository interface {
+type PostRepository interface {
 	CreatePost(context.Context, string, string, PostContentInput, time.Time) (Post, error)
 	ListOwnPosts(context.Context, string, int, *string, *PostState) (PostPage, error)
 	GetOwnPost(context.Context, string, string) (Post, error)
@@ -26,8 +26,6 @@ type Repository interface {
 	SubmitPost(context.Context, string, string, int, time.Time) (Post, error)
 	WithdrawPost(context.Context, string, string, int, time.Time) (Post, error)
 	DeletePost(context.Context, string, string, int, time.Time) error
-	GetPublicPost(context.Context, string) (PublicPost, error)
-	GetPublicPostImage(context.Context, string, int) (MediaObjectReference, error)
 	ListModerationCandidates(context.Context, int, *string) (ModerationCandidatePage, error)
 	GetModerationCandidate(context.Context, string, int) (ModerationCandidate, error)
 	GetModerationImage(context.Context, string, int, int) (MediaObjectReference, error)
@@ -40,6 +38,11 @@ type Repository interface {
 	ListModerationActions(context.Context, int, *string) (ModerationActionPage, error)
 	ListUsers(context.Context, int, *string) (AdminUserPage, error)
 	SetUserStatus(context.Context, string, string, int, accountapp.AccountStatus, string, time.Time) (AdminUser, error)
+}
+
+type Repository interface {
+	PostRepository
+	SocialRepository
 }
 
 type Service struct {
@@ -143,20 +146,6 @@ func (s *Service) DeletePost(ctx context.Context, token, postID string, expected
 	return s.repository.DeletePost(ctx, user.ID, postID, expectedRevision, s.now().UTC())
 }
 
-func (s *Service) GetPublicPost(ctx context.Context, postID string) (PublicPost, error) {
-	if !validUUID(postID) {
-		return PublicPost{}, ErrPostNotFound
-	}
-	return s.repository.GetPublicPost(ctx, postID)
-}
-
-func (s *Service) GetPublicPostImage(ctx context.Context, postID string, ordinal int) (MediaObjectReference, error) {
-	if !validUUID(postID) || ordinal < 0 || ordinal > 8 {
-		return MediaObjectReference{}, ErrPostNotFound
-	}
-	return s.repository.GetPublicPostImage(ctx, postID, ordinal)
-}
-
 func (s *Service) ListModerationCandidates(ctx context.Context, token string, limit int, afterID string) (ModerationCandidatePage, error) {
 	if _, err := s.operator(ctx, token, false); err != nil {
 		return ModerationCandidatePage{}, err
@@ -216,7 +205,11 @@ func (s *Service) CreateReport(ctx context.Context, token, reportID, postID stri
 		return ContentReport{}, err
 	}
 	detail, ok := normalizeOptional(input.Detail, 500, true)
-	if !validUUID(reportID) || !validUUID(postID) || !validReportReason(input.ReasonCode) || !ok {
+	if input.TargetType == "" {
+		input.TargetType = ReportTargetPost
+	}
+	validTarget := input.TargetType == ReportTargetPost && input.CommentID == nil || input.TargetType == ReportTargetComment && input.CommentID != nil && validUUID(*input.CommentID)
+	if !validUUID(reportID) || !validUUID(postID) || !validTarget || !validReportReason(input.ReasonCode) || !ok {
 		return ContentReport{}, ErrInvalidCommunityInput
 	}
 	input.Detail = detail

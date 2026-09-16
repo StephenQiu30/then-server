@@ -219,7 +219,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 						Version string `json:"version"`
 					} `json:"info"`
 				}
-				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.15.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) || !strings.Contains(string(body), `"operationId":"createDiaryEntry"`) || !strings.Contains(string(body), `"operationId":"decidePostModeration"`) {
+				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.16.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) || !strings.Contains(string(body), `"operationId":"createDiaryEntry"`) || !strings.Contains(string(body), `"operationId":"decidePostModeration"`) || !strings.Contains(string(body), `"operationId":"listCommunityFeed"`) {
 					t.Fatal("binary did not serve a valid JSON representation of its compiled contract")
 				}
 			}

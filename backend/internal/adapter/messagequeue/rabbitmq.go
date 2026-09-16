@@ -1,4 +1,4 @@
-// Package messagequeue owns durable RabbitMQ delivery for private-media events.
+// Package messagequeue owns durable RabbitMQ delivery for application events.
 package messagequeue
 
 import (
@@ -13,7 +13,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-const exchangeName = "then.private-media"
+const exchangeName = "then.events"
 
 type Broker struct {
 	connection *amqp.Connection
@@ -31,7 +31,7 @@ func Open(url string) (*Broker, error) {
 	if _, err := amqp.ParseURI(url); err != nil {
 		return nil, errors.New("message queue configuration invalid")
 	}
-	connection, err := amqp.DialConfig(url, amqp.Config{Properties: amqp.Table{"connection_name": "then-private-media"}, Heartbeat: 10 * time.Second, Locale: "en_US"})
+	connection, err := amqp.DialConfig(url, amqp.Config{Properties: amqp.Table{"connection_name": "then-events"}, Heartbeat: 10 * time.Second, Locale: "en_US"})
 	if err != nil {
 		return nil, errors.New("message queue unavailable")
 	}
@@ -56,7 +56,7 @@ func (b *Broker) declare(channel *amqp.Channel) error {
 	if err := channel.ExchangeDeclare(exchangeName, "topic", true, false, false, false, nil); err != nil {
 		return errors.New("message queue exchange unavailable")
 	}
-	for _, binding := range []struct{ queue, key string }{{"then.media-check", "media.uploaded"}, {"then.media-delete", "media.deletion_requested"}} {
+	for _, binding := range []struct{ queue, key string }{{"then.media-check", "media.uploaded"}, {"then.media-delete", "media.deletion_requested"}, {"then.community-notification", "community.notification_requested"}} {
 		if _, err := channel.QueueDeclare(binding.queue, true, false, false, false, nil); err != nil {
 			return errors.New("message queue declaration failed")
 		}
@@ -75,7 +75,7 @@ func (b *Broker) Probe(context.Context) error {
 }
 
 func (b *Broker) Publish(ctx context.Context, event mediaapp.OutboxEvent) error {
-	if b == nil || b.publisher == nil || event.ID == "" || event.AggregateID == "" || (event.EventType != "media.uploaded" && event.EventType != "media.deletion_requested") {
+	if b == nil || b.publisher == nil || event.ID == "" || event.AggregateID == "" || !validEventType(event.EventType) {
 		return errors.New("message event invalid")
 	}
 	body, err := json.Marshal(wireEvent{ID: event.ID, EventType: event.EventType, AggregateID: event.AggregateID})
@@ -96,7 +96,7 @@ func (b *Broker) Publish(ctx context.Context, event mediaapp.OutboxEvent) error 
 }
 
 func (b *Broker) Consume(ctx context.Context, queue string, handler func(context.Context, mediaapp.OutboxEvent) error) error {
-	if b == nil || b.connection == nil || handler == nil || (queue != "then.media-check" && queue != "then.media-delete") {
+	if b == nil || b.connection == nil || handler == nil || (queue != "then.media-check" && queue != "then.media-delete" && queue != "then.community-notification") {
 		return errors.New("message consumer invalid")
 	}
 	channel, err := b.connection.Channel()
@@ -134,6 +134,10 @@ func (b *Broker) Consume(ctx context.Context, queue string, handler func(context
 			}
 		}
 	}
+}
+
+func validEventType(eventType string) bool {
+	return eventType == "media.uploaded" || eventType == "media.deletion_requested" || eventType == "community.notification_requested"
 }
 
 func (b *Broker) Close() error {

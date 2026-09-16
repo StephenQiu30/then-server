@@ -11,6 +11,9 @@ var (
 	ErrInvalidCommunityInput = errors.New("invalid community input")
 	ErrPostNotFound          = errors.New("post not found")
 	ErrPostConflict          = errors.New("post revision or state conflict")
+	ErrCommentNotFound       = errors.New("comment not found")
+	ErrAppealNotFound        = errors.New("moderation appeal not found")
+	ErrNotificationNotFound  = errors.New("notification not found")
 	ErrCommunityForbidden    = errors.New("community operation forbidden")
 	ErrReportNotFound        = errors.New("report not found")
 	ErrCommunityUnavailable  = errors.New("community service unavailable")
@@ -89,6 +92,11 @@ type PublicPost struct {
 	Body              *string
 	Tags              []string
 	ImageCount        int
+	LikeCount         int64
+	CommentCount      int64
+	ViewerLiked       bool
+	ViewerBookmarked  bool
+	FollowingAuthor   bool
 	PublishedVersion  int
 	PublishedAt       time.Time
 }
@@ -141,6 +149,8 @@ const (
 )
 
 type CreateReportInput struct {
+	TargetType ReportTargetType
+	CommentID  *string
 	ReasonCode string
 	Detail     *string
 }
@@ -148,6 +158,8 @@ type CreateReportInput struct {
 type ContentReport struct {
 	ID             string
 	PostID         string
+	TargetType     ReportTargetType
+	CommentID      *string
 	ReasonCode     string
 	Detail         *string
 	Status         ReportStatus
@@ -176,6 +188,7 @@ type ModerationAction struct {
 	ActorID       string
 	PostID        *string
 	PostVersion   *int
+	CommentID     *string
 	ReportID      *string
 	SubjectUserID *string
 	Action        string

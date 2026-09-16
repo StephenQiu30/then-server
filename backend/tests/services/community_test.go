@@ -46,6 +46,11 @@ func TestCommunityPublishingModerationAndGovernanceLifecycle(t *testing.T) {
 	if err := store.Migrate(ctx, database); err != nil {
 		t.Fatalf("migrate community schema: %v", err)
 	}
+	var tableCount int64
+	serviceOK(t, "count migrated tables", database.WithContext(ctx).Raw(`SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'`).Scan(&tableCount).Error)
+	if tableCount != 34 {
+		t.Fatalf("migrated table count=%d, want 34", tableCount)
+	}
 	var foreignKeys int64
 	serviceOK(t, "inspect community foreign keys", database.WithContext(ctx).Raw(`
 		SELECT count(*) FROM pg_constraint c
@@ -73,6 +78,8 @@ func TestCommunityPublishingModerationAndGovernanceLifecycle(t *testing.T) {
 	serviceOK(t, "create moderator profile", err)
 	_, err = accounts.PutCurrentProfile(ctx, admin.Token, accountapp.PutProfileInput{Handle: "community_admin", ExpectedRevision: 0})
 	serviceOK(t, "create admin profile", err)
+	_, err = accounts.PutCurrentProfile(ctx, reporter.Token, accountapp.PutProfileInput{Handle: "community_reporter", ExpectedRevision: 0})
+	serviceOK(t, "create reporter profile", err)
 	serviceOK(t, "grant moderator role", database.WithContext(ctx).Exec("UPDATE users SET role = 'moderator' WHERE id = ?", moderator.User.ID).Error)
 	serviceOK(t, "grant admin role", database.WithContext(ctx).Exec("UPDATE users SET role = 'admin' WHERE id = ?", admin.User.ID).Error)
 
@@ -130,7 +137,7 @@ func TestCommunityPublishingModerationAndGovernanceLifecycle(t *testing.T) {
 	if approved.State != communityapp.PostPublished || approved.PublishedVersion == nil {
 		t.Fatalf("post did not publish: %+v", approved)
 	}
-	public, err := community.GetPublicPost(ctx, postID)
+	public, err := community.GetPublicPostForViewer(ctx, "", postID)
 	serviceOK(t, "read public community post", err)
 	if public.Body == nil || *public.Body != body || public.ImageCount != 1 || public.AuthorHandle != "community_author" {
 		t.Fatalf("public DTO lost or leaked facts: %+v", public)
@@ -146,7 +153,7 @@ func TestCommunityPublishingModerationAndGovernanceLifecycle(t *testing.T) {
 	if afterDiaryDelete.SourceDiaryID != nil {
 		t.Fatal("deleted private source ID remained attached to independent post")
 	}
-	image, err := community.GetPublicPostImage(ctx, postID, 0)
+	image, err := community.GetPublicPostImageForViewer(ctx, "", postID, 0)
 	serviceOK(t, "read public community image reference", err)
 	if image.ObjectKey == "" || image.ObjectVersionID == "" {
 		t.Fatal("public image was not pinned to a derived object version")
@@ -155,12 +162,86 @@ func TestCommunityPublishingModerationAndGovernanceLifecycle(t *testing.T) {
 		t.Fatalf("referenced community media deletion error=%v", err)
 	}
 
+	feed, err := community.ListFeed(ctx, "", "discover", 20, "")
+	if err != nil {
+		t.Fatalf("read anonymous discovery feed: %v", err)
+	}
+	if len(feed.Posts) != 1 || feed.Posts[0].ID != postID {
+		t.Fatalf("published post missing from discovery: %+v", feed)
+	}
+	viewerPost, err := community.GetPublicPostForViewer(ctx, "", postID)
+	serviceOK(t, "read anonymous viewer-aware post", err)
+	if viewerPost.ID != postID {
+		t.Fatal("viewer-aware public post mismatch")
+	}
+	serviceOK(t, "like published post", community.SetPostLike(ctx, reporter.Token, postID, true))
+	serviceOK(t, "repeat published post like", community.SetPostLike(ctx, reporter.Token, postID, true))
+	serviceOK(t, "bookmark published post", community.SetPostBookmark(ctx, reporter.Token, postID, true))
+	serviceOK(t, "follow published author", community.SetFollow(ctx, reporter.Token, "community_author", true))
+	following, err := community.ListFeed(ctx, reporter.Token, "following", 20, "")
+	serviceOK(t, "read following feed", err)
+	if len(following.Posts) != 1 || !following.Posts[0].ViewerLiked || !following.Posts[0].ViewerBookmarked || !following.Posts[0].FollowingAuthor {
+		t.Fatalf("viewer relations missing from following feed: %+v", following)
+	}
+	commentID := "10000000-0000-4000-8000-000000000301"
+	comment, err := community.CreateComment(ctx, reporter.Token, commentID, postID, communityapp.CreateCommentInput{Body: "  Looks great.  "})
+	serviceOK(t, "create pending comment", err)
+	if comment.State != communityapp.CommentPending || comment.Body == nil || *comment.Body != "Looks great." {
+		t.Fatalf("comment was not normalized and queued: %+v", comment)
+	}
+	commentQueue, err := community.ListCommentModeration(ctx, moderator.Token, 20, "")
+	serviceOK(t, "read comment moderation queue", err)
+	if len(commentQueue.Comments) != 1 || commentQueue.Comments[0].ID != commentID {
+		t.Fatalf("unexpected comment queue: %+v", commentQueue)
+	}
+	comment, err = community.DecideComment(ctx, moderator.Token, commentID, communityapp.DecideCommentInput{ExpectedRevision: comment.Revision, Decision: communityapp.ModerationApprove, ReasonCode: "content_approved"})
+	serviceOK(t, "approve comment", err)
+	comments, err := community.ListComments(ctx, "", postID, nil, 20, "")
+	serviceOK(t, "read public comments", err)
+	if len(comments.Comments) != 1 || comments.Comments[0].State != communityapp.CommentPublished {
+		t.Fatalf("approved comment not public: %+v", comments)
+	}
+	events, err := mediaRepository.PendingOutbox(ctx, 100)
+	serviceOK(t, "read notification outbox", err)
+	notificationEvents := 0
+	for _, event := range events {
+		if event.EventType != "community.notification_requested" {
+			continue
+		}
+		notificationEvents++
+		serviceOK(t, "deliver community notification", mediaRepository.DeliverNotification(ctx, event.ID, event.AggregateID, time.Now().UTC()))
+		serviceOK(t, "repeat community notification delivery", mediaRepository.DeliverNotification(ctx, event.ID, event.AggregateID, time.Now().UTC()))
+	}
+	if notificationEvents < 3 {
+		t.Fatalf("notification outbox events=%d", notificationEvents)
+	}
+	notifications, err := community.ListNotifications(ctx, author.Token, 20, "")
+	serviceOK(t, "read delivered notifications", err)
+	if len(notifications.Notifications) < 3 {
+		t.Fatalf("author notifications=%d", len(notifications.Notifications))
+	}
+	readNotification, err := community.MarkNotificationRead(ctx, author.Token, notifications.Notifications[0].ID)
+	serviceOK(t, "mark notification read", err)
+	if readNotification.ReadAt == nil {
+		t.Fatal("notification was not marked read")
+	}
+	serviceOK(t, "block post author", community.SetBlock(ctx, reporter.Token, author.User.ID, true))
+	blockedFeed, err := community.ListFeed(ctx, reporter.Token, "discover", 20, "")
+	serviceOK(t, "read blocked discovery feed", err)
+	if len(blockedFeed.Posts) != 0 {
+		t.Fatal("blocked author remained in personalized discovery")
+	}
+	if err := community.SetPostLike(ctx, reporter.Token, postID, true); !errors.Is(err, communityapp.ErrPostNotFound) {
+		t.Fatalf("blocked interaction error=%v", err)
+	}
+	serviceOK(t, "unblock post author", community.SetBlock(ctx, reporter.Token, author.User.ID, false))
+
 	newBody := "A revised outfit note awaiting review."
 	edited, err := community.UpdatePost(ctx, author.Token, postID, approved.Revision, communityapp.PostContentInput{Title: &title, Body: &newBody, MediaIDs: []string{media.ID}, Tags: []string{"ootd"}})
 	serviceOK(t, "edit published community post", err)
 	secondPending, err := community.SubmitPost(ctx, author.Token, postID, edited.Revision)
 	serviceOK(t, "submit edited community post", err)
-	stillPublic, err := community.GetPublicPost(ctx, postID)
+	stillPublic, err := community.GetPublicPostForViewer(ctx, "", postID)
 	serviceOK(t, "read old public version during review", err)
 	if stillPublic.Body == nil || *stillPublic.Body != body {
 		t.Fatal("pending edit replaced approved public content")
@@ -185,12 +266,31 @@ func TestCommunityPublishingModerationAndGovernanceLifecycle(t *testing.T) {
 	if resolved.Status != communityapp.ReportResolved {
 		t.Fatal("report did not resolve")
 	}
-	if _, err := community.GetPublicPost(ctx, postID); err != nil {
+	if _, err := community.GetPublicPostForViewer(ctx, "", postID); err != nil {
 		t.Fatal("resolving report implicitly removed post")
 	}
 	serviceOK(t, "remove reported post", community.RemovePost(ctx, moderator.Token, postID, rejected.Revision, "policy_violation"))
-	if _, err := community.GetPublicPost(ctx, postID); !errors.Is(err, communityapp.ErrPostNotFound) {
-		t.Fatal("removed post remained publicly readable")
+	actionsBeforeAppeal, err := community.ListModerationActions(ctx, moderator.Token, 20, "")
+	serviceOK(t, "find removable moderation action", err)
+	var removalActionID string
+	for _, action := range actionsBeforeAppeal.Actions {
+		if action.Action == "post_remove" && action.PostID != nil && *action.PostID == postID {
+			removalActionID = action.ID
+			break
+		}
+	}
+	if removalActionID == "" {
+		t.Fatal("post removal action missing")
+	}
+	appeal, err := community.CreateAppeal(ctx, author.Token, "10000000-0000-4000-8000-000000000401", removalActionID, "Please review the removal.")
+	serviceOK(t, "create moderation appeal", err)
+	appeal, err = community.ResolveAppeal(ctx, admin.Token, appeal.ID, "reversed", "appeal_approved")
+	serviceOK(t, "resolve moderation appeal", err)
+	if appeal.Status != communityapp.AppealReversed {
+		t.Fatalf("appeal status=%s", appeal.Status)
+	}
+	if _, err := community.GetPublicPostForViewer(ctx, "", postID); !errors.Is(err, communityapp.ErrPostNotFound) {
+		t.Fatal("appeal resolution bypassed the removed post state")
 	}
 	removed, err := community.GetOwnPost(ctx, author.Token, postID)
 	serviceOK(t, "read removed post as owner", err)
@@ -220,7 +320,7 @@ func TestCommunityPublishingModerationAndGovernanceLifecycle(t *testing.T) {
 	if _, err := community.DecidePost(ctx, moderator.Token, withdrawnPostID, communityapp.DecidePostInput{Version: *withdrawPending.PendingVersion, ReviewRound: withdrawPending.ReviewRound, ExpectedRevision: withdrawPending.Revision, Decision: communityapp.ModerationApprove, ReasonCode: "content_approved"}); !errors.Is(err, communityapp.ErrPostConflict) {
 		t.Fatal("late approval revived withdrawn post")
 	}
-	if _, err := community.GetPublicPost(ctx, withdrawnPostID); !errors.Is(err, communityapp.ErrPostNotFound) {
+	if _, err := community.GetPublicPostForViewer(ctx, "", withdrawnPostID); !errors.Is(err, communityapp.ErrPostNotFound) {
 		t.Fatal("withdrawn post was publicly readable")
 	}
 

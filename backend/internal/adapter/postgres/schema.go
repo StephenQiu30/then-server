@@ -34,7 +34,14 @@ func Migrate(ctx context.Context, database *gorm.DB) error {
 		&postRevisionRecord{},
 		&postRevisionMediaRecord{},
 		&postRevisionTagRecord{},
+		&postLikeRecord{},
+		&postBookmarkRecord{},
+		&userFollowRecord{},
+		&userBlockRecord{},
+		&commentRecord{},
 		&contentReportRecord{},
 		&moderationActionRecord{},
+		&moderationAppealRecord{},
+		&notificationRecord{},
 	)
 }

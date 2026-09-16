@@ -1,5 +1,5 @@
-// Package mediaworker runs the approved private-media outbox and consumers.
-package mediaworker
+// Package eventworker runs the approved transactional outbox and event consumers.
+package eventworker
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 type Repository interface {
 	PendingOutbox(context.Context, int) ([]mediaapp.OutboxEvent, error)
 	MarkOutboxPublished(context.Context, string, time.Time) error
+	DeliverNotification(context.Context, string, string, time.Time) error
 	BeginMediaCheck(context.Context, string, time.Time) (mediaapp.MediaAsset, bool, error)
 	CompleteMediaCheck(context.Context, string, string, *mediaapp.MediaDerivation, int, int, mediaapp.MediaStatus, string, time.Time) error
 	BeginDeletion(context.Context, string, time.Time) (mediaapp.MediaAsset, []mediaapp.MediaDerivation, mediaapp.DeletionRequest, bool, error)
@@ -53,16 +54,24 @@ func New(repository Repository, broker Broker, objects ObjectStore) (*Runner, er
 func (r *Runner) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	errorsChannel := make(chan error, 4)
+	errorsChannel := make(chan error, 5)
 	go func() { errorsChannel <- r.relay(ctx) }()
 	go func() { errorsChannel <- r.broker.Consume(ctx, "then.media-check", r.checkMedia) }()
 	go func() { errorsChannel <- r.broker.Consume(ctx, "then.media-delete", r.deleteMedia) }()
+	go func() { errorsChannel <- r.broker.Consume(ctx, "then.community-notification", r.deliverNotification) }()
 	go func() { errorsChannel <- r.cleanupSources(ctx) }()
 	err := <-errorsChannel
 	if err == nil && ctx.Err() != nil {
 		return nil
 	}
 	return err
+}
+
+func (r *Runner) deliverNotification(ctx context.Context, event mediaapp.OutboxEvent) error {
+	if event.EventType != "community.notification_requested" {
+		return errors.New("unexpected community-notification event")
+	}
+	return r.repository.DeliverNotification(ctx, event.ID, event.AggregateID, r.now().UTC())
 }
 
 func (r *Runner) cleanupSources(ctx context.Context) error {

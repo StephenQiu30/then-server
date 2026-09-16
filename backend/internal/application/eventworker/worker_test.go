@@ -1,4 +1,4 @@
-package mediaworker
+package eventworker
 
 import (
 	"bytes"

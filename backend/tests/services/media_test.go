@@ -22,8 +22,8 @@ import (
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/objectstore"
 	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	eventworkerapp "github.com/StephenQiu30/then-server/backend/internal/application/eventworker"
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
-	mediaworkerapp "github.com/StephenQiu30/then-server/backend/internal/application/mediaworker"
 	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"gorm.io/driver/postgres"
@@ -162,7 +162,7 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	broker, err := messagequeue.Open(environment.rabbitMQURL)
 	serviceOK(t, "open media broker", err)
 	defer broker.Close()
-	runner, err := mediaworkerapp.New(store.NewMediaRepository(database), broker, objects)
+	runner, err := eventworkerapp.New(store.NewMediaRepository(database), broker, objects)
 	serviceOK(t, "construct media worker", err)
 	workerContext, stopWorker := context.WithCancel(ctx)
 	workerDone := make(chan error, 1)
