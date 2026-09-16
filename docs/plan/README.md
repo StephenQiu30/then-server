@@ -37,7 +37,7 @@
 - [衣橱确认属性 API 执行计划](17-21-衣橱确认属性API执行计划.md)（approved/completed；后端开发范围）
 - [账号穿搭计划 API 执行计划](17-22-账号穿搭计划API执行计划.md)（approved/completed；后端开发范围）
 - [账号实际穿着 API 执行计划](17-23-账号实际穿着API执行计划.md)（approved/completed；后端开发范围）
-- [Go 工程结构与测试分层执行计划](17-24-Go工程结构与测试分层执行计划.md)（approved/in_progress）
+- [Go 工程结构与测试分层执行计划](17-24-Go工程结构与测试分层执行计划.md)（approved/completed）
 
 ## 单切片要求
 
