@@ -33,3 +33,4 @@
 - [数字衣橱与虚拟试穿竞品研究](19-数字衣橱与虚拟试穿竞品研究.md)
 - [OOTD 完整产品能力与阶段架构设计](20-OOTD完整产品能力与阶段架构设计.md)
 - [Three.js 人物、换装与灵动交互研究](threejs-avatar-research.md)
+- [WebGPU + Three.js 虚拟形象展示独立评估](webgpu-avatar-assessment.md)（研究建议；含独立 WKWebView 能力探测，不代表生产切换或真机验收）
