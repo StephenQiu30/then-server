@@ -12,6 +12,7 @@ Go + Gin/Huma + GORM/AutoMigrate + PostgreSQL 已实现健康检查、注册/登
 
 | 位置 | 内容 |
 | --- | --- |
+| [PROJECT.md](PROJECT.md) | 产品边界、shadcn/ui + Radix 前端设计实现规范、前后端目录与验收要求 |
 | [DESIGN.md](DESIGN.md) | App 与 Web 唯一视觉和交互设计标准；与 `then-app/DESIGN.md` 保持一致 |
 | [backend](backend/README.md) | Go 运行说明、内嵌 Swagger、schema 和独立测试 |
 | [frontend](frontend/README.md) | Next.js App Router Web 基础工程、Umi OpenAPI 与 Axios 请求层 |
@@ -21,7 +22,7 @@ Go + Gin/Huma + GORM/AutoMigrate + PostgreSQL 已实现健康检查、注册/登
 | [docker-compose.yml](docker-compose.yml) / [docker-compose-env.yml](docker-compose-env.yml) | 明确需要隔离环境时使用，非日常默认启动 |
 | [AGENTS.md](AGENTS.md) / [CONTRIBUTING.md](CONTRIBUTING.md) | 开发和提交规范 |
 
-不维护手写或服务端物化的 OpenAPI 文件、Atlas 迁移账本或旧项目兼容目录。前端生成客户端只由运行时 `/openapi.json` 刷新。当前业务未进入实现的模块不建空壳。静态内部素材见 [assets](assets/README.md)。
+不维护手写或服务端物化的 OpenAPI 文件、Atlas 迁移账本或旧项目兼容目录。前端生成客户端只由运行时 `/openapi.json` 刷新。当前业务未进入实现的模块不建空壳。静态内部素材见 [assets](frontend/assets/README.md)。
 
 ## 本地校验
 

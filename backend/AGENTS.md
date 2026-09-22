@@ -2,6 +2,8 @@
 
 本文件是 `backend/` 的直接工程规范。架构理由见 [`docs/design/02-后端架构.md`](../docs/design/02-后端架构.md)，精确依赖版本见 [`docs/design/01-技术选型.md`](../docs/design/01-技术选型.md)。
 
+前后端共同的产品边界、目录与接口合同见 [PROJECT.md](../PROJECT.md)；本文件维护 Go 侧执行细则，两者必须保持一致。
+
 ## 当前工程形态
 
 - 一个 Go module、一个 `cmd/then-server` 命令、一个二进制和一个 OCI 镜像；`APP_ROLE=api|worker|all` 选择已实现角色。

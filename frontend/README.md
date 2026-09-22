@@ -2,6 +2,8 @@
 
 “于是”Web 前端基础工程。项目使用 Next.js App Router、React、TypeScript、Radix UI Themes、Tailwind CSS、TanStack Query、Axios、ESLint 与 Prettier，配置以当前官方 `create-next-app` 脚手架为基准。不使用 Vite 或 React Router。
 
+前后端工程总规范见 [PROJECT.md](../PROJECT.md)。2026-09-22 确定目标组件体系为 shadcn/ui + Radix Primitives + Tailwind CSS，保留既有 Next.js 和请求层；当前尚未初始化 shadcn，Radix Themes 与视觉 token 的替换属于后续实施切片。
+
 ## 本地开发
 
 固定工具链为 Node.js 24.19.0 与 npm 12.0.2：
@@ -29,13 +31,17 @@ npm run openapi
 
 ```text
 src/app/                 App Router 路由入口与路由样式
-src/components/          跨路由共享组件与 Client Provider
+src/components/ui/       接入时创建：shadcn 基础组件
+src/components/providers/ Client Provider
+src/components/<business>/ 按需：业务组件
+src/hooks/<business>/    按需：请求与交互 hooks
 src/api/                 Umi OpenAPI 生成客户端
 src/lib/api/             Axios 统一请求入口
+src/lib/<business>/      按需：纯函数、校验与视图映射
 tests/unit/              单元测试
 ```
 
-业务切片进入实施后再创建对应 `src/features/<feature>`；当前不保留空目录或占位页面。
+业务切片进入实施后按上述职责创建目录，不再建立平行的 `features`/`modules` 组织方式，不保留空目录或占位页面。完整目标结构与导入规则见 [PROJECT.md](../PROJECT.md)。
 
 ## 质量门禁
 

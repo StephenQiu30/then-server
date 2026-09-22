@@ -4,7 +4,7 @@
 
 - `avatar-poc/`：数字形象和服装内容生产 POC 输入；只用于内部验证。
 - `acceptance/`：不公开的视觉验收静态证据；同目录 README 记录环境、边界和 hash。
-- App 随包默认资源在 `../then-app/ThenApp/Resources/` 或 Asset Catalog 中维护。
+- App 随包默认资源在 `../../../then-app/ThenApp/Resources/` 或 Asset Catalog 中维护。
 - 需要独立更新的生产媒体和三维文件存入私有 MinIO，由数据库保存业务元数据并通过受控接口返回短期访问地址。
 - 真正公开且无需授权的 Web 固定资源才可以进入对应 Web 服务的 `public/`；当前没有建立通用公开资源目录。
 
