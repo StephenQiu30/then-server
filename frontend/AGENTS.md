@@ -23,23 +23,26 @@ frontend/
 │   ├── api/                       # Umi OpenAPI 生成客户端
 │   ├── components/
 │   │   ├── ui/                    # 按需接入 shadcn 基础组件
-│   │   ├── providers/             # Client Provider
 │   │   ├── layout/                # 共享页面结构（PageShell）
 │   │   └── <business>/            # 按需：业务组件
+│   ├── providers/                 # 应用上下文，当前 query-provider.tsx
 │   ├── hooks/<business>/          # 按需：业务请求与交互 hooks
 │   └── lib/
 │       ├── api/                   # Axios 统一请求入口
 │       ├── utils.ts               # 统一 cn() 入口
 │       └── <business>/            # 按需：校验、纯函数与视图映射
 ├── tests/
-│   ├── unit/                      # 不参与生产源码组织的单元测试
-│   └── e2e/                       # 按需：浏览器交互验收
+│   ├── architecture/              # 实际源码目录与依赖检查
+│   ├── unit/                      # 单元测试，当前 request.test.ts
+│   ├── e2e/                       # 按需：浏览器交互验收
+│   └── tsconfig.json              # 独立测试类型检查
 ├── components.json                # 已初始化：radix-nova / Lucide / RSC
 ├── next.config.ts
 ├── openapi2ts.config.ts
 └── package.json
 ```
 
+- `src/providers/query-provider.tsx` 持有 QueryClient，根 layout 直接使用；不创建泛化 AppProviders 转发层。
 - `src/app` 只负责路由组织，不放通用 HTTP 客户端、共享 Provider 或业务杂项。
 - `src/lib/api/request.ts` 是唯一 Axios 实例入口；`src/api/` 直属 `src/`，只由 Umi OpenAPI 覆盖生成，不手工修改。
 - 页面样式优先使用 Tailwind CSS utility；只有 Tailwind 不适合表达的路由私有样式才保留 CSS Module。
@@ -53,5 +56,5 @@ frontend/
 - `src/app/globals.css` 映射根 DESIGN 的 Then Web foundation；默认浅色，字体跟随系统。Button/Badge 的 Then 变体归 `components/ui`，不在页面覆盖颜色或字体。
 - `components/layout/page-shell.tsx` 是首页、404 和路由错误页共用的内容结构；各页面必须保持唯一 `main-content`，供根 layout 的跳转链接使用。
 - Next.js 16.3 错误边界使用 `retry()` 重新获取并渲染；不输出内部错误正文，不建立测试专用生产路由。业务加载/空态在实际数据页实现后接入。
-- ESLint 禁止回引 Themes、其他 primitive 体系及页面直用 Axios；UI 基础组件不能按 @/ 别名反向依赖业务层。相对路径同样遵守 PROJECT，代码评审不得绕过规则。
-- `npm run typecheck` 先执行 `next typegen`，保证干净检出也能检查；CI 使用 Node/npm 固定版本与 `npm ci`，执行 lint/test/typecheck/format/build/生产依赖审计。
+- ESLint 禁止回引 Themes、其他 primitive 体系及页面直用 Axios；目录与依赖边界由 tests/architecture 检查，涵盖别名、相对路径、re-export 和字面量动态 import。UI 不反向依赖业务，生产代码不导入 tests/assets/根工具配置；具体允许方向见 PROJECT。
+- `npm run typecheck` 先执行 `next typegen`，再分别检查应用和 tests/tsconfig.json；`npm test` 自动发现 tests 下的测试，保证新测试不会漏跑；CI 使用 Node/npm 固定版本与 `npm ci`，执行 lint/test/typecheck/format/build/生产依赖审计。

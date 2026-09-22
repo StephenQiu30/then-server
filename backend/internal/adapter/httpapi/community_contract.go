@@ -1,74 +1,8 @@
 package httpapi
 
 import (
-	"context"
-	"io"
 	"time"
-
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
 )
-
-type CommunityHTTPService interface {
-	CreatePost(context.Context, string, string, communityapp.PostContentInput) (communityapp.Post, error)
-	ListOwnPosts(context.Context, string, int, string, string) (communityapp.PostPage, error)
-	GetOwnPost(context.Context, string, string) (communityapp.Post, error)
-	UpdatePost(context.Context, string, string, int, communityapp.PostContentInput) (communityapp.Post, error)
-	SubmitPost(context.Context, string, string, int) (communityapp.Post, error)
-	WithdrawPost(context.Context, string, string, int) (communityapp.Post, error)
-	DeletePost(context.Context, string, string, int) error
-	GetPublicPostForViewer(context.Context, string, string) (communityapp.PublicPost, error)
-	GetPublicPostImageForViewer(context.Context, string, string, int) (communityapp.MediaObjectReference, error)
-	ListFeed(context.Context, string, string, int, string) (communityapp.PublicPostPage, error)
-	SearchPosts(context.Context, string, string, string, int, string) (communityapp.PublicPostPage, error)
-	ListProfilePosts(context.Context, string, string, int, string) (communityapp.PublicPostPage, error)
-	SetPostLike(context.Context, string, string, bool) error
-	SetPostBookmark(context.Context, string, string, bool) error
-	ListBookmarks(context.Context, string, int, string) (communityapp.PublicPostPage, error)
-	SetFollow(context.Context, string, string, bool) error
-	ListProfileRelationships(context.Context, string, string, string, int, string) (communityapp.PublicProfilePage, error)
-	SetBlock(context.Context, string, string, bool) error
-	ListBlocks(context.Context, string, int, string) (communityapp.BlockedUserPage, error)
-	CreateComment(context.Context, string, string, string, communityapp.CreateCommentInput) (communityapp.Comment, error)
-	ListComments(context.Context, string, string, *string, int, string) (communityapp.CommentPage, error)
-	ListReplies(context.Context, string, string, int, string) (communityapp.CommentPage, error)
-	DeleteComment(context.Context, string, string, int) error
-	ListCommentModeration(context.Context, string, int, string) (communityapp.CommentModerationPage, error)
-	DecideComment(context.Context, string, string, communityapp.DecideCommentInput) (communityapp.Comment, error)
-	RemoveComment(context.Context, string, string, int, string) error
-	ListNotifications(context.Context, string, int, string) (communityapp.NotificationPage, error)
-	MarkNotificationRead(context.Context, string, string) (communityapp.Notification, error)
-	CreateAppeal(context.Context, string, string, string, string) (communityapp.ModerationAppeal, error)
-	ListOwnAppeals(context.Context, string, int, string) (communityapp.ModerationAppealPage, error)
-	ListAppeals(context.Context, string, int, string, string) (communityapp.AdminModerationAppealPage, error)
-	ResolveAppeal(context.Context, string, string, string, string) (communityapp.ModerationAppeal, error)
-	ListModerationCandidates(context.Context, string, int, string) (communityapp.ModerationCandidatePage, error)
-	GetModerationCandidate(context.Context, string, string, int) (communityapp.ModerationCandidate, error)
-	GetModerationImage(context.Context, string, string, int, int) (communityapp.MediaObjectReference, error)
-	DecidePost(context.Context, string, string, communityapp.DecidePostInput) (communityapp.Post, error)
-	RemovePost(context.Context, string, string, int, string) error
-	CreateReport(context.Context, string, string, string, communityapp.CreateReportInput) (communityapp.ContentReport, error)
-	ListOwnReports(context.Context, string, int, string) (communityapp.ContentReportPage, error)
-	ListReports(context.Context, string, int, string, string) (communityapp.AdminReportPage, error)
-	ResolveReport(context.Context, string, string, string, string) (communityapp.ContentReport, error)
-	ListModerationActions(context.Context, string, int, string) (communityapp.ModerationActionPage, error)
-	ListUsers(context.Context, string, int, string) (communityapp.AdminUserPage, error)
-	SetUserStatus(context.Context, string, string, int, accountapp.AccountStatus, string) (communityapp.AdminUser, error)
-}
-
-type CommunityObjectStore interface {
-	OpenDerivedVersion(context.Context, string, string) (io.ReadCloser, error)
-}
-
-type CommunityHandler struct {
-	service      CommunityHTTPService
-	objects      CommunityObjectStore
-	secureCookie bool
-}
-
-func NewCommunityHandler(service CommunityHTTPService, objects CommunityObjectStore, secureCookie bool) *CommunityHandler {
-	return &CommunityHandler{service: service, objects: objects, secureCookie: secureCookie}
-}
 
 type PostContentRequest struct {
 	Title         *string  `json:"title,omitempty" maxLength:"80"`

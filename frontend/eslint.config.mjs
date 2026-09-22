@@ -63,5 +63,6 @@ export default defineConfig([
     'build/**',
     'next-env.d.ts',
     'src/api/**',
+    'assets/**',
   ]),
 ])

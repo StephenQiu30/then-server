@@ -1,6 +1,7 @@
 package main
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -131,20 +132,21 @@ func TestCommandEntrypointIsThin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowed := map[string]bool{"log/slog": true, "os": true, internalImportPrefix + "bootstrap": true}
 	for _, spec := range file.Imports {
 		importPath, err := strconv.Unquote(spec.Path.Value)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.HasPrefix(importPath, internalImportPrefix) && importPath != internalImportPrefix+"bootstrap" {
-			t.Errorf("%s must delegate only to internal/bootstrap, imported %s", command, importPath)
+		if !allowed[importPath] {
+			t.Errorf("%s only creates the logger and delegates to bootstrap, imported %s", command, importPath)
 		}
 	}
 }
 
 func TestProductionSourcesDoNotImportTestPackages(t *testing.T) {
 	t.Helper()
-	forbidden := []string{"testing", "net/http/httptest", "github.com/testcontainers/"}
+	forbidden := []string{"testing", "net/http/httptest", "github.com/testcontainers/", strings.TrimSuffix(internalImportPrefix, "internal/") + "tests/"}
 	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -186,6 +188,11 @@ func TestExternalTestSuiteLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() != "internal" {
+			if _, ok := externalTestSuites[entry.Name()]; !ok {
+				t.Errorf("tests/%s: unregistered test suite", entry.Name())
+			}
+		}
 		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".go" {
 			t.Errorf("tests/%s: place external tests in a named suite directory", entry.Name())
 		}
@@ -250,10 +257,96 @@ func checkInternalImport(t *testing.T, source, sourceLayer, importPath string) {
 		return
 	}
 	destination := strings.Split(strings.TrimPrefix(importPath, internalImportPrefix), "/")[0]
+	if sourceLayer == "adapter" && destination == "adapter" {
+		parts := strings.Split(strings.TrimPrefix(importPath, internalImportPrefix), "/")
+		if len(parts) < 2 || strings.Join(parts[:2], "/") != internalComponent(source) {
+			t.Errorf("%s: adapters must be assembled by bootstrap, imported %s", source, importPath)
+		}
+		return
+	}
 	if sourceLayer == destination || allowedInternalImports[sourceLayer][destination] {
 		return
 	}
 	t.Errorf("%s: %s layer must not import internal/%s", source, sourceLayer, destination)
+}
+
+func TestProductionDirectoryLayout(t *testing.T) {
+	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if entry.Name() == "go.mod" && path != "go.mod" {
+			t.Errorf("%s: backend must have one Go module", path)
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		if path == "main.go" {
+			return nil
+		}
+		parts := strings.Split(filepath.ToSlash(path), "/")
+		if len(parts) < 2 || (parts[0] != "internal" && parts[0] != "tests") {
+			t.Errorf("%s: production code belongs in internal; main.go is the only root entry", path)
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.PackageClauseOnly)
+		if err != nil {
+			return err
+		}
+		if file.Name.Name == "main" {
+			t.Errorf("%s: main.go is the only executable package", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHTTPFileResponsibilities(t *testing.T) {
+	paths, err := filepath.Glob("internal/adapter/httpapi/*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, declaration := range file.Decls {
+			if strings.HasSuffix(path, "_routes.go") {
+				switch decl := declaration.(type) {
+				case *ast.GenDecl:
+					if decl.Tok == token.TYPE {
+						t.Errorf("%s: DTOs belong in contract files, handler types in handlers", path)
+					}
+				case *ast.FuncDecl:
+					if decl.Recv != nil {
+						t.Errorf("%s: receiver methods belong with their contract or handler", path)
+					}
+				}
+			}
+			if strings.HasSuffix(path, "_contract.go") {
+				if decl, ok := declaration.(*ast.FuncDecl); ok && (decl.Recv == nil || decl.Name.Name != "Schema") {
+					t.Errorf("%s: contract files only contain DTOs and schema methods", path)
+				}
+				if decl, ok := declaration.(*ast.GenDecl); ok && decl.Tok == token.TYPE {
+					for _, spec := range decl.Specs {
+						typ := spec.(*ast.TypeSpec)
+						_, port := typ.Type.(*ast.InterfaceType)
+						if port || strings.HasSuffix(typ.Name.Name, "Handler") {
+							t.Errorf("%s: handler types and consumed ports belong in handlers", path)
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 func checkFrameworkImport(t *testing.T, source, component, importPath string) {

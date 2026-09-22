@@ -49,6 +49,8 @@
 | [17-23 账号实际穿着 API](17-23-账号实际穿着API执行计划.md) | approved / completed（后端开发范围） | 5 个实际事件 operation、not-worn/restore、服务端快照、完整创建命令幂等、重复确认、待洗/计划事务和覆盖两类历史的删除影响；本机与远程三项 CI 全绿 | App Client/主动同步、反馈和第二设备恢复不在本片 |
 | [17-14 仓库与 CI](17-14-客户端服务端仓库拆分与CI执行计划.md)、[17-15 OpenAPI/GORM](17-15-OpenAPI文档门户与Umi生成执行计划.md) | approved / completed | 独立仓库/CI、运行时契约与 AutoMigrate | Web SDK 正式接入不在本片 |
 | [17-13 frontend](17-13-Web账户管理执行计划.md) | 基础工程 completed；账户页面 draft / pending | Next.js 16 App Router、Radix UI、Axios/Umi 生成请求层与同源 rewrites 已完成 | 页面稿与状态矩阵批准后实现账户旅程 |
+| [17-28 Frontend 目录规范化](17-28-Frontend目录结构规范化.md) | approved / completed（本地） | Provider 独立、测试目录简化、应用/测试类型检查分离、源码依赖检查已执行 | 远端验证见对应提交的 Actions；页面视觉与业务范围保持 17-27 基线 |
+| [17-29 Backend 目录规范化](17-29-Backend目录与HTTP文件职责规范化.md) | approved / completed（本地） | HTTP contract/routes/handlers 统一，router/health/errors/openapi 分责，目录与依赖检查；447 声明/生成合同一致，race 与进程集成通过 | 远端验证见对应提交的 Actions；未改业务、数据库和消息合同 |
 
 旧生活管理功能和对应历史数据迁移已退役，不恢复旧实现；本次穿搭日记与轻量生活记录按 PRD 19 重新定义。当前开发业务的保存/删除/恢复仍须符合所属契约，不用清库掩盖实现错误。
 

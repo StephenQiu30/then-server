@@ -13,11 +13,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "next typegen && tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit && tsc --project tests/tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "openapi": "openapi2ts",
-    "test": "node --test tests/unit/lib/api/request.test.ts"
+    "test": "node --test 'tests/**/*.test.ts'"
   },
   "dependencies": {
     "@tanstack/react-query": "5.102.8",

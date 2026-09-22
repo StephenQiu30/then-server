@@ -64,7 +64,7 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `PUT /wardrobe/items/{item_id}`
 - `DELETE /wardrobe/items/{item_id}`
 
-OpenAPI 0.15.0 共 70 个 operation，在既有账号、衣橱、计划、实际事件与私人日记合同上增加 22 个社区帖子、审核、举报和账号治理接口，并保持业务路径无版本前缀。本人资源更新必须提交 `expected_revision`；公开帖子只包含批准版本的公开字段，来源日记、媒体 ID、owner、对象 key、对象 version 和同意记录不进入公开响应，HttpOnly 会话 Cookie 不进入生成客户端参数。
+2026-09-22 生成合同检查为 OpenAPI 文档版本 0.17.0，共 98 个 operation，覆盖账号、衣橱、计划、实际事件、私人日记与社区互动治理，并保持业务路径无版本前缀。本人资源更新必须提交 `expected_revision`；公开帖子只包含批准版本的公开字段，来源日记、媒体 ID、owner、对象 key、对象 version 和同意记录不进入公开响应，HttpOnly 会话 Cookie 不进入生成客户端参数。
 
 ## 账号穿搭计划 API
 
@@ -111,7 +111,7 @@ MinIO 使用 `raw-private` 与 `derived-private` 私有版本桶；Kafka worker 
 
 ## 社区帖子审核与治理
 
-作者可创建私人草稿、提交人工审核、撤回和删除；公开详情与图片只读取 active 作者当前批准的不可变版本。社区图片使用独立 `community_publish` 用途并从 MinIO 固定 derived version 返回。moderator/admin 可审核、处理举报和下架，admin 还可封禁或恢复账号；封禁会在同一事务撤销全部会话。Feed、搜索、评论、赞藏关注、屏蔽、通知与申诉属于后续切片。
+作者可创建私人草稿、提交人工审核、撤回和删除；公开详情与图片只读取 active 作者当前批准的不可变版本。社区图片使用独立 `community_publish` 用途并从 MinIO 固定 derived version 返回。moderator/admin 可审核、处理举报和下架，admin 还可封禁或恢复账号；封禁会在同一事务撤销全部会话。Feed、搜索、评论、赞藏关注、屏蔽、通知与申诉已实现后端开发接口；客户端和运营发布验收仍按对应切片执行。
 
 ## 本机中间件验证
 
@@ -145,11 +145,31 @@ backend/
 │   ├── integration/    # 实际二进制与 Testcontainers
 │   ├── container/      # 已构建 OCI 镜像
 │   └── internal/       # 测试专用共享夹具
+├── architecture_test.go # 目录、入口、依赖与 HTTP 文件职责
 ├── Dockerfile
 └── .env.example
 ```
 
 详细职责、依赖方向和完成标准见 [AGENTS.md](AGENTS.md)；产品架构和 SOP 见 [Design 02](../docs/design/02-后端架构.md)。
+
+### HTTP 文件归属
+
+[17-29](../docs/plan/17-29-Backend目录与HTTP文件职责规范化.md) 已落实同一 httpapi package 内的文件职责：
+
+```text
+internal/adapter/httpapi/
+├── <resource>_contract.go   DTO、tag、schema 方法
+├── <resource>_routes.go     Huma operation 注册与状态声明
+├── <resource>_handlers.go   消费端口、Handler、应用调用与映射
+├── router.go               Gin/Huma 与业务路由组装
+├── health.go               存活、就绪与探测
+├── errors.go               全局错误与请求关联
+├── openapi.go              运行时规范化、序列化与校验
+├── docs.go / swaggerui/    内嵌文档资源
+└── *_test.go               原有包内协议与行为测试
+```
+
+resource 包括 account、profile、privacy、wardrobe、outfit_plan、wear_event、diary、media、community 和 community_social。保留根 main.go 和现有 application/postgres 事务归属，不增加入口包装或镜像目录。
 
 ## 验证
 
