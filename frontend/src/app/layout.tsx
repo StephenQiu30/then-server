@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
-import { AppProviders } from '@/components/providers/app-providers'
+import { QueryProvider } from '@/providers/query-provider'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -15,7 +15,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <a className="skip-link" href="#main-content">
           跳到主要内容
         </a>
-        <AppProviders>{children}</AppProviders>
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   )

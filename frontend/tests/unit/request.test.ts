@@ -1,7 +1,7 @@
 import { AxiosHeaders, type AxiosAdapter, type AxiosResponse } from 'axios'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import request from '../../../../src/lib/api/request.ts'
+import request from '../../src/lib/api/request.ts'
 
 describe('request', () => {
   it('uses the shared Axios defaults and returns only response data', async () => {

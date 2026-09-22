@@ -4,12 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
-
-	"github.com/danielgtaylor/huma/v2"
 )
 
 type PrivacyService interface {
@@ -25,43 +22,6 @@ type PrivacyHandler struct {
 
 func NewPrivacyHandler(service PrivacyService, secureCookie bool) *PrivacyHandler {
 	return &PrivacyHandler{service: service, secureCookie: secureCookie}
-}
-
-type ConfirmSelfAdultDeclarationRequest struct {
-	PolicyVersion        string `json:"policy_version" enum:"self-adult-v1" doc:"服务端当前本人成年声明版本" example:"self-adult-v1"`
-	ConfirmsSelfAndAdult bool   `json:"confirms_self_and_adult" enum:"true" doc:"用户主动确认照片仅属于本人且已年满 18 周岁；必须为 true" example:"true"`
-}
-
-type SelfAdultDeclarationResponse struct {
-	PolicyVersion string     `json:"policy_version" enum:"self-adult-v1" example:"self-adult-v1"`
-	Confirmed     bool       `json:"confirmed" example:"true"`
-	ConfirmedAt   *time.Time `json:"confirmed_at,omitempty" format:"date-time"`
-	WithdrawnAt   *time.Time `json:"withdrawn_at,omitempty" format:"date-time"`
-}
-
-type confirmSelfAdultDeclarationInput struct {
-	Session string `cookie:"then_session" hidden:"true"`
-	Body    ConfirmSelfAdultDeclarationRequest
-}
-
-type selfAdultDeclarationOutput struct {
-	RequestID string                       `header:"X-Request-ID" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" doc:"服务端生成的请求关联标识，不采纳客户端原始值"`
-	Body      SelfAdultDeclarationResponse `json:"body"`
-}
-
-func registerPrivacyOperations(api huma.API, handler *PrivacyHandler) {
-	huma.Register(api, authenticatedOperation(huma.Operation{
-		OperationID: "getSelfAdultDeclaration", Method: http.MethodGet, Path: "/privacy/self-adult-declaration", Tags: []string{"Privacy"},
-		Summary: "获取当前本人成年声明状态", Errors: []int{http.StatusUnauthorized, http.StatusInternalServerError},
-	}), handler.current)
-	huma.Register(api, authenticatedOperation(huma.Operation{
-		OperationID: "confirmSelfAdultDeclaration", Method: http.MethodPut, Path: "/privacy/self-adult-declaration", Tags: []string{"Privacy"},
-		Summary: "确认当前本人成年声明", MaxBodyBytes: 4 * 1024, Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusInternalServerError},
-	}), handler.confirm)
-	huma.Register(api, authenticatedOperation(huma.Operation{
-		OperationID: "withdrawSelfAdultDeclaration", Method: http.MethodDelete, Path: "/privacy/self-adult-declaration", Tags: []string{"Privacy"},
-		Summary: "撤回当前本人成年声明", Errors: []int{http.StatusUnauthorized, http.StatusInternalServerError},
-	}), handler.withdraw)
 }
 
 func (h *PrivacyHandler) current(ctx context.Context, input *authenticatedInput) (*selfAdultDeclarationOutput, error) {

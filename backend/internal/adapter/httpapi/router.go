@@ -5,7 +5,6 @@ package httpapi
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -15,49 +14,12 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humagin"
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gin-gonic/gin"
 )
-
-type DependencyProbe interface{ Probe(context.Context) error }
 
 type Router struct {
 	engine   *gin.Engine
 	draining atomic.Bool
-}
-
-type requestIDContextKey struct{}
-
-type LivenessResponse struct {
-	Status    string `json:"status" enum:"live" example:"live"`
-	RequestID string `json:"request_id" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" example:"TESTREQUESTIDENTIFIER00000001"`
-}
-
-type ReadinessResponse struct {
-	Status    string `json:"status" enum:"ready" example:"ready"`
-	RequestID string `json:"request_id" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" example:"TESTREQUESTIDENTIFIER00000002"`
-}
-
-type ErrorResponse struct {
-	status              int
-	Code                string                       `json:"code" enum:"BAD_REQUEST,EMAIL_CONFLICT,CONFLICT,PAYLOAD_TOO_LARGE,AUTHENTICATION_FAILED,FORBIDDEN,RATE_LIMITED,NOT_READY,NOT_FOUND,METHOD_NOT_ALLOWED,INTERNAL_ERROR" example:"AUTHENTICATION_FAILED"`
-	Message             string                       `json:"message" minLength:"1" maxLength:"160" example:"Sign-in information is invalid."`
-	RequestID           string                       `json:"request_id" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" example:"TESTREQUESTIDENTIFIER00000003"`
-	Retryable           bool                         `json:"retryable" example:"false"`
-	DuplicateCandidates []WearEventCandidateResponse `json:"duplicate_candidates,omitempty" maxItems:"50"`
-}
-
-func (e *ErrorResponse) Error() string  { return e.Message }
-func (e *ErrorResponse) GetStatus() int { return e.status }
-
-type livenessOutput struct {
-	RequestID string           `header:"X-Request-ID" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" doc:"服务端生成的请求关联标识，不采纳客户端原始值"`
-	Body      LivenessResponse `json:"body"`
-}
-
-type readinessOutput struct {
-	RequestID string            `header:"X-Request-ID" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" doc:"服务端生成的请求关联标识，不采纳客户端原始值"`
-	Body      ReadinessResponse `json:"body"`
 }
 
 var configureHumaErrors sync.Once
@@ -176,175 +138,6 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 	return api
 }
 
-func registerHealthOperations(api huma.API, router *Router, probe DependencyProbe, timeout time.Duration) {
-	huma.Register(api, huma.Operation{
-		OperationID: "getLiveness", Method: http.MethodGet, Path: "/health/live", Tags: []string{"Health"},
-		Summary: "检查 API 进程存活", Description: "仅供受限运维访问，不查询数据库，不代表云业务已启用。", Errors: []int{http.StatusBadRequest, http.StatusInternalServerError},
-	}, func(ctx context.Context, _ *struct{}) (*livenessOutput, error) {
-		if err := rejectHealthPayload(ctx); err != nil {
-			return nil, err
-		}
-		id := requestID(ctx)
-		return &livenessOutput{RequestID: id, Body: LivenessResponse{Status: "live", RequestID: id}}, nil
-	})
-
-	huma.Register(api, huma.Operation{
-		OperationID: "getReadiness", Method: http.MethodGet, Path: "/health/ready", Tags: []string{"Health"},
-		Summary: "检查 API 接纳就绪状态", Description: "在同一有界上下文中探测 PostgreSQL 与认证 Redis；退出或任一依赖故障时返回 503，不输出连接详情。", Errors: []int{http.StatusBadRequest, http.StatusServiceUnavailable, http.StatusInternalServerError},
-	}, func(ctx context.Context, _ *struct{}) (*readinessOutput, error) {
-		if err := rejectHealthPayload(ctx); err != nil {
-			return nil, err
-		}
-		if router.draining.Load() {
-			return nil, notReadyError(ctx)
-		}
-		probeContext, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		if err := probe.Probe(probeContext); err != nil || router.draining.Load() {
-			return nil, notReadyError(ctx)
-		}
-		id := requestID(ctx)
-		return &readinessOutput{RequestID: id, Body: ReadinessResponse{Status: "ready", RequestID: id}}, nil
-	})
-}
-
-func normalizeGeneratedOpenAPI(spec *huma.OpenAPI) {
-	requestIDHeader := &huma.Header{
-		Description: "服务端生成的请求关联标识，不采纳客户端原始值",
-		Schema:      &huma.Schema{Type: huma.TypeString, MinLength: integerPointer(26), MaxLength: integerPointer(64), Pattern: "^[A-Za-z0-9]+$"},
-	}
-	clearSessionHeader := &huma.Header{
-		Description: "受保护端点拒绝无效、过期或已撤销会话时清除 HttpOnly 会话 Cookie",
-		Schema:      &huma.Schema{Type: huma.TypeString},
-	}
-	for _, item := range spec.Paths {
-		operations := []*huma.Operation{item.Get, item.Put, item.Post, item.Delete, item.Options, item.Head, item.Patch, item.Trace}
-		for _, operation := range operations {
-			if operation == nil {
-				continue
-			}
-			// Huma uses 422 internally for validation. Our public error contract
-			// deliberately maps every contract validation failure to 400.
-			delete(operation.Responses, "422")
-			for status, response := range operation.Responses {
-				if status < "400" || response == nil {
-					continue
-				}
-				if response.Headers == nil {
-					response.Headers = map[string]*huma.Header{}
-				}
-				response.Headers["X-Request-ID"] = requestIDHeader
-				if status == "401" && usesCookieAuthentication(operation) {
-					response.Headers["Set-Cookie"] = clearSessionHeader
-				}
-				if status == "429" {
-					response.Headers["Retry-After"] = &huma.Header{Schema: &huma.Schema{Type: huma.TypeString, Pattern: "^[1-9][0-9]*$"}}
-				}
-				if status == "503" {
-					response.Headers["Retry-After"] = &huma.Header{Schema: &huma.Schema{Type: huma.TypeString, Pattern: "^[1-9][0-9]*$"}}
-				}
-			}
-		}
-	}
-	if readiness := spec.Paths["/health/ready"].Get.Responses["503"]; readiness != nil {
-		if readiness.Headers == nil {
-			readiness.Headers = map[string]*huma.Header{}
-		}
-		readiness.Headers["Retry-After"] = &huma.Header{Schema: &huma.Schema{Type: huma.TypeString, Const: "1"}}
-	}
-}
-
-func usesCookieAuthentication(operation *huma.Operation) bool {
-	for _, requirement := range operation.Security {
-		if _, ok := requirement["cookieAuth"]; ok {
-			return true
-		}
-	}
-	return false
-}
-
-func integerPointer(value int) *int { return &value }
-
-func rejectHealthPayload(ctx context.Context) error {
-	if request, ok := ctx.Value(httpRequestContextKey{}).(*http.Request); ok && (request.URL.RawQuery != "" || request.ContentLength != 0 || len(request.TransferEncoding) != 0) {
-		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
-	}
-	return nil
-}
-
-type httpRequestContextKey struct{}
-
-func notReadyError(ctx context.Context) error {
-	return huma.ErrorWithHeaders(newErrorResponse(http.StatusServiceUnavailable, requestID(ctx)), http.Header{"Retry-After": []string{"1"}})
-}
-
-func newErrorResponse(status int, id string) *ErrorResponse {
-	if status == http.StatusUnprocessableEntity || status == http.StatusRequestTimeout {
-		status = http.StatusBadRequest
-	}
-	response := &ErrorResponse{status: status, RequestID: id}
-	switch status {
-	case http.StatusBadRequest:
-		response.Code, response.Message = "BAD_REQUEST", "Request does not satisfy the API contract."
-	case http.StatusUnauthorized:
-		response.Code, response.Message = "AUTHENTICATION_FAILED", "Sign-in information is invalid."
-	case http.StatusForbidden:
-		response.Code, response.Message = "FORBIDDEN", "Operation is not allowed."
-	case http.StatusConflict:
-		response.Code, response.Message = "EMAIL_CONFLICT", "This email cannot be used."
-	case http.StatusRequestEntityTooLarge:
-		response.Code, response.Message = "PAYLOAD_TOO_LARGE", "Declared media size exceeds the allowed limit."
-	case http.StatusTooManyRequests:
-		response.Code, response.Message, response.Retryable = "RATE_LIMITED", "Too many authentication attempts.", true
-	case http.StatusServiceUnavailable:
-		response.Code, response.Message, response.Retryable = "NOT_READY", "Service is not ready.", true
-	case http.StatusNotFound:
-		response.Code, response.Message = "NOT_FOUND", "Resource not found."
-	case http.StatusMethodNotAllowed:
-		response.Code, response.Message = "METHOD_NOT_ALLOWED", "Method not allowed."
-	default:
-		response.status, response.Code, response.Message = http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error."
-	}
-	return response
-}
-
-func requestID(ctx context.Context) string {
-	id, _ := ctx.Value(requestIDContextKey{}).(string)
-	return id
-}
-
-func serializeOpenAPI(ctx context.Context, spec *huma.OpenAPI) ([]byte, []byte, error) {
-	yamlDocument, err := spec.YAML()
-	if err != nil {
-		return nil, nil, errors.New("OpenAPI YAML document cannot be generated")
-	}
-	jsonDocument, err := json.Marshal(spec)
-	if err != nil {
-		return nil, nil, errors.New("OpenAPI JSON document cannot be generated")
-	}
-	loader := openapi3.NewLoader()
-	loader.Context = ctx
-	document, err := loader.LoadFromData(jsonDocument)
-	if err != nil {
-		return nil, nil, errors.New("generated OpenAPI document cannot be loaded")
-	}
-	if err := document.Validate(ctx); err != nil {
-		return nil, nil, errors.New("generated OpenAPI document is invalid")
-	}
-	return yamlDocument, jsonDocument, nil
-}
-
-// GeneratedOpenAPI returns the same generated contract that the runtime serves.
-func GeneratedOpenAPI(ctx context.Context) ([]byte, []byte, error) {
-	gin.SetMode(gin.ReleaseMode)
-	engine := gin.New()
-	api := registerAPI(engine, &Router{}, nil, nil, nil, nil, nil, nil, &DiaryHandler{}, nil, nil, time.Second)
-	return serializeOpenAPI(ctx, api.OpenAPI())
-}
-
-func respondError(c *gin.Context, status int, code, message string, retryable bool) {
-	c.AbortWithStatusJSON(status, ErrorResponse{status: status, Code: code, Message: message, RequestID: c.GetString("request_id"), Retryable: retryable})
-}
-
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.engine.ServeHTTP(w, req) }
-func (r *Router) Drain()                                             { r.draining.Store(true) }
+
+func (r *Router) Drain() { r.draining.Store(true) }

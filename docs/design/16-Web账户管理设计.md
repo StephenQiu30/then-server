@@ -10,20 +10,20 @@
 
 ## 页面范围
 
-首个 Web MVP 只包含三类路由：
+当前 `/` 是产品说明与准备状态页，404 返回该首页。首个 Web 业务 MVP 规划三类路由，以下账户行为仍属待实施合同：
 
 1. `/register`：显示名称、邮箱、密码和前端确认密码；成功后建立会话并进入账户页。
 2. `/login`：邮箱、密码；成功后进入账户页，错误只显示安全、可恢复的信息。
 3. `/account`：显示当前邮箱、名称和创建时间；允许修改、退出，以及二次确认后删除本人账户。
 
-登录用户访问登录/注册页时转到账户页；未登录访问账户页时转到登录页。404 回到账户入口，不增加营销首页、后台用户表格、运营仪表盘、组织/角色、忘记密码或社交登录占位页面。
+账户切片实现后，登录用户访问登录/注册页时转到账户页，未登录访问账户页时转到登录页。通用 404 继续返回 `/`，不链接尚未开放的账户入口；不增加后台用户表格、运营仪表盘、组织/角色、忘记密码或社交登录占位页面。
 
 Woo 参考没有展示认证页面，因此这些页面只能沿用“于是”的排版、色彩、材质与动效原则，不能声称为 Woo 逐帧复刻。编码前必须先完成桌面与移动端页面稿、正常/加载/错误/空状态矩阵及可访问名称审核。
 
 ## 技术边界
 
-- 使用 React、TypeScript、Next.js App Router、shadcn/ui（Radix Primitives 基础类型）与 Tailwind CSS；当前 Radix UI Themes 尚待迁移，实施规则见 [PROJECT.md](../../PROJECT.md)。Next.js 文件路由管理页面，TanStack Query 管理需要的客户端服务状态，Axios 作为 Umi 生成请求的唯一适配器。精确版本只认 [Design 01](01-技术选型.md#web-frontend)。
-- 目录采用职责分层：`src/app` 只保存路由入口和路由自有样式；基础 UI 归 `src/components/ui`，账户组件归 `src/components/account`，Client Provider 归 `src/components/providers`，业务 hooks 与纯函数分别归 `src/hooks/account`、`src/lib/account`，单元测试归 `tests/unit`。不创建平行 `features` 目录、空 `public`/`assets` 或占位页面。
+- 使用 React、TypeScript、Next.js App Router、shadcn/ui（Radix Primitives 基础类型）与 Tailwind CSS；17-27 已移除 Radix UI Themes 并接入 Button/Badge，实施规则见 [PROJECT.md](../../PROJECT.md)。Next.js 文件路由管理页面，TanStack Query 管理需要的客户端服务状态，Axios 作为 Umi 生成请求的唯一适配器。精确版本只认 [Design 01](01-技术选型.md#web-frontend)。
+- 目录采用职责分层：`src/app` 只保存路由入口和路由自有样式；基础 UI 归 `src/components/ui`，账户组件归 `src/components/account`，Client Provider 归 `src/providers`，业务 hooks 与纯函数分别归 `src/hooks/account`、`src/lib/account`，单元测试归 `tests/unit`。不创建平行 `features` 目录、空 `public`/`assets` 或占位页面。
 - `@umijs/openapi` 只读取本机 Go API 的 `/openapi.json`，生成到 `src` 直属的 `src/api/`。`openapi2ts.config.ts` 固定 `schemaPath`、`serversPath`、`projectName` 和项目请求适配器，并通过不设置 `mockFolder` 禁止 mock 产物；页面不得手写 URL、DTO 或第二份 schema。
 - Next.js rewrites 只代理 OpenAPI 已注册的语义根路径；页面与 API 从同一站点入口提供，不新增业务 BFF、跨源凭据 CORS 或前端直连 PostgreSQL/Redis/Kafka/MinIO。
 - Cookie 由浏览器管理，JavaScript 不读取会话令牌，不把认证信息写入 Local Storage、Session Storage 或日志。
@@ -42,6 +42,8 @@ Woo 参考没有展示认证页面，因此这些页面只能沿用“于是”�
 2026-09-16 基础工程已从实际本机 API 重新生成 API 0.16.0 的 98 个函数，生成目录为 `src/api/`，请求适配器为 `src/lib/api/request.ts`；新增社区发现、互动、关系、评论、安全、通知和申诉 client，HttpOnly Cookie 未成为参数。Tailwind CSS 4 通过 PostCSS 接入并由根布局加载，生成时不设置 `mockFolder`，因此不产出 mock；完整开发依赖审计仍以依赖审计切片证据为准。
 
 ## 页面状态与可访问性清单
+
+以下矩阵对应待实现的账户页面；当前首页与通用路由状态见 17-27。
 
 | 状态 | 必须可见的反馈 |
 | --- | --- |
@@ -64,7 +66,10 @@ Woo 参考没有展示认证页面，因此这些页面只能沿用“于是”�
 3. 确认正式锁版仍能从 `/openapi.json` 生成当前 OpenAPI，生产依赖审计为 0，并复核开发生成器公告。
 4. 基础工程已按本轮明确指令批准并创建；账户页面合同仍须在页面稿与状态矩阵审核后从 `draft` 改为 `approved`。
 
-
 ## 2026-09-22 前端基础规范同步
 
 执行见 [17-27](../plan/17-27-Web设计体系与工程规范同步执行计划.md)。组件体系采用 shadcn/ui（Radix 基础类型），替换 Radix Themes；唯一 token 映射在 globals.css，视觉依据为根 DESIGN 的 Then Web foundation。components.json 固定 RSC、Tailwind v4、Lucide 与 @/* 别名。首页与通用 404/错误恢复先使用必要组件验证，账户三页面及其状态矩阵继续按 17-13 实施，不能把基础规范同步当作账户旅程交付。
+
+## 当前前端目录实施
+
+2026-09-22 按用户要求执行 [17-28 目录结构规范化](../plan/17-28-Frontend目录结构规范化.md)：路由入口保留 src/app，QueryProvider 从展示组件中移到 src/providers；测试按 architecture/unit 分组并独立类型检查。生产目录和导入方向通过 npm test 检查，生成代码保持 src/api，统一请求保持 lib/api/request.ts。实际目录及允许依赖以 PROJECT 第 5 节为准，本轮不改变页面视觉或新增账户业务。

@@ -112,7 +112,7 @@ Radix 自定义触发器使用 `asChild`，承接的叶子组件必须传递 pro
 
 ### 4.4 Next.js 与状态管理
 
-- Page/Layout 默认 Server Component；事件、状态、浏览器 API 放到最小必要 Client Component。共享 Client Provider 位于 `components/providers`，不能将整个根 layout 标记为客户端来规避边界。
+- Page/Layout 默认 Server Component；事件、状态、浏览器 API 放到最小必要 Client Component。共享 Client Provider 位于 `src/providers`，不能将整个根 layout 标记为客户端来规避边界。
 - 独立请求并行发起；合理使用路由 loading/Suspense，避免组件层层串行等待。三维等重组件在实际进入时动态加载，不进入账户页首屏包。
 - Client Component 通过业务 hooks 调用生成客户端，TanStack Query 管理请求状态；字段临时输入归表单本地状态，筛选/分页按需归 URL，不复制多份远端实体到全局 store。
 - 私人账户、日记、衣橱与签名媒体不得进入公共 CDN/ISR 或跨用户全局缓存；服务端请求必须带当前请求的会话上下文，不能修改全局 Axios 默认 Cookie。若需要 SSR 请求，先扩展同一请求适配器并验证并发用户隔离。
@@ -131,9 +131,9 @@ frontend/
 │   │   └── globals.css            # 唯一全局样式与语义 token 映射
 │   ├── components/
 │   │   ├── ui/                    # shadcn 基础组件源码；已接入 Button/Badge
-│   │   ├── providers/             # QueryClient 等 Client Provider
 │   │   ├── layout/                # 按需：导航、页面骨架等共享结构
 │   │   └── <business>/            # 按需：account、wardrobe、diary 等业务组件
+│   ├── providers/                 # QueryClient 等应用上下文；按实际能力命名
 │   ├── hooks/
 │   │   └── <business>/            # 按需：请求/交互 hooks 与 query keys
 │   ├── lib/
@@ -142,8 +142,10 @@ frontend/
 │   │   └── <business>/            # 按需：纯函数、表单校验和视图映射
 │   └── api/                       # Umi OpenAPI 全量生成，不手改
 ├── tests/
+│   ├── architecture/              # 生产目录与依赖边界检查
 │   ├── unit/                      # 单元/组件行为测试
-│   └── e2e/                       # 按需：可重复浏览器验收
+│   ├── e2e/                       # 按需：可重复浏览器验收
+│   └── tsconfig.json              # 测试类型检查，继承应用的 strict 规则
 ├── public/                        # 按需：有公开发布权的静态资源
 ├── assets/                        # 已有内部素材，不映射公开静态路径
 ├── components.json                # 已初始化，固定 radix 和 aliases
@@ -157,6 +159,9 @@ frontend/
 - `app` 只编排路由；复杂表单和领域展示移入 `components/<business>`。业务以 account、wardrobe 等统一词汇命名，不并行创建 `features`、`modules`、`services` 三套组织法。
 - 普通前端文件/目录使用 kebab-case；组件导出 PascalCase，hook 使用 `useXxx`。Next.js 特殊文件名和生成器输出保持原约定。
 - `components/ui` 不依赖业务 hooks、生成 API 或 app；业务组件可以依赖 ui/hooks/lib，hooks 可以依赖生成 API，生成 API 只通过统一适配器发请求。禁止循环依赖和通过大 barrel 文件打包全部业务。
+- `providers` 只装配全局上下文，当前 `query-provider.tsx` 直接由根 layout 使用；不叠加仅转发 children 的 AppProviders。普通组件不反向依赖 Provider 实现。
+- `tests/architecture` 解析实际源码导入；别名、相对路径、re-export 和字面量动态 import 统一检查。UI 仅依赖 UI/cn，components 可依赖 components/ui/hooks/lib，hooks 可依赖 hooks/lib/api，lib 仅依赖 lib，providers 可依赖 providers/lib；以上均可使用职责内的外部包。app 负责组装。生产代码不得依赖 tests/内部 assets/根工具配置；生成 API 不手改，调用方使用具体生成模块，不导入其聚合 index。
+- `tsconfig.json` 只纳入 src、Next 生成类型和 next/openapi 配置；`tests/tsconfig.json` 单独纳入测试并显式声明 Node 类型。`npm run typecheck` 检查两者；`npm test` 自动发现 tests 下的测试，不逐个列文件路径。内部 assets 不参与 TypeScript、ESLint 或 Prettier 源码检查。
 - 表单模型与视图模型放在所属业务旁，只表达 UI 特有字段；接口 DTO 必须引用生成类型，不另建手写 `types/api.ts`。
 - 配置留在 frontend 根目录；测试不进 app、ui 或生成目录；不创建空目录、空路由、重复 assets 副本或额外工作区层级。
 
@@ -191,14 +196,14 @@ backend/
 │   ├── integration/               # 实际进程 + 隔离依赖
 │   ├── container/                 # 已构建镜像
 │   └── internal/                  # 上述测试共享夹具
-├── architecture_test.go           # 导入方向与架构约束
+├── architecture_test.go           # 目录、入口、导入方向与 HTTP 文件职责
 ├── Dockerfile / .dockerignore
 └── .env.example
 ```
 
 依赖固定为 `main.go → bootstrap → application/adapter/platform`，`adapter → application`；application 不依赖 Gin、Huma、GORM、SDK 或具体 adapter。业务间调用只采用明确需要且架构测试允许的方向。接口定义在消费方，不为每个 struct 建接口。
 
-同一能力的模型、错误、规则和用例共属一个 application package，不重新建立全局 domain/model/service 大包。HTTP 的 contract、route、handler 按文件职责拆分；PostgreSQL 按真实事务和能力拆文件，仅在形成独立依赖边界时建子 package，不套用全局 controller/service/dao 目录。
+同一能力的模型、错误、规则和用例共属一个 application package，不重新建立全局 domain/model/service 大包。HTTP 按资源统一使用 `*_contract.go`、`*_routes.go`、`*_handlers.go`，消费端口放在 handlers；router/health/errors/openapi 分担组装、健康、错误与合同生成；PostgreSQL 按真实事务和能力拆文件，仅在形成独立依赖边界时建子 package，不套用全局 controller/service/dao 目录。
 
 - HTTP 层负责认证接入、解析、合同校验和状态映射，不写 SQL；application 编排用例与事务要求；postgres 承担实际事务、约束与记录映射。
 - I/O 传递 `context.Context` 并有超时/取消；资源由创建者有界关闭。错误使用 `errors.Is/As`，日志记录 request_id 和安全业务标识，不输出凭据、Cookie、原图和连接密码。
@@ -227,7 +232,7 @@ backend/
 
 在 `frontend/` 运行现有 `npm run lint`、`npm run test`、`npm run typecheck`、`npm run format:check`、`npm run build`；生产依赖运行 `npm audit --omit=dev`。生成契约变化增加实际 OpenAPI 再生成检查。CI 使用锁文件安装，不能混用 npm/pnpm/yarn 锁文件。
 
-真实浏览器检查成功、失败、空态、慢请求、防重提、刷新/返回、会话过期、键盘与焦点、小屏/桌面和文字放大。静态截图不等于交互通过；现有 `npm run test` 只覆盖请求层，不能据此声称全部组件或业务端到端已验收。新增可重复 UI 测试按实际切片落入 `tests/`，不为本文单独创建测试框架。
+真实浏览器检查成功、失败、空态、慢请求、防重提、刷新/返回、会话过期、键盘与焦点、小屏/桌面和文字放大。静态截图不等于交互通过；现有 `npm run test` 覆盖目录/依赖边界和请求层，不能据此声称全部组件或业务端到端已验收。新增可重复 UI 测试按实际切片落入 `tests/`，不为本文单独创建测试框架。
 
 新增/更新 shadcn 组件前执行 `info`、查 registry、`docs <component> --base radix` 并读取对应文档；添加后检查源码和组合关系。更新先用 `--dry-run`/`--diff`，保留本地变体；不要通过全量覆盖丢失定制。
 
@@ -265,3 +270,5 @@ API 需覆盖契约、鉴权/越权、错误响应、幂等/冲突与取消；�
 2026-09-22 后续用户变更：Kafka 替换 RabbitMQ，入口直接放在 `backend/main.go`，对应执行与验证见 [17-26](docs/plan/17-26-Kafka与工程规范化执行计划.md)。Kafka 在本地开发中使用三个独立 topic、每 topic 一个稳定消费组、acks=all 和手动 offset 提交；业务提交后才推进消费位置，失败有界重试后停止并保留位置，重启可继续。生产集群与真实数据迁移另按该片门禁处理。
 
 2026-09-22 前端基础规范实施归 [17-27](docs/plan/17-27-Web设计体系与工程规范同步执行计划.md)，验证证据归 Acceptance 17。
+
+2026-09-22 后端目录与 HTTP 文件职责实施见 [17-29](docs/plan/17-29-Backend目录与HTTP文件职责规范化.md)。单 module、唯一根入口、跨 adapter 隔离和 HTTP 文件职责由既有架构测试执行；跨层协作继续通过 bootstrap 与消费端口，不改变事务、API 或 Kafka 合同。
