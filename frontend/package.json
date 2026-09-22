@@ -13,17 +13,20 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "openapi": "openapi2ts",
     "test": "node --test tests/unit/lib/api/request.test.ts"
   },
   "dependencies": {
-    "@radix-ui/themes": "3.3.0",
     "@tanstack/react-query": "5.102.8",
     "axios": "1.20.0",
+    "class-variance-authority": "0.7.1",
+    "cn": "0.3.2",
+    "lucide-react": "1.47.0",
     "next": "16.3.5",
+    "radix-ui": "1.6.7",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
@@ -38,8 +41,10 @@
     "eslint-config-prettier": "10.1.8",
     "postcss": "8.5.28",
     "prettier": "3.9.6",
+    "shadcn": "4.21.0",
     "tailwindcss": "4.3.3",
     "tslib": "2.8.1",
+    "tw-animate-css": "1.4.0",
     "typescript": "6.0.3"
   }
 }

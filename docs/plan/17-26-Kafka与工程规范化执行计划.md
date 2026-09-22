@@ -4,7 +4,7 @@
 
 - 2026-09-22 用户明确要求：先提交并推送现有工作区，再使用 Kafka、简化入口目录并开展规范化。
 - 原工作区已提交并推送：`755943e654029175055da68951396abe201ec00c`。
-- 契约状态：approved；执行状态：completed（本地工程与合成数据开发验证）；后续实现尚未提交/推送，远端 CI 未运行。
+- 契约状态：approved；执行状态：completed（本地工程与合成数据开发验证）；实现 `cd41e5977864e36368089af64dbbde9d19158f63` 已推送 main；远端 CI 35685258544 三项通过。
 - 本片对应 PRD 17 的云任务基础设施、PRD 18 的可靠删除和 PRD 19 的通知；不改变业务 API、DTO、表结构或用户发布范围。
 
 ## 固定合同
@@ -46,4 +46,4 @@
 
 在 `backend/` 执行 gofmt、module verify、vet、unit、完整 race、services、integration 与最终 OCI 镜像检查，均通过；隔离 Compose Kafka 主机端协议测试通过并清理该次资源。完整 services 首次发现交付超时后，固定单次请求 10 秒、交付预算 30 秒，完整复测通过。
 
-本机 Docker 的 Ryuk 端口映射异常使用命令级 `TESTCONTAINERS_RYUK_DISABLED=true` 复测，资源仍由既有测试夹具回收；CI 未采用该覆盖。原文档基线提交的远端 CI 通过，不代表尚未提交的 Kafka 实现已通过远端 CI。未进行生产切换或旧事件迁移。
+本机 Docker 的 Ryuk 端口映射异常使用命令级 `TESTCONTAINERS_RYUK_DISABLED=true` 复测，资源仍由既有测试夹具回收；CI 未采用该覆盖。Kafka 实现已推送，远端 [CI 35685258544](https://github.com/StephenQiu30/then-server/actions/runs/35685258544) 的 Go quality、PostgreSQL integration 与 OCI container 均通过。未进行生产切换或旧事件迁移。

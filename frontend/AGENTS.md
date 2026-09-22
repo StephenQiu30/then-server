@@ -12,7 +12,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 修改 `frontend/` 前先读取上方要求的已安装 Next.js 对应版本文档，并读取 [`PROJECT.md`](../PROJECT.md) 的组件、目录与状态规则。以根目录 [`DESIGN.md`](../DESIGN.md) 作为唯一视觉与交互标准，遵循 Design → PRD → Plan → Implementation → Acceptance 流程。
 
-目标组件体系固定为 shadcn/ui + Radix Primitives + Tailwind CSS v4，shadcn 基础类型为 `radix`。当前工程仍使用 Radix Themes，尚未初始化 shadcn；迁移按 PROJECT 的差距清单实施，不把文档确认写成组件已接入。组件接入前用 npm runner 执行 shadcn `info` 和 `docs --base radix`，读取对应官方文档。
+组件体系固定为 shadcn/ui + Radix Primitives + Tailwind CSS v4，shadcn 基础类型为 `radix`。已初始化 radix-nova 配置并接入 Button/Badge，Radix Themes 已移除；只按实际用例增加组件。组件接入前用 npm runner 执行 shadcn `info` 和 `docs --base radix`，读取对应官方文档。
 
 ## 目录职责
 
@@ -24,17 +24,17 @@ frontend/
 │   ├── components/
 │   │   ├── ui/                    # 按需接入 shadcn 基础组件
 │   │   ├── providers/             # Client Provider
-│   │   ├── layout/                # 按需：共享页面结构
+│   │   ├── layout/                # 共享页面结构（PageShell）
 │   │   └── <business>/            # 按需：业务组件
 │   ├── hooks/<business>/          # 按需：业务请求与交互 hooks
 │   └── lib/
 │       ├── api/                   # Axios 统一请求入口
-│       ├── utils.ts               # shadcn 接入时添加 cn()
+│       ├── utils.ts               # 统一 cn() 入口
 │       └── <business>/            # 按需：校验、纯函数与视图映射
 ├── tests/
 │   ├── unit/                      # 不参与生产源码组织的单元测试
 │   └── e2e/                       # 按需：浏览器交互验收
-├── components.json                # shadcn 接入时生成
+├── components.json                # 已初始化：radix-nova / Lucide / RSC
 ├── next.config.ts
 ├── openapi2ts.config.ts
 └── package.json
@@ -47,3 +47,11 @@ frontend/
 - 业务按 `components/<business>`、`hooks/<business>`、`lib/<business>` 归属，不再创建并行的 `features`/`modules` 目录。只有业务切片实际实现时才创建所需目录，不建空 `public`、`assets` 或占位路由。
 - 视觉值集中映射到现有 `src/app/globals.css` 的语义 token；组件优先使用 variant/size，页面不覆盖组件颜色和字体。Radix 的触发器组合采用 `asChild`。
 - 配置文件保留在 `frontend/` 根目录，测试按类型放在 `tests/`，不得混入生成目录。
+
+## 当前实现与自动检查
+
+- `src/app/globals.css` 映射根 DESIGN 的 Then Web foundation；默认浅色，字体跟随系统。Button/Badge 的 Then 变体归 `components/ui`，不在页面覆盖颜色或字体。
+- `components/layout/page-shell.tsx` 是首页、404 和路由错误页共用的内容结构；各页面必须保持唯一 `main-content`，供根 layout 的跳转链接使用。
+- Next.js 16.3 错误边界使用 `retry()` 重新获取并渲染；不输出内部错误正文，不建立测试专用生产路由。业务加载/空态在实际数据页实现后接入。
+- ESLint 禁止回引 Themes、其他 primitive 体系及页面直用 Axios；UI 基础组件不能按 @/ 别名反向依赖业务层。相对路径同样遵守 PROJECT，代码评审不得绕过规则。
+- `npm run typecheck` 先执行 `next typegen`，保证干净检出也能检查；CI 使用 Node/npm 固定版本与 `npm ci`，执行 lint/test/typecheck/format/build/生产依赖审计。
