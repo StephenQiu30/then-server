@@ -8,7 +8,6 @@ import (
 	"database/sql"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -21,7 +20,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -214,78 +212,5 @@ func TestServicesRedisAuthenticationRateLimitIsAtomicAndPrivate(t *testing.T) {
 	serviceOK(t, "inspect authentication rate-limit key", err)
 	if len(keys) != 1 || strings.Contains(keys[0], subject) {
 		t.Fatal("rate-limit state did not use exactly one non-identifying key")
-	}
-}
-
-func TestServicesRabbitConfirmationAndRedelivery(t *testing.T) {
-	environment := loadServiceEnvironment(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	connection, err := amqp.DialConfig(environment.rabbitMQURL, amqp.Config{
-		Dial: func(network, address string) (net.Conn, error) {
-			conn, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, network, address)
-			if err != nil {
-				return nil, err
-			}
-			if err := conn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {
-				conn.Close()
-				return nil, err
-			}
-			return conn, nil
-		},
-	})
-	serviceOK(t, "connect RabbitMQ", err)
-	defer connection.Close()
-	channel, err := connection.Channel()
-	serviceOK(t, "open channel", err)
-	defer channel.Close()
-	queue, err := channel.QueueDeclare(serviceID(t), true, false, false, false, amqp.Table{"x-queue-type": "quorum"})
-	serviceOK(t, "declare quorum queue", err)
-	defer func() {
-		if _, err := channel.QueueDelete(queue.Name, false, false, false); err != nil {
-			t.Error("queue cleanup failed")
-		}
-	}()
-	serviceOK(t, "enable confirms", channel.Confirm(false))
-	confirm, err := channel.PublishWithDeferredConfirmWithContext(ctx, "", queue.Name, true, false, amqp.Publishing{DeliveryMode: amqp.Persistent, ContentType: "text/plain", MessageId: queue.Name, Body: []byte("synthetic")})
-	serviceOK(t, "publish persistent message", err)
-	if confirm == nil {
-		t.Fatal("publisher confirmation unavailable")
-	}
-	acked, err := confirm.WaitContext(ctx)
-	serviceOK(t, "publisher confirmation", err)
-	if !acked {
-		t.Fatal("broker rejected publication")
-	}
-	receive := func() amqp.Delivery {
-		t.Helper()
-		for {
-			message, found, err := channel.Get(queue.Name, false)
-			serviceOK(t, "receive message", err)
-			if found {
-				return message
-			}
-			select {
-			case <-ctx.Done():
-				t.Fatal("message delivery timed out")
-			case <-time.After(30 * time.Millisecond):
-			}
-		}
-	}
-	first := receive()
-	if first.MessageId != queue.Name || string(first.Body) != "synthetic" {
-		t.Fatal("message identity differs")
-	}
-	serviceOK(t, "requeue uncompleted delivery", first.Nack(false, true))
-	second := receive()
-	if !second.Redelivered || second.MessageId != first.MessageId {
-		t.Fatal("redelivery identity not preserved")
-	}
-	serviceOK(t, "ack completed delivery", second.Ack(false))
-	// A following synchronous RPC establishes ordering after the acknowledgement.
-	remaining, err := channel.QueueInspect(queue.Name)
-	serviceOK(t, "inspect completed queue", err)
-	if remaining.Messages != 0 {
-		t.Fatal("acknowledged message remains ready")
 	}
 }

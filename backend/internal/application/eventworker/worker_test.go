@@ -10,11 +10,81 @@ import (
 	"image/jpeg"
 	"io"
 	"testing"
+	"time"
 
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 )
 
 type workerObjectStoreStub struct{ data []byte }
+
+type shutdownRepository struct {
+	Repository
+	started chan struct{}
+	release chan struct{}
+}
+
+func (r shutdownRepository) PendingOutbox(ctx context.Context, _ int) ([]mediaapp.OutboxEvent, error) {
+	r.started <- struct{}{}
+	<-ctx.Done()
+	<-r.release
+	return nil, ctx.Err()
+}
+
+func (r shutdownRepository) SourceCleanupCandidates(ctx context.Context, _ time.Time, _ int) ([]mediaapp.MediaAsset, error) {
+	r.started <- struct{}{}
+	<-ctx.Done()
+	<-r.release
+	return nil, ctx.Err()
+}
+
+type shutdownBroker struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (shutdownBroker) Publish(context.Context, mediaapp.OutboxEvent) error { return nil }
+func (b shutdownBroker) Consume(ctx context.Context, _ string, _ func(context.Context, mediaapp.OutboxEvent) error) error {
+	b.started <- struct{}{}
+	<-ctx.Done()
+	<-b.release
+	return nil
+}
+
+func TestRunnerWaitsForAllWorkersBeforeReturning(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	started, release := make(chan struct{}, 5), make(chan struct{})
+	runner, err := New(shutdownRepository{started: started, release: release}, shutdownBroker{started: started, release: release}, &workerObjectStoreStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- runner.Run(ctx) }()
+	for range 5 {
+		select {
+		case <-started:
+		case <-ctx.Done():
+			close(release)
+			t.Fatal("worker did not start")
+		}
+	}
+	cancel()
+	select {
+	case <-done:
+		close(release)
+		t.Fatal("runner returned before workers released dependencies")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("runner shutdown blocked")
+	}
+}
 
 func (s *workerObjectStoreStub) OpenVersion(context.Context, string, string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(s.data)), nil

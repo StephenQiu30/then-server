@@ -22,7 +22,8 @@ type Config struct {
 	MinIOAccessKey          string
 	MinIOSecretKey          string
 	MinIOSecure             bool
-	RabbitMQURL             string
+	KafkaBrokers            []string
+	KafkaTopicPrefix        string
 	MaxOpenConns            int
 	MaxIdleConns            int
 	ConnMaxLifetime         time.Duration
@@ -40,14 +41,15 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		return fallback
 	}
 	c := Config{
-		Role:           get("APP_ROLE", "api"),
-		HTTPAddr:       get("HTTP_ADDR", "127.0.0.1:8080"),
-		DatabaseURL:    get("DATABASE_URL", ""),
-		RedisURL:       get("REDIS_URL", "redis://127.0.0.1:6379/0"),
-		MinIOEndpoint:  get("MINIO_ENDPOINT", "127.0.0.1:9000"),
-		MinIOAccessKey: get("MINIO_ACCESS_KEY", ""),
-		MinIOSecretKey: get("MINIO_SECRET_KEY", ""),
-		RabbitMQURL:    get("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/"),
+		Role:             get("APP_ROLE", "api"),
+		HTTPAddr:         get("HTTP_ADDR", "127.0.0.1:8080"),
+		DatabaseURL:      get("DATABASE_URL", ""),
+		RedisURL:         get("REDIS_URL", "redis://127.0.0.1:6379/0"),
+		MinIOEndpoint:    get("MINIO_ENDPOINT", "127.0.0.1:9000"),
+		MinIOAccessKey:   get("MINIO_ACCESS_KEY", ""),
+		MinIOSecretKey:   get("MINIO_SECRET_KEY", ""),
+		KafkaBrokers:     strings.Split(get("KAFKA_BROKERS", "127.0.0.1:9092"), ","),
+		KafkaTopicPrefix: get("KAFKA_TOPIC_PREFIX", "then"),
 	}
 	if c.Role != "api" && c.Role != "worker" && c.Role != "all" {
 		return Config{}, fmt.Errorf("APP_ROLE: expected api, worker or all")
@@ -100,7 +102,7 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		if splitErr != nil || !isLoopbackHost(minioHost) || parseErr != nil || parsedPort < 1 || parsedPort > 65535 {
 			return Config{}, fmt.Errorf("MINIO_ENDPOINT: local media development requires loopback IP:port")
 		}
-		if err := validateRabbitMQURL(c.RabbitMQURL); err != nil {
+		if err := validateKafka(c.KafkaBrokers, c.KafkaTopicPrefix); err != nil {
 			return Config{}, err
 		}
 	}
@@ -175,14 +177,19 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	return c, nil
 }
 
-func validateRabbitMQURL(value string) error {
-	u, err := url.Parse(value)
-	if err != nil || u == nil || (u.Scheme != "amqp" && u.Scheme != "amqps") || u.Hostname() == "" || u.Port() == "" || u.Fragment != "" {
-		return fmt.Errorf("RABBITMQ_URL: expected AMQP URL")
+func validateKafka(brokers []string, prefix string) error {
+	if len(brokers) == 0 || len(brokers) > 8 {
+		return fmt.Errorf("KAFKA_BROKERS: expected 1 through 8 loopback endpoints")
 	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil || port < 1 || port > 65535 || !isLoopbackHost(u.Hostname()) {
-		return fmt.Errorf("RABBITMQ_URL: local media development requires loopback host")
+	for _, address := range brokers {
+		host, port, err := net.SplitHostPort(address)
+		number, parseErr := strconv.Atoi(port)
+		if err != nil || !isLoopbackHost(host) || parseErr != nil || number < 1 || number > 65535 {
+			return fmt.Errorf("KAFKA_BROKERS: local development requires loopback host:port")
+		}
+	}
+	if len(prefix) < 1 || len(prefix) > 80 || strings.Trim(prefix, "abcdefghijklmnopqrstuvwxyz0123456789-") != "" || prefix[0] == '-' || prefix[len(prefix)-1] == '-' {
+		return fmt.Errorf("KAFKA_TOPIC_PREFIX: expected 1 through 80 lowercase letters, digits or internal hyphens")
 	}
 	return nil
 }

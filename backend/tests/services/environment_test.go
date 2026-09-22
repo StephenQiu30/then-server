@@ -22,7 +22,7 @@ type serviceEnvironment struct {
 	redisAddr      string
 	redisPassword  string
 	redisDB        int
-	rabbitMQURL    string
+	kafkaBrokers   []string
 }
 
 func loadServiceEnvironment(t *testing.T) serviceEnvironment {
@@ -48,7 +48,7 @@ func parseServiceEnvironment(lookup func(string) (string, bool)) (serviceEnviron
 		minioSecretKey: setting("THEN_TEST_MINIO_SECRET_KEY", "minioadmin"),
 		redisAddr:      setting("THEN_TEST_REDIS_ADDR", "127.0.0.1:6379"),
 		redisPassword:  setting("THEN_TEST_REDIS_PASSWORD", ""),
-		rabbitMQURL:    setting("THEN_TEST_RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/"),
+		kafkaBrokers:   strings.Split(setting("THEN_TEST_KAFKA_BROKERS", "127.0.0.1:9092"), ","),
 	}
 	redisDB, err := strconv.Atoi(setting("THEN_TEST_REDIS_DB", "15"))
 	if err != nil || redisDB < 0 || redisDB > 15 {
@@ -64,8 +64,10 @@ func parseServiceEnvironment(lookup func(string) (string, bool)) (serviceEnviron
 	if err := requireLoopbackEndpoint("THEN_TEST_REDIS_ADDR", environment.redisAddr); err != nil {
 		return serviceEnvironment{}, err
 	}
-	if err := requireLoopbackURL("THEN_TEST_RABBITMQ_URL", environment.rabbitMQURL, "amqp", "amqps"); err != nil {
-		return serviceEnvironment{}, err
+	for _, address := range environment.kafkaBrokers {
+		if err := requireLoopbackEndpoint("THEN_TEST_KAFKA_BROKERS", address); err != nil {
+			return serviceEnvironment{}, err
+		}
 	}
 	return environment, nil
 }
@@ -129,13 +131,13 @@ func TestServiceEnvironmentDefaultsStayLocal(t *testing.T) {
 }
 
 func TestServiceEnvironmentRejectsRemoteDependencies(t *testing.T) {
-	for _, variable := range []string{"THEN_TEST_DATABASE_URL", "THEN_TEST_MINIO_ENDPOINT", "THEN_TEST_REDIS_ADDR", "THEN_TEST_RABBITMQ_URL"} {
+	for _, variable := range []string{"THEN_TEST_DATABASE_URL", "THEN_TEST_MINIO_ENDPOINT", "THEN_TEST_REDIS_ADDR", "THEN_TEST_KAFKA_BROKERS"} {
 		t.Run(variable, func(t *testing.T) {
 			values := map[string]string{
 				"THEN_TEST_DATABASE_URL":   "postgres://test@example.com/test?sslmode=verify-full",
 				"THEN_TEST_MINIO_ENDPOINT": "example.com:9000",
 				"THEN_TEST_REDIS_ADDR":     "example.com:6379",
-				"THEN_TEST_RABBITMQ_URL":   "amqps://test@example.com:5671/",
+				"THEN_TEST_KAFKA_BROKERS":  "example.com:9092",
 			}
 			_, err := parseServiceEnvironment(func(name string) (string, bool) {
 				if name == variable {

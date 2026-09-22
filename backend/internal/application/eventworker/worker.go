@@ -52,6 +52,7 @@ func New(repository Repository, broker Broker, objects ObjectStore) (*Runner, er
 }
 
 func (r *Runner) Run(ctx context.Context) error {
+	parent := ctx
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errorsChannel := make(chan error, 5)
@@ -61,7 +62,15 @@ func (r *Runner) Run(ctx context.Context) error {
 	go func() { errorsChannel <- r.broker.Consume(ctx, "then.community-notification", r.deliverNotification) }()
 	go func() { errorsChannel <- r.cleanupSources(ctx) }()
 	err := <-errorsChannel
-	if err == nil && ctx.Err() != nil {
+	cancel()
+	// Dependencies belong to bootstrap. Wait for every user before it closes them.
+	for range 4 {
+		other := <-errorsChannel
+		if err == nil && other != nil && !errors.Is(other, context.Canceled) {
+			err = other
+		}
+	}
+	if parent.Err() != nil || errors.Is(err, context.Canceled) {
 		return nil
 	}
 	return err

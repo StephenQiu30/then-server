@@ -1,8 +1,10 @@
 # OOTD 产品实施计划
 
-更新：2026-09-16。契约已批准，整体执行 `in_progress`；完整产品尚未交付。此表汇总当前切片状态，详细 spec/checklist 保存在各切片，实际测试结果只在对应 Acceptance 维护。
+更新：2026-09-22。契约已批准，整体执行 `in_progress`；完整产品尚未交付。此表汇总当前切片状态，详细 spec/checklist 保存在各切片，实际测试结果只在对应 Acceptance 维护。
 
 ## 当前执行优先级
+
+2026-09-22 当前执行 [17-26 Kafka 与工程规范化](17-26-Kafka与工程规范化执行计划.md)：原工作区先提交推送，再统一 Kafka 消息语义、`backend/main.go` 入口、工程文档与真实依赖验证；Web 设计基线见根 `PROJECT.md`。
 
 2026-09-16 用户要求暂停 App 开发，先完成后端需求、接口与数据库设计后再编码。私人穿搭日记、首版图文社区及基础互动的设计方案已确认；19-02～19-05 均已完成本地与远端门禁。App 与 frontend 页面继续暂停。
 
@@ -14,6 +16,7 @@
 
 | 切片 | 契约 / 执行状态 | 已有结果 | 未完成项 |
 | --- | --- | --- | --- |
+| [17-26 Kafka 与工程规范化](17-26-Kafka与工程规范化执行计划.md) | approved / completed（本地工程验证） | 原工作区已推送；Kafka、根入口、构建/测试适配及全部本地门禁完成 | 后续实现尚未提交、远端 CI 未运行；生产迁移另验 |
 | [19-01 后端需求与数据设计](19-01-后端需求与数据设计审核计划.md) | approved / completed | 日记和社区需求、领域、表、API、验收标准已确认 | 发布地域、邮件、审核 SLA 和预算仍待上线前决策 |
 | [19-02 账号状态与公开资料](19-02-账号状态与公开资料执行计划.md) | approved / completed | 账号状态/角色/revision、公开资料三接口、PG约束、Umi、完整 integration 与远程 CI 已完成 | 头像/邮件/异步删号后续分片 |
 | [19-03 私人穿搭日记与日历 API](19-03-私人穿搭日记与日历API执行计划.md) | approved / completed | 私人图文日记、普通图片、删除影响、月日历与全部本地/远程门禁通过 | 穿后反馈统计另行实现 |
@@ -36,7 +39,7 @@
 | [17-12 账号 API](17-12-账号认证与本人账户API执行计划.md)、[17-16 会话撤销](17-16-账号HTTP会话撤销闭环执行计划.md) | approved / completed | 注册、Cookie、本人 CRUD、退出/删除后旧会话拒绝；PG/HTTP 回归 | App 接入、公开注册所需邮件/TLS、跨设备同步 |
 | [17-17 认证限流](17-17-账号认证Redis限流执行计划.md) | approved / completed | Redis 原子固定窗口、429/503/OpenAPI、真实服务/进程/受限 OCI 验收 | 可信代理/边缘防护和生产流量验收另行完成 |
 | [17-18 本人成年声明](17-18-本人成年声明API执行计划.md) | approved / completed | 当前版本查询、确认/撤回、并发幂等、PostgreSQL/HTTP/OpenAPI 与远程 CI 通过 | Provider 逐次同意、上传与删除编排另立切片 |
-| [17-19 本人照片私有上传与删除](17-19-本人照片私有上传与删除闭环执行计划.md) | approved / completed（合成数据开发范围） | 8 个 API、MinIO 固定版本、RabbitMQ/Outbox/Inbox 检查删除、三运行角色、合成数据纵向验收与远程 CI 完成 | 真实照片、生产地域、TLS/KMS/备份和 Provider 仍关闭 |
+| [17-19 本人照片私有上传与删除](17-19-本人照片私有上传与删除闭环执行计划.md) | approved / completed（合成数据开发范围） | 8 个 API、MinIO 固定版本、Outbox/Inbox 检查删除（当时使用 RabbitMQ，当前由 17-26 切换 Kafka）、三运行角色、合成数据纵向验收与远程 CI 完成 | 真实照片、生产地域、TLS/KMS/备份和 Provider 仍关闭 |
 | [17-20 结构化衣橱账户 API](17-20-结构化衣橱账户API执行计划.md) | approved / completed（后端开发范围） | 5 个账号级无图 CRUD operation、owner 隔离、幂等创建、revision 冲突、稳定分页、账号级联与远程 CI 通过 | App 主动同步、墓碑/合并、衣物图片与第二设备恢复不在本片 |
 | [17-21 衣橱确认属性 API](17-21-衣橱确认属性API执行计划.md) | approved / completed（后端开发范围） | 五个衣橱 operation 已扩展四项 nullable 确认属性；本机 unit/race、真实 PostgreSQL、实际二进制与远程 CI 通过 | App Client/主动同步、墓碑与多设备恢复不在本片 |
 | [17-22 账号穿搭计划 API](17-22-账号穿搭计划API执行计划.md) | approved / completed（后端开发范围） | 6 个计划 operation、服务端衣物快照、revision/tombstone、两种衣物删除影响策略与远程 CI 通过 | App Client/主动同步、实际穿着、反馈和第二设备恢复不在本片 |

@@ -26,7 +26,6 @@ import (
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
 	"github.com/google/uuid"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -56,16 +55,6 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	database, err := gorm.Open(postgres.Open(databaseURL.String()), &gorm.Config{Logger: logger.Discard})
 	serviceOK(t, "open isolated media schema", err)
 	serviceOK(t, "migrate media schema", store.Migrate(ctx, database))
-
-	connection, err := amqp.Dial(environment.rabbitMQURL)
-	serviceOK(t, "open queue cleanup connection", err)
-	channel, err := connection.Channel()
-	serviceOK(t, "open queue cleanup channel", err)
-	for _, queue := range []string{"then.media-check", "then.media-delete"} {
-		_, _ = channel.QueuePurge(queue, false)
-	}
-	channel.Close()
-	connection.Close()
 
 	objects, err := objectstore.Open(ctx, environment.minioEndpoint, environment.minioAccessKey, environment.minioSecretKey, false)
 	serviceOK(t, "open private media store", err)
@@ -157,14 +146,32 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	if _, err := mediaService.GetMedia(ctx, other.Token, uploaded.ID); !errors.Is(err, mediaapp.ErrMediaNotFound) {
 		t.Fatal("cross-owner media lookup did not use the not-found boundary")
 	}
-	broker, err := messagequeue.Open(environment.rabbitMQURL)
+	broker, err := messagequeue.Open(ctx, environment.kafkaBrokers, kafkaTestPrefix(t, ctx, environment.kafkaBrokers))
 	serviceOK(t, "open media broker", err)
 	defer broker.Close()
 	runner, err := eventworkerapp.New(store.NewMediaRepository(database), broker, objects)
 	serviceOK(t, "construct media worker", err)
 	workerContext, stopWorker := context.WithCancel(ctx)
 	workerDone := make(chan error, 1)
-	go func() { workerDone <- runner.Run(workerContext) }()
+	go func() {
+		err := runner.Run(workerContext)
+		workerDone <- err
+		if err != nil {
+			cancel()
+		}
+	}()
+	defer func() {
+		stopWorker()
+		select {
+		case err := <-workerDone:
+			if err != nil {
+				t.Errorf("media worker failed: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Error("media worker did not stop within shutdown budget")
+		}
+	}()
+
 	waitForMediaStatus(t, ctx, mediaService, owner.Token, uploaded.ID, mediaapp.MediaReady)
 	var derivationCount int64
 	serviceOK(t, "count normalized derivations", database.WithContext(ctx).Table("media_derivations").Where("media_id = ?", uploaded.ID).Count(&derivationCount).Error)
@@ -200,9 +207,7 @@ func TestSyntheticPersonPhotoLifecycle(t *testing.T) {
 	assertAccountDeletionCleansActiveMedia(t, ctx, database, accounts, mediaService, objects, photo, digest)
 	assertMissingNotificationDeliveryIsAcknowledged(t, ctx, database, mediaRepository)
 	stopWorker()
-	if err := <-workerDone; err != nil {
-		t.Fatal("media worker did not stop cleanly")
-	}
+
 }
 
 func assertMissingNotificationDeliveryIsAcknowledged(t *testing.T, ctx context.Context, database *gorm.DB, repository *store.MediaRepository) {

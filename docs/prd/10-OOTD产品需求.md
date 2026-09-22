@@ -240,7 +240,7 @@
 - iOS-only，所有产品页面使用 SwiftUI + Observation。
 - GRDB 本地优先，Swift OpenAPI Client 连接云端。
 - Go + Gin/Huma + GORM/PostgreSQL；当前开发 schema 使用 AutoMigrate，运行时生成 OpenAPI。
-- RabbitMQ + Outbox/Inbox 承载云端 AI 任务，Redis 只做缓存/限流/通知。
+- Kafka + Outbox/Inbox 承载云端 AI 任务，Redis 只做缓存/限流/通知。
 - 私有对象存储保存媒体字节；数据和技术边界以 [`../design/01-技术选型.md`](../design/01-技术选型.md) 为准。
 
 ## 待对应发布层级关闭

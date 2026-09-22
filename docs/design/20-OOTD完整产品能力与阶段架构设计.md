@@ -227,13 +227,13 @@ flowchart LR
 
 ## 数据与服务边界
 
-完整产品继续使用现有模块化单体：Go + Gin/Huma + GORM，PostgreSQL 保存业务事实，MinIO 保存私有媒体和 3D 资产，Redis 只做可丢失的限流/短缓存，RabbitMQ 处理 AI 和视频异步任务。
+完整产品继续使用现有模块化单体：Go + Gin/Huma + GORM，PostgreSQL 保存业务事实，MinIO 保存私有媒体和 3D 资产，Redis 只做可丢失的限流/短缓存，Kafka 处理 AI 和视频异步任务。
 
 | 数据 | 本地 | 服务端 | 说明 |
 | --- | --- | --- | --- |
 | 默认人物/Look | 随包与 GRDB | 发布目录 | 零账号可用 |
 | 我的衣物和计划 | GRDB 事实源 | 登录后同步副本/云事实 | 具体冲突合同在同步切片冻结 |
-| AI/视频任务 | 最近状态缓存 | PostgreSQL + RabbitMQ | 任务状态不可只存在 Redis |
+| AI/视频任务 | 最近状态缓存 | PostgreSQL + Kafka | 任务状态不可只存在 Redis |
 | 图片/视频/GLB | 原子缓存 | 私有 MinIO | PostgreSQL 保存 owner、来源、hash 和生命周期 |
 | 同意与删除 | 本地提示状态 | PostgreSQL 审计事实 | 每种离机用途分别记录 |
 

@@ -67,33 +67,46 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  rabbitmq:
+  kafka:
     profiles: ["isolated-env"]
-    image: rabbitmq:4.3.5-management@sha256:57bddb6fbc3498b5d8b5a14dc6f4506073ebcf94c66ba2a7678c335faa8dd631
-    hostname: then-rabbitmq
+    image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+    hostname: then-kafka
     environment:
-      RABBITMQ_DEFAULT_USER: then_dev
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?Copy .env.example to .env and replace every placeholder}
-      RABBITMQ_DEFAULT_VHOST: then_dev
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: EXTERNAL://0.0.0.0:9092,INTERNAL://0.0.0.0:9094,CONTROLLER://127.0.0.1:9093
+      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://127.0.0.1:18992,INTERNAL://then-kafka:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@127.0.0.1:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
     ports:
-      - "127.0.0.1:18672:5672"
-      - "127.0.0.1:18673:15672"
+      - "127.0.0.1:18992:9092"
     volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
+      - kafka_data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "127.0.0.1:9094"]
       interval: 5s
       timeout: 10s
       retries: 30
     stop_grace_period: 30s
-    mem_limit: 768m
+    mem_limit: 1g
     security_opt:
       - no-new-privileges:true
 
 volumes:
   postgres_data:
   minio_data:
-  rabbitmq_data:
+  kafka_data:
 
 networks:
   default:

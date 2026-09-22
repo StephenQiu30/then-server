@@ -39,10 +39,10 @@ var allowedApplicationImports = map[string]map[string]bool{
 }
 
 var forbiddenFrameworkImports = map[string][]string{
-	"application":          {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
-	"adapter/httpapi":      {"gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
-	"adapter/postgres":     {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "github.com/rabbitmq/", "github.com/redis/", "github.com/minio/"},
-	"adapter/objectstore":  {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/rabbitmq/", "github.com/redis/"},
+	"application":          {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/twmb/franz-go", "github.com/redis/", "github.com/minio/"},
+	"adapter/httpapi":      {"gorm.io/", "github.com/jackc/pgx", "github.com/twmb/franz-go", "github.com/redis/", "github.com/minio/"},
+	"adapter/postgres":     {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "github.com/twmb/franz-go", "github.com/redis/", "github.com/minio/"},
+	"adapter/objectstore":  {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/twmb/franz-go", "github.com/redis/"},
 	"adapter/messagequeue": {"github.com/gin-gonic/gin", "github.com/danielgtaylor/huma", "gorm.io/", "github.com/jackc/pgx", "github.com/redis/", "github.com/minio/"},
 }
 
@@ -126,7 +126,7 @@ func TestInternalPackageDependencyDirection(t *testing.T) {
 }
 
 func TestCommandEntrypointIsThin(t *testing.T) {
-	command := filepath.Join("cmd", "then-server", "main.go")
+	command := "main.go"
 	file, err := parser.ParseFile(token.NewFileSet(), command, nil, parser.ImportsOnly)
 	if err != nil {
 		t.Fatal(err)

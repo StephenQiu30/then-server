@@ -3,9 +3,9 @@ WORKDIR /src
 ENV GOTOOLCHAIN=local CGO_ENABLED=0
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
-COPY cmd ./cmd
+COPY main.go ./
 COPY internal ./internal
-RUN go build -mod=readonly -trimpath -buildvcs=false -ldflags="-s -w" -o /out/then-backend ./cmd/then-server \
+RUN go build -mod=readonly -trimpath -buildvcs=false -ldflags="-s -w" -o /out/then-backend . \
     && go list -m -json all > /out/modules.json
 
 FROM scratch

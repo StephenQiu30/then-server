@@ -68,7 +68,7 @@ func Run(log *slog.Logger) error {
 	var runner *eventworkerapp.Runner
 	var broker *messagequeue.Broker
 	if cfg.Role == "worker" || cfg.Role == "all" {
-		broker, err = messagequeue.Open(cfg.RabbitMQURL)
+		broker, err = messagequeue.Open(startup, cfg.KafkaBrokers, cfg.KafkaTopicPrefix)
 		if err != nil {
 			return err
 		}
