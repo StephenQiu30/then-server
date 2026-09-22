@@ -1,73 +1,39 @@
-import {
-  Badge,
-  Box,
-  Card,
-  Container,
-  Flex,
-  Heading,
-  Text,
-} from '@radix-ui/themes'
+import { ArrowDownIcon } from 'lucide-react'
+import { PageShell } from '@/components/layout/page-shell'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 
 export default function HomePage() {
   return (
-    <main className="grid min-h-screen place-items-center py-16">
-      <Container size="2" px="5">
-        <Flex direction="column" gap="6">
-          <Flex direction="column" gap="3">
-            <Badge color="teal" size="2" variant="soft">
-              Next.js App Router
-            </Badge>
-            <Heading as="h1" size="8">
-              于是 OOTD
-            </Heading>
-            <Text color="gray" size="4">
-              Next.js 前端服务已就绪，业务页面将在对应账户管理切片中接入。
-            </Text>
-          </Flex>
-
-          <Card size="3">
-            <Flex direction="column" gap="4">
-              <Heading as="h2" size="4">
-                基础设施
-              </Heading>
-              <Box asChild>
-                <dl className="m-0 grid gap-4">
-                  <div className="grid grid-cols-1 gap-1 min-[32rem]:grid-cols-[minmax(7rem,0.6fr)_minmax(0,1.4fr)]">
-                    <dt className="font-semibold text-[var(--gray-11)]">
-                      应用与路由
-                    </dt>
-                    <dd className="m-0">Next.js App Router</dd>
-                  </div>
-                  <div className="grid grid-cols-1 gap-1 min-[32rem]:grid-cols-[minmax(7rem,0.6fr)_minmax(0,1.4fr)]">
-                    <dt className="font-semibold text-[var(--gray-11)]">
-                      界面
-                    </dt>
-                    <dd className="m-0">Radix UI Themes + Tailwind CSS</dd>
-                  </div>
-                  <div className="grid grid-cols-1 gap-1 min-[32rem]:grid-cols-[minmax(7rem,0.6fr)_minmax(0,1.4fr)]">
-                    <dt className="font-semibold text-[var(--gray-11)]">
-                      数据请求
-                    </dt>
-                    <dd className="m-0">Axios + TanStack Query</dd>
-                  </div>
-                  <div className="grid grid-cols-1 gap-1 min-[32rem]:grid-cols-[minmax(7rem,0.6fr)_minmax(0,1.4fr)]">
-                    <dt className="font-semibold text-[var(--gray-11)]">
-                      接口契约
-                    </dt>
-                    <dd className="m-0">Umi OpenAPI → Axios 适配器</dd>
-                  </div>
-                  <div className="grid grid-cols-1 gap-1 min-[32rem]:grid-cols-[minmax(7rem,0.6fr)_minmax(0,1.4fr)]">
-                    <dt className="font-semibold text-[var(--gray-11)]">
-                      工程质量
-                    </dt>
-                    <dd className="m-0">TypeScript + ESLint + Prettier</dd>
-                  </div>
-                </dl>
-              </Box>
-            </Flex>
-          </Card>
-        </Flex>
-      </Container>
-    </main>
+    <PageShell>
+      <header className="flex flex-col items-start gap-6">
+        <Badge variant="secondary">Web 版准备中</Badge>
+        <h1 className="page-title">于是 OOTD</h1>
+        <p className="max-w-xl text-muted-foreground">
+          让每天的穿搭，有迹可循。
+        </p>
+        <Button asChild>
+          <a href="#about">
+            了解于是
+            <ArrowDownIcon data-icon="inline-end" />
+          </a>
+        </Button>
+      </header>
+      <section
+        id="about"
+        aria-labelledby="about-title"
+        className="flex scroll-mt-8 flex-col gap-4"
+      >
+        <h2 id="about-title" className="font-display text-xl font-semibold">
+          从你的衣橱，走进每一天。
+        </h2>
+        <p className="max-w-2xl text-muted-foreground">
+          整理真实拥有的衣物，记录喜欢的搭配，回顾每一天的穿着。于是希望让下一次选择，多一点依据。
+        </p>
+        <p className="max-w-2xl text-muted-foreground">
+          Web 版正在准备中，账户与穿搭功能尚未开放。
+        </p>
+      </section>
+    </PageShell>
   )
 }

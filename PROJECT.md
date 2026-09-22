@@ -2,7 +2,7 @@
 
 更新：2026-09-22。适用范围：`then-server/frontend`、`then-server/backend` 及两者共享的产品与接口约束。
 
-本文固定产品边界、Web 设计实现规则和前后端目录职责，作为后续开发的总入口。规则自本次文档确认生效；目标目录、组件和验收要求不代表代码已经实现。规范确认与功能实施分别记录；当前 Kafka 和入口简化的实施范围见 17-26，Web 组件接入仍按后续切片推进。
+本文固定产品边界、Web 设计实现规则和前后端目录职责，作为后续开发的总入口。规则自本次文档确认生效；目标目录、组件和验收要求不代表代码已经实现。规范确认与功能实施分别记录；当前 Kafka 和入口简化的实施范围见 17-26，Web 基础组件和必要文件同步见 17-27，账户业务页面另按 17-13 推进。
 
 ## 1. 文档职责与事实来源
 
@@ -43,7 +43,7 @@ Then（于是）是穿搭决策与记录产品。以下是既有需求的约束�
 | --- | --- | --- |
 | Web 框架 | Next.js App Router + React + TypeScript strict | 保留现有工程；不另建 Vite、Pages Router 或第二个 Web 应用 |
 | Web 设计实现 | shadcn/ui + Radix UI Primitives + Tailwind CSS v4 | shadcn 基础类型固定 `radix`，不混入 Base UI/React Aria 基础类型 |
-| 图标 | 首次接入统一选用 Lucide，并在 shadcn 配置中固定 | 当前是目标选择；不在同一 Web 产品混用多套图标 |
+| 图标 | 统一使用 Lucide，components.json 已固定 | 已接入；不在同一 Web 产品混用多套图标 |
 | 服务端状态 | TanStack Query | 沿用现有 Provider，不再增加 SWR 或并行的请求缓存体系 |
 | HTTP 客户端 | `@umijs/openapi` + Axios | 从运行中 Go API 的 `/openapi.json` 生成 `src/api/` |
 | Web 质量 | ESLint + Prettier + TypeScript + Node.js Test Runner | 沿用 npm 与 `package-lock.json`；UI 需浏览器交互验收 |
@@ -56,9 +56,7 @@ Vercel 插件的 Next.js/React 指南用于框架边界与性能规范。采用�
 
 shadcn/ui 提供项目内可维护的组件源码，Radix Primitives 提供交互与无障碍基础，Tailwind/语义 token 承接 Then 视觉。业务页面统一从 `@/components/ui/*` 导入基础组件；缺少组件时先查官方 registry，再做必要组合，不直接另造 Button、Dialog 或 Select。[官方 Next.js 接入说明](https://ui.shadcn.com/docs/installation/next)
 
-现有 `@radix-ui/themes` 是待迁移的带样式组件体系，不等于 shadcn 的 Radix 基础类型。新组件遵循本文；现有 Themes 调用在实施切片中逐项替换，最后移除 Theme Provider、样式导入和依赖，不能长期保留两套主题体系，也不能先删依赖使现有页面失效。
-
-接入时用 npm 的 shadcn CLI，并显式选择 `--base radix`；生成后通过 `info --json` 检查基础类型、别名、RSC、Tailwind、图标与路径。当前项目尚无 `components.json`，CLI 返回的默认 Base UI 文档链接不代表项目已选择 Base UI。
+17-27 已通过官方 CLI 初始化 `radix-nova`，配置固定 Radix、Lucide、RSC 与 @/* 别名，实际接入 Button/Badge。旧 `@radix-ui/themes`、Theme Provider 和样式已移除；QueryClient Provider 保留。新增组件继续用 npm runner 显式核对 radix，再按实际使用从官方 registry 添加，不提前安装整套组件库。
 
 ## 4. 前端设计规范
 
@@ -80,9 +78,9 @@ shadcn/ui 提供项目内可维护的组件源码，Radix Primitives 提供交�
 | `primary` / `primary-foreground` | 主要行动色 / 行动色上的文字 |
 | `secondary`、`muted`、`accent` | 次级表面、弱化区域、选中或强调表面 |
 | `border`、`input`、`ring` | 分隔线、输入边界、键盘焦点 |
-| `destructive` | 删除及不可逆操作，需在设计标准补齐并验证对比度 |
+| `destructive` | 删除及不可逆操作，已在 DESIGN 的 Then Web foundation 补齐 |
 
-`accent` 不另起第二个品牌色；缺失的 destructive/错误/成功等状态 token 应在接入切片补齐 `DESIGN.md` 后统一映射，不在页面各自选色。弱化正文仍需可读，不能直接把 disabled 颜色用于重要说明。
+`accent` 不另起第二个品牌色；destructive/错误 token 已补齐；新增成功等状态色须先补齐 `DESIGN.md` 后统一映射，不在页面各自选色。弱化正文仍需可读，不能直接把 disabled 颜色用于重要说明。
 
 ### 4.2 组件与表单
 
@@ -132,7 +130,7 @@ frontend/
 │   ├── app/                       # 路由、layout/page、loading/error/not-found
 │   │   └── globals.css            # 唯一全局样式与语义 token 映射
 │   ├── components/
-│   │   ├── ui/                    # shadcn 基础组件源码；接入时创建
+│   │   ├── ui/                    # shadcn 基础组件源码；已接入 Button/Badge
 │   │   ├── providers/             # QueryClient 等 Client Provider
 │   │   ├── layout/                # 按需：导航、页面骨架等共享结构
 │   │   └── <business>/            # 按需：account、wardrobe、diary 等业务组件
@@ -140,7 +138,7 @@ frontend/
 │   │   └── <business>/            # 按需：请求/交互 hooks 与 query keys
 │   ├── lib/
 │   │   ├── api/request.ts         # 唯一 Axios 创建和请求适配入口
-│   │   ├── utils.ts               # 接入时添加 cn()；不收容业务杂项
+│   │   ├── utils.ts               # 统一 cn()；不收容业务杂项
 │   │   └── <business>/            # 按需：纯函数、表单校验和视图映射
 │   └── api/                       # Umi OpenAPI 全量生成，不手改
 ├── tests/
@@ -148,7 +146,7 @@ frontend/
 │   └── e2e/                       # 按需：可重复浏览器验收
 ├── public/                        # 按需：有公开发布权的静态资源
 ├── assets/                        # 已有内部素材，不映射公开静态路径
-├── components.json                # 接入 shadcn 时创建，固定 radix 和 aliases
+├── components.json                # 已初始化，固定 radix 和 aliases
 ├── next.config.ts
 ├── openapi2ts.config.ts
 ├── package.json / package-lock.json
@@ -248,9 +246,9 @@ API 需覆盖契约、鉴权/越权、错误响应、幂等/冲突与取消；�
 | 当前事实 | 目标与下一步 |
 | --- | --- |
 | Next.js + Tailwind v4 + TanStack Query + Axios + Umi 已存在 | 保留基础工程，在已有 Web 账户切片推进 |
-| shadcn `info --json` 返回 config/preset 为空、components 为空 | 在接入切片生成 radix 配置与所需基础组件；本次未执行 init/add |
-| layout/Provider 仍引用 Radix Themes，globals 使用 teal/sand 和渐变 | 集中映射 DESIGN token，替换实际 Themes 调用后清理依赖 |
-| DESIGN 标记表单错误与完整暗色状态有缺口 | 首个业务页面前补齐必需状态；暗色无完整验收前不开放 |
+| 已初始化 radix-nova / Lucide / RSC，Button/Badge 已接入 | 后续只按真实页面需要增加组件，更新先查看差异 |
+| Themes 已移除，globals 统一 DESIGN token，首页/404/error 使用共享 PageShell | 保持唯一主题、系统字体和最小客户端边界 |
+| DESIGN 已补齐 Web 错误色、对比度映射、焦点和触控基线，并同步 App 根文件 | 具体表单状态按业务页面验收；暗色仍不开放 |
 | 现有 Axios 只做请求与正文返回 | 接入业务时补齐错误解释、会话失效、取消及其验证 |
 | Web 业务页面尚未交付，现有 rewrites 未覆盖所有新增业务域 | 先完成账户页面及状态矩阵；后续按切片同步 API 转发 |
 | 后端已有 application/adapter 分层和架构测试 | 新增能力遵守现有边界，不进行无目标的目录重构 |
@@ -265,3 +263,5 @@ API 需覆盖契约、鉴权/越权、错误响应、幂等/冲突与取消；�
 - [Radix Composition](https://www.radix-ui.com/primitives/docs/guides/composition) 与 [Accessibility](https://www.radix-ui.com/primitives/docs/overview/accessibility)。
 
 2026-09-22 后续用户变更：Kafka 替换 RabbitMQ，入口直接放在 `backend/main.go`，对应执行与验证见 [17-26](docs/plan/17-26-Kafka与工程规范化执行计划.md)。Kafka 在本地开发中使用三个独立 topic、每 topic 一个稳定消费组、acks=all 和手动 offset 提交；业务提交后才推进消费位置，失败有界重试后停止并保留位置，重启可继续。生产集群与真实数据迁移另按该片门禁处理。
+
+2026-09-22 前端基础规范实施归 [17-27](docs/plan/17-27-Web设计体系与工程规范同步执行计划.md)，验证证据归 Acceptance 17。
