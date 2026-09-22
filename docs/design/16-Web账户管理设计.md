@@ -25,7 +25,7 @@ Woo 参考没有展示认证页面，因此这些页面只能沿用“于是”�
 - 使用 React、TypeScript、Next.js App Router、shadcn/ui（Radix Primitives 基础类型）与 Tailwind CSS；当前 Radix UI Themes 尚待迁移，实施规则见 [PROJECT.md](../../PROJECT.md)。Next.js 文件路由管理页面，TanStack Query 管理需要的客户端服务状态，Axios 作为 Umi 生成请求的唯一适配器。精确版本只认 [Design 01](01-技术选型.md#web-frontend)。
 - 目录采用职责分层：`src/app` 只保存路由入口和路由自有样式；基础 UI 归 `src/components/ui`，账户组件归 `src/components/account`，Client Provider 归 `src/components/providers`，业务 hooks 与纯函数分别归 `src/hooks/account`、`src/lib/account`，单元测试归 `tests/unit`。不创建平行 `features` 目录、空 `public`/`assets` 或占位页面。
 - `@umijs/openapi` 只读取本机 Go API 的 `/openapi.json`，生成到 `src` 直属的 `src/api/`。`openapi2ts.config.ts` 固定 `schemaPath`、`serversPath`、`projectName` 和项目请求适配器，并通过不设置 `mockFolder` 禁止 mock 产物；页面不得手写 URL、DTO 或第二份 schema。
-- Next.js rewrites 只代理 OpenAPI 已注册的语义根路径；页面与 API 从同一站点入口提供，不新增业务 BFF、跨源凭据 CORS 或前端直连 PostgreSQL/Redis/RabbitMQ/MinIO。
+- Next.js rewrites 只代理 OpenAPI 已注册的语义根路径；页面与 API 从同一站点入口提供，不新增业务 BFF、跨源凭据 CORS 或前端直连 PostgreSQL/Redis/Kafka/MinIO。
 - Cookie 由浏览器管理，JavaScript 不读取会话令牌，不把认证信息写入 Local Storage、Session Storage 或日志。
 - 账户删除沿用服务端硬删除合同；前端二次确认不替代服务端授权。
 - Axios 只在 `src/lib/api/request.ts` 创建一个实例并统一合并请求配置、发送请求和返回响应正文；生成代码和页面不得创建第二个 Axios 实例。请求 URL 来自运行时 OpenAPI，不在 Axios 或 Next.js rewrites 中拼接路径版本前缀。

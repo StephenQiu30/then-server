@@ -2,9 +2,9 @@
 
 ## 当前实现与设计边界
 
-当前已实现健康、数据库就绪、注册/会话、本人账户 CRUD、[17-18](../plan/17-18-本人成年声明API执行计划.md) 本人成年声明、17-19 合成本人照片开发闭环、[17-20](../plan/17-20-结构化衣橱账户API执行计划.md) 结构化衣橱 CRUD 及 [17-21](../plan/17-21-衣橱确认属性API执行计划.md) 四项用户确认属性。当前业务依赖 PostgreSQL，Redis 只用于认证限流；MinIO 与 RabbitMQ 只在合成媒体开发开关开启时使用。目录/SOP 见 [Design 02](02-后端架构.md)，精确技术栈见 [Design 01](01-技术选型.md)。GORM record + 集中 AutoMigrate 管理开发 schema。
+当前已实现健康、数据库就绪、注册/会话、本人账户 CRUD、[17-18](../plan/17-18-本人成年声明API执行计划.md) 本人成年声明、17-19 合成本人照片开发闭环、[17-20](../plan/17-20-结构化衣橱账户API执行计划.md) 结构化衣橱 CRUD 及 [17-21](../plan/17-21-衣橱确认属性API执行计划.md) 四项用户确认属性。当前业务依赖 PostgreSQL，Redis 只用于认证限流；MinIO 与 Kafka 只在合成媒体开发开关开启时使用。目录/SOP 见 [Design 02](02-后端架构.md)，精确技术栈见 [Design 01](01-技术选型.md)。GORM record + 集中 AutoMigrate 管理开发 schema。
 
-下文为未实施云生成能力的任务、对象生命周期与故障契约；不能视为已存在的 API、表或 worker。按获批任务逐项引入 RabbitMQ/MinIO/Redis，默认连接本机服务，不提前建设分布式平台。
+下文为未实施云生成能力的任务、对象生命周期与故障契约；不能视为已存在的 API、表或 worker。按获批任务逐项引入 Kafka/MinIO/Redis，默认连接本机服务，不提前建设分布式平台。
 
 ## 文档状态
 
@@ -13,11 +13,11 @@
 - 状态：已批准，2026-08-30。
 - 适用对象：面向 C 端的 OOTD 产品服务端与异步任务；本地体验阶段不依赖后端运行。
 - 决策日期：2026-08-30。
-- 核心选择：Go + Gin/Huma、GORM v2 Generics + AutoMigrate、PostgreSQL；Redis、RabbitMQ 与私有对象存储按实际异步业务启用。
+- 核心选择：Go + Gin/Huma、GORM v2 Generics + AutoMigrate、PostgreSQL；Redis、Kafka 与私有对象存储按实际异步业务启用。
 - 进程边界：一个 Go module、一个 `cmd` 命令、一个二进制和一个 OCI 镜像，通过 `APP_ROLE=api|worker|all` 选择角色；生产以同镜像的独立 API/worker 进程部署、扩缩和回滚。
 - 契约：单一 OpenAPI 3.1.2 文档，仍遵循 3.1 系列语义。
 
-> 本架构已批准，但服务端能力按实施计划启用：本地衣橱、推荐和记录阶段不启动 Go、RabbitMQ、Redis 或对象存储；第一个云端 AI 生成能力进入受控 POC/发布时，才按本文建立完整后端链路。供应商、地域、删除、成本、SLO 与 feature flag 门禁未通过时，不得接入真实用户流量。
+> 本架构已批准，但服务端能力按实施计划启用：本地衣橱、推荐和记录阶段不启动 Go、Kafka、Redis 或对象存储；第一个云端 AI 生成能力进入受控 POC/发布时，才按本文建立完整后端链路。供应商、地域、删除、成本、SLO 与 feature flag 门禁未通过时，不得接入真实用户流量。
 
 ## 关联 PRD 与设计
 
@@ -55,8 +55,8 @@
 
 ### 非目标
 
-- 不承诺 RabbitMQ 或跨系统处理“恰好一次”；目标是至少一次投递、幂等效果。
-- 不把 Redis、RabbitMQ 或对象存储当作业务事实源。
+- 不承诺 Kafka 或跨系统处理“恰好一次”；目标是至少一次投递、幂等效果。
+- 不把 Redis、Kafka 或对象存储当作业务事实源。
 - 不在数据库事务中执行模型调用、对象上传、消息发布或其他网络请求。
 - 不在首版引入微服务、Kafka、Kubernetes、分布式事务、事件溯源或多主数据库。
 - 不用 AI 预览推导真实尺码、体型结论、健康属性或服装物理效果。
@@ -80,7 +80,7 @@
 2. API 创建 `media_asset` 的 `pending_upload` 记录，返回短时、单对象、限大小的签名上传信息。
 3. iOS 直接上传到私有隔离区，不经 API 中转大文件。
 4. iOS 调用 finalize；API 验证对象存在、版本、大小、摘要和声明用途，在同一 PostgreSQL 事务中将资产置为 `uploaded` 并写入媒体检查 Outbox。
-5. relay 通过 RabbitMQ 触发媒体 worker。worker 检查 magic bytes、解码安全、像素上限、恶意内容、EXIF 清除和质量门禁。
+5. relay 通过 Kafka 触发媒体 worker。worker 检查 magic bytes、解码安全、像素上限、恶意内容、EXIF 清除和质量门禁。
 6. 合格文件写入新的规范化对象键；事务更新 `media_asset`、记录派生关系并写后续 Outbox。原始临时对象按保留策略删除。
 7. 任何步骤失败都保留可解释状态，客户端可重新上传；不得仅因 Redis 或 SSE 丢消息而丢任务。
 
@@ -126,7 +126,7 @@ stateDiagram-v2
 
 状态规则：
 
-- `queued` 表示 PostgreSQL 已持久化任务，不代表消息已经到达 RabbitMQ。
+- `queued` 表示 PostgreSQL 已持久化任务，不代表消息已经到达 Kafka。
 - `processing` 必须带数据库租约、attempt 和 worker fencing token；过期租约由 recovery 扫描。
 - `retry_scheduled` 包含稳定错误类别和下次可尝试时间，不向客户端暴露堆栈或供应商密钥。
 - `succeeded` 只在结果对象校验通过且数据库提交成功后出现。
@@ -162,7 +162,7 @@ stateDiagram-v2
 - 更新使用乐观版本或显式状态条件，防止迟到 worker 覆盖新状态。
 - 当前开发 schema 的业务字段、状态、索引、外键和检查约束由 Repository GORM record 明确表达，并由集中 AutoMigrate 在监听前建立；进入需要保留生产数据的阶段前重新批准版本化迁移方案。
 - 对象存储只保存内容；PostgreSQL 保存用途、归属、状态、生命周期和对象版本。
-- RabbitMQ payload 不包含图片字节、长期 URL、令牌、原始日历正文、精确位置或敏感提示词。
+- Kafka payload 不包含图片字节、长期 URL、令牌、原始日历正文、精确位置或敏感提示词。
 
 ## API 与存储设计
 
@@ -207,7 +207,7 @@ stateDiagram-v2
 ### 鉴权与授权
 
 - 后续云端以 Sign in with Apple 作为主账号入口；首版先体验保持纯本地，不创建匿名云主体。首次云生成或同步前登录，但登录本身不上传本地数据；匿名云账号及合并不进入当前范围。
-- 移动端只持有短期访问令牌和可轮换刷新凭据；供应商、数据库、RabbitMQ、Redis 和对象存储密钥不下发客户端。
+- 移动端只持有短期访问令牌和可轮换刷新凭据；供应商、数据库、Kafka、Redis 和对象存储密钥不下发客户端。
 - 访问令牌必须校验 `iss`、`aud`、`exp`、`nbf`、算法和 `kid`；密钥轮换保留有界重叠期。
 - refresh token 仅保存不可逆 hash，并按设备维护可轮换 token family；检测到旧 token 重用时撤销整族会话。设备会话撤销和账号删除由 PostgreSQL 记录；Redis 可以缓存撤销版本，但缓存 miss 不能等价为授权。
 - App Attest / DeviceCheck 只用于识别自动化滥用、伪造客户端和高风险设备；它们不能充当账号身份，也不能绕过资源归属检查。
@@ -284,7 +284,7 @@ GORM Generics 用于：
 ### 原则
 
 - 一个用户命令涉及多张业务表、幂等记录、配额结算和异步事件时，全部在一个 PostgreSQL 事务中提交。
-- Outbox 与业务事实同事务写入；RabbitMQ 发布不在该事务内。
+- Outbox 与业务事实同事务写入；Kafka 发布不在该事务内。
 - worker 的状态、Inbox、结果元数据与新 Outbox 在短事务中提交；模型调用和对象存储 I/O 在事务外。
 - 所有状态转换使用期望旧状态、版本或 fencing token 条件，受影响行数不为 1 即视为并发冲突。
 - 隔离级别按用例确定；默认 `READ COMMITTED` 配合唯一约束/行锁，真正需要跨行不变量时才使用更强隔离并处理序列化重试。
@@ -302,13 +302,13 @@ BEGIN
 COMMIT
 ```
 
-提交成功即表示任务不会丢失：即使 RabbitMQ 暂时不可用，relay 仍可从 Outbox 恢复。提交失败则业务任务和事件都不存在。
+提交成功即表示任务不会丢失：即使 Kafka 暂时不可用，relay 仍可从 Outbox 恢复。提交失败则业务任务和事件都不存在。
 
 ### Outbox relay
 
 1. 短事务用 `FOR UPDATE SKIP LOCKED` 领取一批 `pending` 行，写 `lease_owner`、`lease_until` 和 attempt 后提交。
-2. 事务外按 event ID 发布持久消息，启用 publisher confirms 和 mandatory return。
-3. 收到 broker confirm 后，短事务将 Outbox 标为 `published`。
+2. 事务外按 event ID 发布持久消息，启用幂等生产与 acks=all。
+3. 收到 Kafka 写入确认后，短事务将 Outbox 标为 `published`。
 4. publish 后、标记前崩溃会重复发布；消费者必须以 message ID 幂等。
 5. 租约过期的 `publishing` 行回到可领取状态；退避、最大 attempt 和告警由数据库记录。
 6. 不永久删除最近 Outbox；按审计与恢复窗口分区/归档，清理策略经批准后执行。
@@ -316,51 +316,47 @@ COMMIT
 ### Inbox 与长任务
 
 1. 消费者收到消息后开启短事务，以 `consumer_name + message_id` upsert Inbox，并尝试用 fencing token 领取 `generation_job` 租约。
-2. 若任务已终态或同一消息已完成，提交后直接 ack；若有有效租约，不并发执行第二次。
-3. 成功持久化 Inbox 和任务租约后即可 manual ack，把恢复责任转交给 PostgreSQL；不得依赖长时间 unacked delivery 保存工作。
+2. 若任务已终态或同一消息已完成，提交后推进 offset；若有有效租约，不并发执行第二次。
+3. 成功持久化 Inbox 和任务租约后才可提交 offset，把恢复责任转交给 PostgreSQL；不得依赖长时间未提交的消费记录 保存工作。
 4. worker 在事务外调用对象存储/供应商，并定期续租；每次外部调用携带稳定 provider idempotency key。
 5. 结果对象先写确定性临时键并校验。随后短事务核对 fencing token，更新任务/资产/成本、完成 Inbox、写状态 Outbox。
 6. 数据库提交后再清理临时对象；提交失败留下的孤儿由 janitor 按无引用和 TTL 清理。
 7. worker 在供应商接受后崩溃时，recovery 依据过期租约重新投递；优先查询既有 provider job，禁止盲目创建第二个收费任务。
 
-因此端到端语义是“可能重复投递和调用，但业务效果幂等”。任何文案和监控都不得声称跨 PostgreSQL、RabbitMQ、对象存储与供应商的恰好一次。
+因此端到端语义是“可能重复投递和调用，但业务效果幂等”。任何文案和监控都不得声称跨 PostgreSQL、Kafka、对象存储与供应商的恰好一次。
 
-## 队列拓扑与投递语义
+## Kafka 拓扑与投递语义
 
-### 拓扑
+2026-09-22 用户决定使用 Kafka，替代 RabbitMQ。当前本地合成数据实现见 [17-26](../plan/17-26-Kafka与工程规范化执行计划.md)。本节区分当前实现与云端生成生产目标，历史 RabbitMQ 证据不证明 Kafka 已通过相同门禁。
 
-使用 RabbitMQ 团队维护的 `github.com/rabbitmq/amqp091-go`。生产队列为 durable quorum queue，建议三副本跨三个故障域；exchange、queue、binding 由版本化策略声明并在启动时以幂等方式核验。
+### 当前开发拓扑
 
-| Exchange / queue | routing key 示例 | 消费者 | 说明 |
-| --- | --- | --- | --- |
-| `ootd.jobs.v1` topic exchange | `media.inspect.v1` | `ootd.media.inspect.v1.q` | 解码、清理 EXIF、质量与安全检查 |
-| `ootd.jobs.v1` | `wardrobe.analyze.v1` | `ootd.wardrobe.analyze.v1.q` | 衣物抠图、分类、颜色和候选属性分析；结果必须保留用户确认状态 |
-| `ootd.jobs.v1` | `avatar.generate.v1` | `ootd.avatar.generate.v1.q` | 数字形象生成 |
-| `ootd.jobs.v1` | `tryon.generate.v1` | `ootd.tryon.generate.v1.q` | 静态试穿 |
-| `ootd.jobs.v1` | `motion.render.v1` | `ootd.motion.render.v1.q` | 动态预览，低于静态任务优先级 |
-| `ootd.jobs.v1` | `asset.delete.v1` | `ootd.asset.delete.v1.q` | 隐私删除，高优先级独立容量 |
-| `ootd.jobs.v1` | `account.delete.v1` | `ootd.account.delete.v1.q` | 账号删除编排，跟踪数据库、缓存、对象、供应商和派生资产的分项结果 |
-| 每个主队列的 retry exchange/queue | 固定 30 秒、5 分钟、30 分钟层级 | 原消费者 | TTL 到期后 dead-letter 回主 exchange；不使用热 requeue |
-| `ootd.dlx.v1` + 每类 DLQ | 原 routing key | 仅受控回放工具 | 保存不可自动恢复或超过次数的消息 |
+使用 Apache Kafka 4.3.1 KRaft、`github.com/twmb/franz-go` v1.22.0。配置为 `KAFKA_BROKERS` 与 `KAFKA_TOPIC_PREFIX`；默认 prefix 为 `then`。仅声明当前三个 topic，不提前建立 AI/视频主题：
 
-消息 envelope 至少包含：
+| Topic | event_type | 消费组 |
+| --- | --- | --- |
+| `<prefix>.media-check` | `media.uploaded` | `<topic>.worker` |
+| `<prefix>.media-delete` | `media.deletion_requested` | `<topic>.worker` |
+| `<prefix>.community-notification` | `community.notification_requested` | `<topic>.worker` |
 
-- `message_id`（等于 Outbox event ID）、`message_type`、`schema_version`。
-- `aggregate_id`、`aggregate_version`、`job_id`。
-- `occurred_at`、`correlation_id`、`causation_id`、`traceparent`。
-- 最小 payload；只引用数据库资源 ID，不携带对象签名 URL、图片、token 或敏感正文。
+开发 topic 为单分区、单副本、7 天 delete retention。key 为 aggregate ID，value 仅含 `id`（Outbox event ID）、`event_type`、`aggregate_id`，时间使用 Kafka record timestamp。不得携带图片、私有正文、会话或签名 URL。测试创建独立 prefix 与消费组，只清理自己创建的资源。
 
-### 保证与限制
+### 当前投递保证
 
-- producer 使用 publisher confirms；只有 confirm 后才标记 Outbox published。
-- publish 使用 mandatory，未路由消息视为失败并告警。
-- consumer 使用 manual ack；ack 时点是工作已经可靠转交 PostgreSQL 或结果已提交。
-- 消息可能重复、延迟和乱序；聚合版本、状态条件、Inbox 和 provider idempotency key 共同去重。
-- 不依赖全局 FIFO。确需同一聚合顺序时使用聚合版本拒绝迟到写入，不用单消费者限制全系统吞吐。
-- quorum queue 配置 delivery limit 和 DLX；达到上限必须进 DLQ，不能静默丢弃。
-- 需要无损 dead-letter 时显式配置 `dead-letter-strategy=at-least-once` 与 `overflow=reject-publish`，并监控目标 DLQ 可用性和源队列容量。
-- retry 使用有界退避和抖动；业务校验、权限撤回、素材删除等永久错误不重试。
-- `amqp091-go` 连接与 channel 的重连、拓扑重声明、confirm 等待和优雅退出由平台封装负责；断线后不复用旧 channel 状态。
+- producer 使用幂等生产与 `acks=all`，同步确认后才标记 Outbox published；单次请求 10 秒、总交付预算 30 秒，给元数据发现和重试留出余量；确认后、标记前退出仍可能重复，业务由 PostgreSQL Inbox/条件更新去重。
+- 自动创建 topic 关闭；应用显式声明三个开发 topic，失败即停止启动。现有 topic 不会被自动重配或删除。
+- consumer 关闭自动提交，每次 poll 最多一条，处理与提交期间阻止 rebalance；完成后同步提交 offset，再允许 rebalance。
+- 每次处理最长 30 秒，最多三次，间隔 250/500ms；失败耗尽或消息非法时退出且保留 offset。重新启动后继续，不使用无限热循环，也不悄悄推进失败位置。
+- 取消后不提交未完成记录；所有 worker 协程退出后才关闭客户端与数据库。提交失败允许重新执行，依赖业务幂等保证效果。
+- 同一 topic/partition 内有顺序，不承诺不同 topic 的全局顺序；删除和上传竞争继续由业务状态与 tombstone 处理。
+
+### 云端生成生产准入
+
+本地单机 acks=all 仅证明当前 ISR 确认，不证明生产容灾。生产需独立批准多 broker/故障域、副本因子至少 3、min.insync.replicas 至少 2、TLS/SASL/ACL、容量与 retention、offset/lag 告警及备份恢复。
+
+长时生成不能长时间占据 consumer poll；必须先将工作可靠交给具备租约/恢复能力的 PostgreSQL job，再提交 offset，后续恢复由 job 承担。当前媒体消费者直接处理后提交，不宣称已实现通用 generation job 租约。
+
+延迟重试以数据库 `next_attempt_at`/调度领取实现，不能照搬 RabbitMQ TTL/DLX。DLQ/quarantine topic 与人工回放只在对应生产切片实现；写隔离记录必须确认成功后才能推进原 offset。当前实现保留原记录并停止消费者，不宣称已有自动 DLQ。超过 Kafka retention 或重置 group 前必须从 PG 对账恢复，禁止依赖队列作为唯一业务事实。
 
 ## Redis 边界
 
@@ -406,7 +402,7 @@ URL、对象 key 与凭据始终留在原生媒体层和后端；Three.js 仅获
 - lifecycle 只是兜底，业务删除由 deletion worker 主动执行并验证；供应商副本也纳入删除证明。
 - CDN 如用于输出，必须使用私有源、短时授权和禁止缓存敏感原图；首版可不引入 CDN。
 
-## 失败、恢复、回压与 DLQ
+## 云端生成目标：失败、恢复、回压与 DLQ
 
 ### 失败分类
 
@@ -421,7 +417,7 @@ URL、对象 key 与凭据始终留在原生媒体层和后端；Three.js 仅获
 ### 回压
 
 - API 同时检查用户配额、全局 cost budget、目标队列 ready 数和 oldest-message age；超过硬阈值不再接纳付费任务。
-- worker 对每个供应商配置独立并发 semaphore、速率和超时；RabbitMQ prefetch 与单任务内存/耗时匹配，不追求一次拉满。
+- worker 对每个供应商配置独立并发 semaphore、速率和超时；Kafka poll 批量与分区并发 与单任务内存/耗时匹配，不追求一次拉满。
 - 静态试穿、动态预览和删除使用不同队列与部署；删除不被低优先级动态渲染饿死。
 - 对象存储和数据库设置连接/并发上限；总连接预算小于 PostgreSQL 可用连接并保留运维余量。
 - 队列配置 max-length/max-length-bytes 与 `reject-publish`；Outbox 保留未发布事实，broker 满时 relay 退避而非丢消息。
@@ -451,7 +447,7 @@ worker 的 recovery 角色定期扫描：
 
 ### 统一关联
 
-HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider job 和对象处理使用：
+HTTP request、幂等记录、Outbox、Kafka message、Inbox、job、provider job 和对象处理使用：
 
 - `request_id` / `correlation_id`：一次用户意图。
 - `causation_id`：导致当前事件的前一事件。
@@ -464,7 +460,7 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 - HTTP：按 operation/status 的请求率、错误率、p50/p95/p99、限流/幂等命中。
 - PostgreSQL：连接池等待、事务耗时、慢查询、锁等待、deadlock、当前 schema 初始化耗时与失败；只有版本化迁移方案获批后才增加 migration version/drift 指标。
 - Outbox/Inbox：pending、oldest age、publish attempts、duplicate、expired leases。
-- RabbitMQ：ready、unacked、redelivery、confirm latency、consumer utilization、DLQ 和 rejected publish。
+- Kafka：consumer lag、未提交 offset、重放次数、produce/commit latency、ISR、离线分区与隔离记录。
 - worker：按 job type/provider 的排队、处理、成功、重试、取消、成本和租约过期。
 - Redis：命中率、延迟、eviction、连接、限流降级和 Pub/Sub 断线。
 - 对象存储：上传/下载失败、孤儿、删除 age、生命周期积压和 egress。
@@ -517,7 +513,7 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 | Repository 集成 | 真实 PostgreSQL 的约束、锁、隔离、`SKIP LOCKED`、租约、乐观并发、游标和 raw SQL 计划 |
 | Migration | 空库全量、从发布版本逐步升级、生产快照副本、checksum、drift、expand/contract 和失败恢复 |
 | API 契约 | OpenAPI 3.1.2 校验、operationId、状态码、错误体、iOS Client 重新生成编译、破坏性变更 |
-| 消息集成 | 真实 RabbitMQ quorum queue、confirm/return、重复、乱序、断线、redelivery、retry TTL、DLQ |
+| 消息集成 | 真实 Kafka acks/offset、重复、跨 topic 乱序、断线与 rebalance；生产另测多副本、延迟重试与 DLQ |
 | Redis 集成 | 缓存失效、限流原子性、故障降级、Pub/Sub 丢失和 SSE 重连补查 |
 | 对象存储 | 签名范围、超大/伪 MIME/文件炸弹、版本、加密、隔离、生命周期、级联删除 |
 | 供应商契约 | 超时、429/5xx、回调重放、幂等 key、迟到结果、取消、删除和 schema 漂移 |
@@ -525,7 +521,7 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 | 性能与韧性 | 峰值接纳、队列积压、数据库连接耗尽、broker/Redis/provider 故障、worker 滚动升级 |
 | 安全隐私 | 越权、IDOR、token 重放、签名 URL 滥用、SQL 注入、日志泄露、删除证明 |
 
-不使用 SQLite 代替 PostgreSQL，不用内存 fake 作为 RabbitMQ quorum 行为的唯一证据，不使用真实用户照片、日历、账单或位置作为测试夹具。
+不使用 SQLite 代替 PostgreSQL，不用内存 fake 作为 Kafka 分区与 offset 行为的唯一证据，不使用真实用户照片、日历、账单或位置作为测试夹具。
 
 ### 云能力架构验收清单
 
@@ -537,7 +533,7 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 - [ ] 真实数据上线前批准版本化迁移、执行身份、前向恢复与演练；当前开发 AutoMigrate 不能直接作为生产升级方案。
 - [ ] GORM CRUD 和 raw SQL 边界有代码所有者；热查询达到计划与延迟预算。
 - [ ] 业务写入与 Outbox 原子；模拟每个崩溃窗口均无丢任务、无重复业务效果。
-- [ ] RabbitMQ confirm、mandatory return、manual ack、retry、delivery limit 和 DLQ 演练通过。
+- [ ] Kafka 发送确认、offset、retry、rebalance 与生产 DLQ 演练通过。
 - [ ] Redis 完全不可用时，权威状态仍可查询，付费生成不会绕过最终配额。
 - [ ] 同一二进制/镜像的 `APP_ROLE=api|worker|all` 行为，以及 API/worker 独立扩缩、滚动升级和优雅退出演练通过。
 - [ ] 对象从上传、供应商处理到派生/备份删除的全链路证据可验证。
@@ -548,10 +544,10 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 ### 最低故障注入场景
 
 1. PostgreSQL 提交前后分别杀死 API。
-2. Outbox publish 前、confirm 后、标记 published 前分别杀死 relay。
-3. worker ack 前后、供应商接受后、本地结果提交前分别杀死 worker。
+2. Outbox publish 前、发送确认后、标记 published 前分别杀死 relay。
+3. worker offset 提交前后、供应商接受后、本地结果提交前分别杀死 worker。
 4. 重复投递同一 message 100 次，结果、扣费和对象引用只能生效一次。
-5. RabbitMQ 拒绝 publish、失去少数节点、DLQ 不可路由并恢复。
+5. Kafka 写入被拒、ISR 不足、消费组 rebalance、隔离 topic 不可写并恢复。
 6. Redis 全部不可用，验证缓存、SSE、限流和付费配额各自的降级策略。
 7. 对象上传一半、伪造 MIME、hash 不符、结果对象成功但数据库提交失败。
 8. 用户处理过程中撤回同意、取消任务或删除账号，迟到回调不得恢复内容。
@@ -563,7 +559,7 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 以下参数不改变架构已批准状态，但必须在相关云能力 POC 或真实流量开启前关闭：
 
 1. 若选择启用新 GORM CLI，固定版本、生成稳定性、维护策略和升级窗口；不启用时直接使用 GORM/raw SQL，不阻塞实现。
-3. RabbitMQ 托管服务版本、三故障域 quorum、策略声明和灾备恢复能力。
+3. Kafka 托管服务版本、三故障域副本与 min ISR、策略声明和灾备恢复能力。
 4. Redis 限流的精确算法、集群时钟/热点 key、故障时 fail-open/fail-closed 清单。
 5. 对象存储和 AI 供应商的数据地域、跨境、保留、训练、删除和分包商条款。
 6. 各任务 SLO、最大运行时、重试次数、成本 reservation 与退款规则。
@@ -579,9 +575,9 @@ HTTP request、幂等记录、Outbox、RabbitMQ message、Inbox、job、provider
 - [GORM Generics 官方说明](https://gorm.io/docs/the_generics_way.html)
 - [GORM CLI 与旧 Gen 的官方比较](https://gorm.io/cli/cli_vs_gen.html)
 - [GORM Security](https://gorm.io/docs/security.html)
-- [RabbitMQ Quorum Queues](https://www.rabbitmq.com/docs/quorum-queues)
-- [RabbitMQ Publisher Confirms](https://www.rabbitmq.com/docs/confirms)
-- [RabbitMQ 团队维护的 amqp091-go](https://github.com/rabbitmq/amqp091-go)
+- [Kafka 官方文档](https://kafka.apache.org/documentation/)
+- [Kafka Producer 配置](https://kafka.apache.org/43/configuration/producer-configs/)
+- [franz-go](https://github.com/twmb/franz-go)
 - [Redis Pub/Sub 投递语义](https://redis.io/docs/latest/develop/pubsub/)
 - [PostgreSQL SELECT / FOR UPDATE / SKIP LOCKED](https://www.postgresql.org/docs/current/sql-select.html)
 - [OpenAPI Specification 3.1.2](https://spec.openapis.org/oas/v3.1.2.html)

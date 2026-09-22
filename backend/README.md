@@ -1,6 +1,6 @@
 # OOTD Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。`cmd/then-server/main.go` 通过 `internal/bootstrap` 组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、RabbitMQ 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着、私人穿搭日记与日历、社区帖子审核治理，以及私有图片上传/检查/删除 API 已经实现。
+这是“于是”当前的 Go/Gin 模块化单体。`main.go` 通过 `internal/bootstrap` 组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、Kafka 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着、私人穿搭日记与日历、社区帖子审核治理，以及私有图片上传/检查/删除 API 已经实现。
 
 ## 本地运行
 
@@ -12,7 +12,7 @@ brew services start redis
 cd backend
 DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' \
 REDIS_URL='redis://127.0.0.1:6379/0' \
-go run ./cmd/then-server
+go run .
 ```
 
 进程连接数据库后会在监听端口前执行 GORM `AutoMigrate`。当前处于无历史数据的开发阶段，数据库结构由 [`internal/adapter/postgres`](internal/adapter/postgres) 的 GORM record 统一声明；项目不维护 Atlas 配置或 SQL migration。需要破坏性调整时更新 record 并重建本地开发库。
@@ -23,7 +23,7 @@ go run ./cmd/then-server
 API_DOCS_ENABLED=true \
 DATABASE_URL='postgres://127.0.0.1/postgres?sslmode=disable' \
 REDIS_URL='redis://127.0.0.1:6379/0' \
-go run ./cmd/then-server
+go run .
 ```
 
 默认入口：
@@ -91,11 +91,11 @@ OpenAPI 0.15.0 共 70 个 operation，在既有账号、衣橱、计划、实际
 
 ## 合成本人照片开发闭环
 
-运行时 OpenAPI 包含 8 个私有媒体 operation：同意创建/查询/撤回、上传意图、finalize、媒体状态、删除和删除状态。开发入口必须显式设置 `MEDIA_DEVELOPMENT_ENABLED=true`，并只接受回环 HTTP、MinIO 与 RabbitMQ；因此真实用户照片和生产流量无法通过这组配置误开启。
+运行时 OpenAPI 包含 8 个私有媒体 operation：同意创建/查询/撤回、上传意图、finalize、媒体状态、删除和删除状态。开发入口必须显式设置 `MEDIA_DEVELOPMENT_ENABLED=true`，并只接受回环 HTTP、MinIO 与 Kafka；因此真实用户照片和生产流量无法通过这组配置误开启。
 
-MinIO 使用 `raw-private` 与 `derived-private` 私有版本桶；RabbitMQ worker 从 PostgreSQL Outbox 取得事件，以 Inbox 和条件状态更新保证重复投递不产生第二份业务效果。输入只接受 12 MiB/24 MP 以内的单帧 JPEG，worker 固定对象 version ID、复算 SHA-256、解码后重编码并记录派生关系。删除先在事务内 tombstone，再删除原始对象全部版本和派生对象。
+MinIO 使用 `raw-private` 与 `derived-private` 私有版本桶；Kafka worker 从 PostgreSQL Outbox 取得事件，以 Inbox 和条件状态更新保证重复投递不产生第二份业务效果。输入只接受 12 MiB/24 MP 以内的单帧 JPEG，worker 固定对象 version ID、复算 SHA-256、解码后重编码并记录派生关系。删除先在事务内 tombstone，再删除原始对象全部版本和派生对象。
 
-本机合成数据运行示例需要 `.env.example` 中的 PostgreSQL、Redis、MinIO 和 RabbitMQ 参数，并使用 `APP_ROLE=all`。`api` 与 `worker` 可由同一二进制分别运行。
+本机合成数据运行示例需要 `.env.example` 中的 PostgreSQL、Redis、MinIO 和 Kafka 参数，并使用 `APP_ROLE=all`。`api` 与 `worker` 可由同一二进制分别运行。
 
 ## 私人穿搭日记与月日历
 
@@ -115,12 +115,12 @@ MinIO 使用 `raw-private` 与 `derived-private` 私有版本桶；RabbitMQ work
 
 ## 本机中间件验证
 
-Redis 只保存认证限流的短期计数；PostgreSQL 是账户、同意、媒体状态、Outbox 和 Inbox 的事实源。RabbitMQ 与 MinIO 已进入获批的合成照片开发闭环。默认测试连接本机 loopback；需要时用 `THEN_TEST_*` 环境变量覆盖本机端口和账号。
+Redis 只保存认证限流的短期计数；PostgreSQL 是账户、同意、媒体状态、Outbox 和 Inbox 的事实源。Kafka 与 MinIO 已进入获批的合成照片开发闭环。默认测试连接本机 loopback；需要时用 `THEN_TEST_*` 环境变量覆盖本机端口和账号。
 
 ```sh
 brew services start minio
 brew services start redis
-brew services start rabbitmq
+brew services start kafka
 go test -race -tags=services ./tests/... -count=1 -v
 ```
 
@@ -130,10 +130,8 @@ go test -race -tags=services ./tests/... -count=1 -v
 
 ```text
 backend/
-├── cmd/
-│   └── main.go
+├── main.go
 ├── internal/
-│   ├── domain/
 │   ├── application/
 │   ├── adapter/
 │   │   ├── httpapi/
@@ -143,7 +141,7 @@ backend/
 │   ├── bootstrap/
 │   └── platform/
 ├── tests/
-│   ├── services/       # 本机 PostgreSQL/Redis/MinIO/RabbitMQ
+│   ├── services/       # 本机 PostgreSQL/Redis/MinIO/Kafka
 │   ├── integration/    # 实际二进制与 Testcontainers
 │   ├── container/      # 已构建 OCI 镜像
 │   └── internal/       # 测试专用共享夹具
@@ -164,4 +162,14 @@ go test -race -tags=services ./tests/... -count=1 -v
 go test -race -tags=integration ./tests/... -count=1 -v
 ```
 
-`services` 使用已经启动的本机 PostgreSQL/MinIO/Redis/RabbitMQ；`integration` 使用 Testcontainers 创建隔离 PostgreSQL 18 与 Redis，并验证实际二进制从空库迁移、启动、认证限流、两项依赖断连恢复和 SIGTERM 退出。镜像验证另见 [17-07](../docs/plan/17-07-后端容器构建与运行验证执行计划.md)。
+`services` 使用已经启动的本机 PostgreSQL/MinIO/Redis/Kafka；`integration` 使用 Testcontainers 创建隔离 PostgreSQL 18、Redis、MinIO 与 Kafka，验证实际二进制从空库迁移、启动、认证限流、依赖断连恢复、合成照片上传/检查/删除和 SIGTERM 退出。镜像验证另见 [17-07](../docs/plan/17-07-后端容器构建与运行验证执行计划.md)。
+
+## Kafka 本地消息合同
+
+配置 `KAFKA_BROKERS=127.0.0.1:9092`、`KAFKA_TOPIC_PREFIX=then`；隔离 Compose 使用 `127.0.0.1:18992`。`RABBITMQ_URL` 已退役。broker 与媒体开关继续仅用于 loopback 合成数据开发，系统中其他项目的 RabbitMQ 不受影响。
+
+franz-go 使用幂等生产和 `acks=all`，Outbox 在确认后标记 published。单次 broker produce 请求为 10 秒，记录交付预算为 30 秒，以容纳元数据发现与重试；超时退出 relay，未确认 Outbox 留待重启。三个 topic 为 `<prefix>.media-check`、`<prefix>.media-delete`、`<prefix>.community-notification`，对应消费组为 `<topic>.worker`，key 为 aggregate ID。仅创建这三个开发 topic（单分区、单副本、7 天保留），不依赖自动创建任意 topic。
+
+消费者关闭自动提交，一次处理一条，业务成功后同步提交 offset；失败最多尝试三次，每次最长 30 秒，间隔 250/500ms，耗尽后退出并保留 offset。非法记录停止消费并保留位置供检查，不静默跳过。消费者处理/提交期间阻止 rebalance，随后释放；worker 取消后等待全部协程退出，再关闭资源。
+
+services 使用 `THEN_TEST_KAFKA_BROKERS` 和每次运行独立 prefix，清理只作用于该次 topic/消费组。端到端业务幂等由 PostgreSQL Inbox/状态约束承担；单机 acks=all 不证明生产高可用。迁移、回退与生产门禁见 [17-26](../docs/plan/17-26-Kafka与工程规范化执行计划.md)。

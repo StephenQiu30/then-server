@@ -147,7 +147,7 @@ flowchart LR
     Stage --> Video[可选 Create 360°]
 ```
 
-用户浏览目录不依赖 Redis、RabbitMQ 或 GPU。PostgreSQL 保存发布元数据，MinIO 保存媒体字节；App 用 URLSession 下载并核验字节数与 SHA-256，再原子切换本地 revision。Redis 只在出现明确的跨实例缓存/限流需求时启用；RabbitMQ 只承接后续真实异步生成任务。
+用户浏览目录不依赖 Redis、Kafka 或 GPU。PostgreSQL 保存发布元数据，MinIO 保存媒体字节；App 用 URLSession 下载并核验字节数与 SHA-256，再原子切换本地 revision。Redis 只在出现明确的跨实例缓存/限流需求时启用；Kafka 只承接后续真实异步生成任务。
 
 ### iOS 呈现
 

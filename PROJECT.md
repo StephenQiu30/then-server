@@ -2,7 +2,7 @@
 
 更新：2026-09-22。适用范围：`then-server/frontend`、`then-server/backend` 及两者共享的产品与接口约束。
 
-本文固定产品边界、Web 设计实现规则和前后端目录职责，作为后续开发的总入口。规则自本次文档确认生效；目标目录、组件和验收要求不代表代码已经实现。本次仅制定规范，不安装组件、不迁移页面、不部署服务。
+本文固定产品边界、Web 设计实现规则和前后端目录职责，作为后续开发的总入口。规则自本次文档确认生效；目标目录、组件和验收要求不代表代码已经实现。规范确认与功能实施分别记录；当前 Kafka 和入口简化的实施范围见 17-26，Web 组件接入仍按后续切片推进。
 
 ## 1. 文档职责与事实来源
 
@@ -48,7 +48,7 @@ Then（于是）是穿搭决策与记录产品。以下是既有需求的约束�
 | HTTP 客户端 | `@umijs/openapi` + Axios | 从运行中 Go API 的 `/openapi.json` 生成 `src/api/` |
 | Web 质量 | ESLint + Prettier + TypeScript + Node.js Test Runner | 沿用 npm 与 `package-lock.json`；UI 需浏览器交互验收 |
 | 后端 | Go + Gin/Huma + GORM + PostgreSQL | 单 module、模块化单体、一个二进制与 OCI 镜像 |
-| 基础设施 | Redis、RabbitMQ、MinIO | 各自只承担已实现用途，按切片启用；PostgreSQL 保存业务事实 |
+| 基础设施 | Redis、Kafka、MinIO | 各自只承担已实现用途，按切片启用；PostgreSQL 保存业务事实 |
 
 Vercel 插件的 Next.js/React 指南用于框架边界与性能规范。采用这些指南不改变已有 Go 服务部署方式，也不要求现在迁移到 Vercel 托管。
 
@@ -168,7 +168,7 @@ frontend/
 
 ```text
 backend/
-├── cmd/then-server/main.go         # 极薄进程入口
+├── main.go                         # 极薄进程入口
 ├── go.mod / go.sum                # 唯一 Go module
 ├── internal/
 │   ├── bootstrap/                 # 配置、依赖组装、启动/迁移/关闭
@@ -186,7 +186,7 @@ backend/
 │   │   ├── httpapi/                # Gin/Huma、contract/routes/handlers、Swagger
 │   │   ├── postgres/               # GORM records、事务、查询、AutoMigrate
 │   │   ├── objectstore/            # MinIO 适配
-│   │   └── messagequeue/           # RabbitMQ 适配
+│   │   └── messagequeue/           # Kafka 适配
 │   └── platform/                  # config/database/httpserver/ratelimit 生命周期
 ├── tests/
 │   ├── services/                  # 本机真实依赖
@@ -198,16 +198,16 @@ backend/
 └── .env.example
 ```
 
-依赖固定为 `cmd → bootstrap → application/adapter/platform`，`adapter → application`；application 不依赖 Gin、Huma、GORM、SDK 或具体 adapter。业务间调用只采用明确需要且架构测试允许的方向。接口定义在消费方，不为每个 struct 建接口。
+依赖固定为 `main.go → bootstrap → application/adapter/platform`，`adapter → application`；application 不依赖 Gin、Huma、GORM、SDK 或具体 adapter。业务间调用只采用明确需要且架构测试允许的方向。接口定义在消费方，不为每个 struct 建接口。
 
 同一能力的模型、错误、规则和用例共属一个 application package，不重新建立全局 domain/model/service 大包。HTTP 的 contract、route、handler 按文件职责拆分；PostgreSQL 按真实事务和能力拆文件，仅在形成独立依赖边界时建子 package，不套用全局 controller/service/dao 目录。
 
 - HTTP 层负责认证接入、解析、合同校验和状态映射，不写 SQL；application 编排用例与事务要求；postgres 承担实际事务、约束与记录映射。
 - I/O 传递 `context.Context` 并有超时/取消；资源由创建者有界关闭。错误使用 `errors.Is/As`，日志记录 request_id 和安全业务标识，不输出凭据、Cookie、原图和连接密码。
-- 一个 `cmd/then-server`，用 `APP_ROLE=api|worker|all` 选择已实现角色，不增加空命令、微服务、通用 BaseRepository 或依赖注入框架。
+- 唯一 `backend/main.go`，用 `APP_ROLE=api|worker|all` 选择已实现角色，不增加空命令、微服务、通用 BaseRepository 或依赖注入框架。
 - PostgreSQL 保存持久业务事实，Redis 维持已批准短期用途。跨表变更有明确事务，唯一/外键/检查约束由真实 PostgreSQL 验证。
 - 开发 schema 由 postgres record 和集中 AutoMigrate 维护，监听前失败即退出；不能因为当前开发阶段允许重建库就自动删除用户数据。进入保留数据的部署阶段前另行固定版本化迁移方案。
-- 异步工作遵循已实现 Outbox、持久消息、confirm/ack、幂等、重试与清理机制。删除先撤销访问，保留对象清理追踪直到完成，再最终删除关联记录；不要提前级联删除追踪证据。
+- 异步工作遵循已实现 Outbox、持久消息、发送确认/offset 提交、幂等、重试与清理机制。删除先撤销访问，保留对象清理追踪直到完成，再最终删除关联记录；不要提前级联删除追踪证据。
 
 ## 7. 前后端共同接口合同
 
@@ -263,3 +263,5 @@ API 需覆盖契约、鉴权/越权、错误响应、幂等/冲突与取消；�
 - 已安装 Next.js 的 `frontend/node_modules/next/dist/docs/`：Project Structure、Server and Client Components；[Next.js 官方文档](https://nextjs.org/docs/app)。
 - 用户指定的 shadcn 技能；[shadcn Next.js](https://ui.shadcn.com/docs/installation/next)、[主题](https://ui.shadcn.com/docs/theming)、[Radix Button](https://ui.shadcn.com/docs/components/radix/button)、[Radix Dialog](https://ui.shadcn.com/docs/components/radix/dialog)、[Radix Field](https://ui.shadcn.com/docs/components/radix/field)。
 - [Radix Composition](https://www.radix-ui.com/primitives/docs/guides/composition) 与 [Accessibility](https://www.radix-ui.com/primitives/docs/overview/accessibility)。
+
+2026-09-22 后续用户变更：Kafka 替换 RabbitMQ，入口直接放在 `backend/main.go`，对应执行与验证见 [17-26](docs/plan/17-26-Kafka与工程规范化执行计划.md)。Kafka 在本地开发中使用三个独立 topic、每 topic 一个稳定消费组、acks=all 和手动 offset 提交；业务提交后才推进消费位置，失败有界重试后停止并保留位置，重启可继续。生产集群与真实数据迁移另按该片门禁处理。

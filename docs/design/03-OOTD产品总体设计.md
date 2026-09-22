@@ -64,7 +64,7 @@ flowchart TD
     Client --> API[独立 Go REST API]
     API --> DB[PostgreSQL / Outbox]
     DB --> Relay[Outbox Relay]
-    Relay --> MQ[RabbitMQ]
+    Relay --> MQ[Kafka]
     MQ --> Worker[Go worker / Provider adapter]
     VM --> Render[多视角媒体 / Three.js Service]
     Render --> Canvas[SwiftUI 图片舞台 / RealityView]

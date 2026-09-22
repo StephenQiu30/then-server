@@ -1,6 +1,6 @@
 name: then-services
 
 # Optional isolated dependency environment. Normal development uses the
-# PostgreSQL, MinIO, Redis, and RabbitMQ services already installed on macOS.
+# PostgreSQL, MinIO, Redis, and Kafka services already installed on macOS.
 include:
   - docker-compose-env.yml

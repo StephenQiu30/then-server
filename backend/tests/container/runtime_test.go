@@ -22,7 +22,7 @@ import (
 )
 
 func TestContainerRuntime(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	image := os.Getenv("THEN_BACKEND_TEST_IMAGE")
 	if image == "" {
@@ -99,19 +99,11 @@ func TestContainerRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = testcontainer.Create(t, ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:      "rabbitmq:4.3.5-management@sha256:57bddb6fbc3498b5d8b5a14dc6f4506073ebcf94c66ba2a7678c335faa8dd631",
-			Env:        map[string]string{"RABBITMQ_DEFAULT_USER": "then_test", "RABBITMQ_DEFAULT_PASS": "then_test", "RABBITMQ_DEFAULT_VHOST": "then_test"},
-			WaitingFor: wait.ForLog("Server startup complete").WithStartupTimeout(time.Minute),
-			HostConfigModifier: func(h *dockercontainer.HostConfig) {
-				h.NetworkMode = dockercontainer.NetworkMode("container:" + db.GetContainerID())
-			},
-		}, Started: true,
-	})
+	_, _, err = testcontainer.Kafka(t, ctx, db.GetContainerID())
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	host, err := db.Host(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +177,7 @@ func TestContainerRuntime(t *testing.T) {
 			environment := map[string]string{
 				"APP_ROLE": role, "HTTP_ADDR": "127.0.0.1:8080", "DATABASE_URL": dsn.String(), "REDIS_URL": "redis://127.0.0.1:6379/0",
 				"MEDIA_DEVELOPMENT_ENABLED": "true", "MINIO_ENDPOINT": "127.0.0.1:9000", "MINIO_ACCESS_KEY": "then_test", "MINIO_SECRET_KEY": minioPassword,
-				"MINIO_SECURE": "false", "RABBITMQ_URL": "amqp://then_test:then_test@127.0.0.1:5672/then_test", "SESSION_COOKIE_SECURE": "false",
+				"MINIO_SECURE": "false", "KAFKA_BROKERS": "127.0.0.1:9092", "SESSION_COOKIE_SECURE": "false",
 			}
 			marker := "worker_started"
 			if role == "all" {

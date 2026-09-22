@@ -117,7 +117,7 @@ func TestLocalMediaRolesRequireExplicitLocalConfiguration(t *testing.T) {
 		"MINIO_ENDPOINT":            "127.0.0.1:9000",
 		"MINIO_ACCESS_KEY":          "fixture",
 		"MINIO_SECRET_KEY":          "synthetic-secret",
-		"RABBITMQ_URL":              "amqp://fixture:synthetic-secret@127.0.0.1:5672/fixture",
+		"KAFKA_BROKERS":             "127.0.0.1:9092",
 	}
 	for _, role := range []string{"api", "worker", "all"} {
 		t.Run(role, func(t *testing.T) {
@@ -132,7 +132,7 @@ func TestLocalMediaRolesRequireExplicitLocalConfiguration(t *testing.T) {
 			}
 		})
 	}
-	for name, value := range map[string]string{"HTTP_ADDR": "0.0.0.0:8080", "MINIO_ENDPOINT": "192.0.2.1:9000", "RABBITMQ_URL": "amqp://fixture:synthetic-secret@192.0.2.1:5672/fixture"} {
+	for name, value := range map[string]string{"HTTP_ADDR": "0.0.0.0:8080", "MINIO_ENDPOINT": "192.0.2.1:9000", "KAFKA_BROKERS": "192.0.2.1:9092"} {
 		t.Run("reject "+name, func(t *testing.T) {
 			environment := make(map[string]string, len(base)+1)
 			for key, current := range base {
@@ -142,6 +142,33 @@ func TestLocalMediaRolesRequireExplicitLocalConfiguration(t *testing.T) {
 			_, err := Load(func(key string) (string, bool) { current, ok := environment[key]; return current, ok })
 			if err == nil || strings.Contains(err.Error(), "synthetic-secret") {
 				t.Fatal("remote or secret-bearing local media configuration was not rejected safely")
+			}
+		})
+	}
+}
+
+func TestKafkaConfigurationBoundaries(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		brokers []string
+		prefix  string
+		valid   bool
+	}{
+		{"local endpoints", []string{"127.0.0.1:9092", "[::1]:9092"}, "then-test", true},
+		{"empty brokers", nil, "then", false},
+		{"mixed remote", []string{"127.0.0.1:9092", "example.com:9092"}, "then", false},
+		{"invalid port", []string{"127.0.0.1:65536"}, "then", false},
+		{"URL not endpoint", []string{"kafka://synthetic-secret@127.0.0.1:9092"}, "then", false},
+		{"empty namespace", []string{"127.0.0.1:9092"}, "", false},
+		{"invalid namespace", []string{"127.0.0.1:9092"}, "then/other", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateKafka(test.brokers, test.prefix)
+			if (err == nil) != test.valid {
+				t.Fatalf("valid=%v error=%v", test.valid, err)
+			}
+			if err != nil && strings.Contains(err.Error(), "synthetic-secret") {
+				t.Fatal("configuration error exposes raw input")
 			}
 		})
 	}
