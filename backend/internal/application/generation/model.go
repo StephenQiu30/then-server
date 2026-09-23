@@ -21,6 +21,7 @@ var (
 	ErrInvalidGenerationInput   = errors.New("invalid generation input")
 	ErrInvalidGenerationState   = errors.New("invalid generation state")
 	ErrGenerationNotCancellable = errors.New("generation job is not cancellable")
+	ErrExternalTaskConflict     = errors.New("external generation task conflict")
 )
 
 var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -61,7 +62,7 @@ func (s Status) CanTransitionTo(next Status) bool {
 	case StatusRunning:
 		return next == StatusValidating || next == StatusFailed || next == StatusCanceled || next == StatusExpired
 	case StatusValidating:
-		return next == StatusSucceeded || next == StatusFailed || next == StatusExpired
+		return next == StatusSucceeded || next == StatusFailed || next == StatusCanceled || next == StatusExpired
 	default:
 		return false
 	}
@@ -216,6 +217,49 @@ func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 	return nil
 }
 
+// RecordExternalTaskID attaches the provider's task identity without changing
+// the user-visible state. A late acceptance is still recorded after a local
+// cancellation or expiry so cleanup can find the provider task; a different
+// provider identity is never allowed to overwrite the first one.
+func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
+	if t == nil || !validToken(externalID, 256) || at.IsZero() {
+		return ErrInvalidGenerationState
+	}
+	if t.ExternalTaskID != "" {
+		if t.ExternalTaskID != externalID {
+			return ErrExternalTaskConflict
+		}
+		return nil
+	}
+	at = at.UTC()
+	t.ExternalTaskID = externalID
+	t.StatusRevision++
+	// The provider may have accepted the request before a response was
+	// delivered. Keep the local clock monotonic while retaining that late
+	// identity for cleanup.
+	if t.UpdatedAt.IsZero() || at.After(t.UpdatedAt) {
+		t.UpdatedAt = at
+	}
+	return nil
+}
+
+// ApplyProviderState reconciles an observation that has already been mapped
+// by an adapter to the domain state machine. Repeated observations are
+// idempotent; stale or cross-task observations cannot move a task backwards or
+// attach a result to another task.
+func (t *Task) ApplyProviderState(externalID string, next Status, failureCode string, at time.Time) error {
+	if t == nil || !validToken(externalID, 256) || t.ExternalTaskID == "" || t.ExternalTaskID != externalID {
+		return ErrExternalTaskConflict
+	}
+	if next == t.Status {
+		if failureCode != t.FailureCode {
+			return ErrInvalidGenerationState
+		}
+		return nil
+	}
+	return t.Transition(next, failureCode, at)
+}
+
 // RequestCancel records a cancellation request without claiming that the
 // provider has already stopped or that cleanup has completed.
 func (t *Task) RequestCancel(at time.Time) error {
@@ -226,6 +270,9 @@ func (t *Task) RequestCancel(at time.Time) error {
 		return nil
 	}
 	at = at.UTC()
+	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
+		return ErrInvalidGenerationState
+	}
 	t.CancelRequestedAt = &at
 	t.StatusRevision++
 	t.UpdatedAt = at
