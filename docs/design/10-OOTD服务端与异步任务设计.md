@@ -2,9 +2,17 @@
 
 ## 当前实现与设计边界
 
-当前已实现健康、数据库就绪、注册/会话、本人账户 CRUD、[17-18](../plan/17-18-本人成年声明API执行计划.md) 本人成年声明、17-19 合成本人照片开发闭环、[17-20](../plan/17-20-结构化衣橱账户API执行计划.md) 结构化衣橱 CRUD 及 [17-21](../plan/17-21-衣橱确认属性API执行计划.md) 四项用户确认属性。当前业务依赖 PostgreSQL，Redis 只用于认证限流；MinIO 与 Kafka 只在合成媒体开发开关开启时使用。目录/SOP 见 [Design 02](02-后端架构.md)，精确技术栈见 [Design 01](01-技术选型.md)。GORM record + 集中 AutoMigrate 管理开发 schema。
+2026-09-22 已有账号/会话、结构化衣橱、计划/实际穿着、日记/社区与媒体检查删除开发闭环；具体范围归 17/19 系列计划及验收。PostgreSQL 保存事实，Redis 用于既有认证限流，Kafka/MinIO 复用当前媒体基础。Go 工程整理以 PROJECT.md、Design 02/24 为准。
 
-下文为未实施云生成能力的任务、对象生命周期与故障契约；不能视为已存在的 API、表或 worker。按获批任务逐项引入 Kafka/MinIO/Redis，默认连接本机服务，不提前建设分布式平台。
+**尚未实现完整 Look 云数据与真实生成 worker。** 本文定义获准实现时的两类任务：image 生成完整图，model 从已确认图生成整套静态 GLB；视频为延期独立用途。采用既有单体和 worker 角色、状态轮询，不加实时推送/新微服务/通用工作流。App 网络 Client 仍需 14-01 接入。
+
+## 图片与模型的输入版本、去重和费用
+
+LookRevision 保存人物与选衣快照、图片资产 ID 和可空模型引用，输入和图片发布后不可变。模型绑定 owner、Look ID/revision、image SHA-256、Provider/model 与规范化参数；任务/有效模型命中返回既有记录，用户明确重新生成才创建新尝试。源图变化时不沿用旧模型标签，旧任务结果只归原版本。
+
+图像和模型用途分别确认，云模型只传已确认完整图所需最小输入。供应商临时 URL 不作为持久引用；结果下载/校验后保存私有 MinIO 固定版本，GRDB 缓存由原生验证。删图覆盖模型，单删模型保留图；保留 cleanup 依据直至删除收敛。
+
+供应商实际费用与用户额度分开记账。提交超时且不知是否接纳时先对账查询；不能因 Kafka 重投、SDK 重试或 App 重开重新计费提交。Provider 不支持可靠查询/幂等时，未知提交转人工核对状态，不承诺跨系统恰好一次。
 
 ## 文档状态
 
@@ -82,17 +90,18 @@
 4. iOS 调用 finalize；API 验证对象存在、版本、大小、摘要和声明用途，在同一 PostgreSQL 事务中将资产置为 `uploaded` 并写入媒体检查 Outbox。
 5. relay 通过 Kafka 触发媒体 worker。worker 检查 magic bytes、解码安全、像素上限、恶意内容、EXIF 清除和质量门禁。
 6. 合格文件写入新的规范化对象键；事务更新 `media_asset`、记录派生关系并写后续 Outbox。原始临时对象按保留策略删除。
-7. 任何步骤失败都保留可解释状态，客户端可重新上传；不得仅因 Redis 或 SSE 丢消息而丢任务。
+7. 任何步骤失败都保留可解释状态，客户端可恢复上传或明确重选；网络中断或消息重复/丢失不能删除 PostgreSQL 已接纳的任务事实。
 
-### 推荐与 AI 试穿
+### 推荐、完整穿搭图与按需模型
 
 1. iOS 在 GRDB 衣橱、最小场景摘要和本地反馈上生成结构化候选；基础推荐不调用后端，也不依赖试穿完成。
-2. 用户主动触发试穿时，iOS 只提交已选 Outfit 修订和必要资产引用；API 使用幂等键创建 `generation_job`，冻结最小输入快照、处理策略版本和成本预算，并在同一事务写 Outbox。
+2. 用户主动生成穿搭图时，iOS 只提交本次 Look 草稿的人物参考、选衣快照和必要资产引用；API 使用幂等键创建图片任务，冻结输入、处理策略版本和成本预算，并在同一事务写 Outbox。
 3. worker 获取任务租约，按资产 ID 获取短时读取凭证，调用供应商；队列消息和日志不携带签名 URL。
-4. 供应商同步返回、轮询或回调最终都收敛到同一状态机；回调按供应商任务 ID 幂等。
+4. 供应商同步返回、轮询或回调最终都收敛到同一状态机；回调按供应商任务 ID 幂等。提交是否被接纳不明时先对账，不能盲目重提可能计费的请求。
 5. worker 将结果写入隔离对象键，验证后在事务中更新任务、资产、成本与 Outbox。
-6. SSE 只提示“状态可能变化”；iOS 随后通过 REST 查询 PostgreSQL 权威状态。
-7. 静态试穿失败不影响结构化推荐；动态预览失败不影响静态结果，边界分别见 [AI 虚拟试穿设计](07-AI虚拟试穿设计.md) 和 [动态预览设计](08-动态预览设计.md)。
+6. iOS 使用有界退避、带抖动的 REST 轮询查询 PostgreSQL 权威状态；离开页面停止轮询，重新进入查询原任务，不依赖推送连接。
+7. 图片通过检查后即可保存和使用。只有用户主动请求立体展示，才从已确认的图片版本创建独立模型任务；同版本已有效的任务或模型直接复用。
+8. 模型结果必须绑定原 Look revision 和图片摘要，不能覆盖后续版本；失败仍可用原图片。图片失败不影响结构化推荐，视频为后续独立切片，详见 [AI 虚拟试穿设计](07-AI虚拟试穿设计.md)。
 
 ### 删除
 
@@ -104,35 +113,14 @@
 
 ## 页面与状态
 
-后端对客户端暴露有限、稳定的异步状态，不泄露供应商内部阶段：
+生成状态固定 `queued → running → validating → succeeded`，失败/取消/过期为 `failed/canceled/expired`。`cancel_requested`、外部提交待核对、清理进度及 next_poll_at/retry_at 是独立控制字段/工作阶段，不将取消请求当作已经取消。
 
-```mermaid
-stateDiagram-v2
-    [*] --> queued
-    queued --> processing
-    processing --> succeeded
-    processing --> retry_scheduled
-    retry_scheduled --> queued
-    queued --> cancel_requested
-    processing --> cancel_requested
-    cancel_requested --> cancelled
-    processing --> failed
-    retry_scheduled --> failed
-    succeeded --> expired
-    failed --> [*]
-    cancelled --> [*]
-    expired --> [*]
-```
-
-状态规则：
-
-- `queued` 表示 PostgreSQL 已持久化任务，不代表消息已经到达 Kafka。
-- `processing` 必须带数据库租约、attempt 和 worker fencing token；过期租约由 recovery 扫描。
-- `retry_scheduled` 包含稳定错误类别和下次可尝试时间，不向客户端暴露堆栈或供应商密钥。
-- `succeeded` 只在结果对象校验通过且数据库提交成功后出现。
-- `cancel_requested` 是协作式取消；供应商已接受请求时不承诺立即停止，迟到结果必须删除或隔离。
-- `failed` 只用于达到策略上限或不可重试错误；人工重放创建新 attempt 并保留因果链。
-- 客户端超时、SSE 断开或页面退出不会取消服务端任务。
+- queued 表示任务已持久化，消息未必已到 Kafka；创建返回 202 不返回假结果。
+- running 带数据库租约、attempt 与 fencing；lease 过期恢复优先查询已有外部任务。
+- validating 收取并检查图片/GLB；格式、内容、预算、owner/revision 和删除状态全部通过且事务提交后才 succeeded。
+- 安全可重试的查询/收取使用有界退避；可能计费的提交单独对账，不自动反复发起。
+- 请求取消先停止结果可见；外部处理/清理未收敛时界面显示“正在停止并清理”。迟到结果不能重新发布。
+- 页面离开/轮询停止不取消后台任务；App 重新查询本人持久任务恢复。首片不实现 SSE/WebSocket。
 
 ## 领域模型和数据流
 
@@ -146,7 +134,8 @@ stateDiagram-v2
 | `avatar_profile` | `user_id`、状态、模型版本、当前资产 ID、同意版本 | 原始人体图和派生图分开保留；默认不存人体测量 |
 | `outfit` / `outfit_item` | 场景、组成单品、推荐/实际来源、版本 | 推荐与实际穿着不可混写；反馈见 09 号设计 |
 | `recommendation_run`（条件） | 仅在多设备同步或云排序另行获批时保存输入摘要、规则版本、候选与解释 | 本地基础推荐不创建该表；只保留最小场景摘要，不复制日历正文或精确地址 |
-| `generation_job` | 类型、状态、输入快照摘要、provider、provider_job_id、attempt、租约、错误类别、成本 | 不保存照片二进制、签名 URL、供应商密钥 |
+| `generation_job` | image/model 用途、Look/revision、输入摘要/参数、provider_task_id、状态/attempt/租约/错误与费用 | 不保存照片二进制、签名 URL、密钥；不跨 owner 去重 |
+| `look` / `look_revision`（待实现） | 稳定 Look、不可变人物/选衣快照、图资产与可空模型、日期/收藏 | 不混入 OutfitPlan/WearEvent；私人资产按血缘删除 |
 | `media_asset` | 所有者、用途、对象键、版本、hash、MIME、大小、状态、`retention_until` | 对象键不可公开；原始、规范化、输出和动态素材分别计时 |
 | `media_derivation` | 源资产、派生资产、处理器与版本 | 支持级联删除和可追溯重建 |
 | `idempotency_record` | 用户、operation、key hash、request hash、状态、响应引用、过期时间 | 唯一约束为 `user_id + operation + key_hash` |
@@ -206,10 +195,10 @@ stateDiagram-v2
 
 ### 鉴权与授权
 
-- 后续云端以 Sign in with Apple 作为主账号入口；首版先体验保持纯本地，不创建匿名云主体。首次云生成或同步前登录，但登录本身不上传本地数据；匿名云账号及合并不进入当前范围。
-- 移动端只持有短期访问令牌和可轮换刷新凭据；供应商、数据库、Kafka、Redis 和对象存储密钥不下发客户端。
-- 访问令牌必须校验 `iss`、`aud`、`exp`、`nbf`、算法和 `kid`；密钥轮换保留有界重叠期。
-- refresh token 仅保存不可逆 hash，并按设备维护可轮换 token family；检测到旧 token 重用时撤销整族会话。设备会话撤销和账号删除由 PostgreSQL 记录；Redis 可以缓存撤销版本，但缓存 miss 不能等价为授权。
+- 复用 [Design 15](15-账号认证与账户数据设计.md) 已实现的邮箱密码与 Cookie 会话。首次云生成或同步前登录，但登录本身不上传本地数据；无账号离线体验保留，匿名云主体和账号合并不进入本片。
+- App Client 在 14-01 接入现有会话合同，验证安全保存、过期、退出和删除后的清理；不因接入生成而另建 JWT/refresh token 体系。Sign in with Apple 为独立后续切片，不作为本路线依赖。
+- 会话令牌仅通过受保护传输到客户端，服务端仅保存散列；期限、Cookie 属性、401 和撤销行为以 Design 15 为准。用户与会话事实源为 PostgreSQL，Redis 缓存 miss 不能等价为授权。
+- 供应商、数据库、Kafka、Redis 和对象存储密钥不下发客户端；渲染 WebView 不接触账户会话或供应商凭据。
 - App Attest / DeviceCheck 只用于识别自动化滥用、伪造客户端和高风险设备；它们不能充当账号身份，也不能绕过资源归属检查。
 - `user_id` 只来自验证后的服务端身份上下文。每个 Repository 方法显式接收用户作用域，查询和更新都包含归属条件。
 - 首版不默认使用 PostgreSQL RLS；若审计发现应用层隔离不足，再经 schema、连接池上下文和权限评审把 RLS 作为纵深防御。
@@ -318,7 +307,7 @@ COMMIT
 1. 消费者收到消息后开启短事务，以 `consumer_name + message_id` upsert Inbox，并尝试用 fencing token 领取 `generation_job` 租约。
 2. 若任务已终态或同一消息已完成，提交后推进 offset；若有有效租约，不并发执行第二次。
 3. 成功持久化 Inbox 和任务租约后才可提交 offset，把恢复责任转交给 PostgreSQL；不得依赖长时间未提交的消费记录 保存工作。
-4. worker 在事务外调用对象存储/供应商，并定期续租；每次外部调用携带稳定 provider idempotency key。
+4. worker 在事务外调用对象存储/供应商，并定期续租；供应商明确支持时提交携带稳定幂等键；不支持时依持久外部任务身份查询，未知提交禁止盲重提。
 5. 结果对象先写确定性临时键并校验。随后短事务核对 fencing token，更新任务/资产/成本、完成 Inbox、写状态 Outbox。
 6. 数据库提交后再清理临时对象；提交失败留下的孤儿由 janitor 按无引用和 TTL 清理。
 7. worker 在供应商接受后崩溃时，recovery 依据过期租约重新投递；优先查询既有 provider job，禁止盲目创建第二个收费任务。
@@ -366,7 +355,6 @@ COMMIT
 - IP 和用户级 token bucket/滑动窗口限流。
 - 当前已实现的注册/登录使用 IP 固定窗口，具体阈值、429/503 与失败关闭合同以 [Design 15](15-账号认证与账户数据设计.md) 和 [17-17](../plan/17-17-账号认证Redis限流执行计划.md) 为准。
 - 生成配额的快速预检与短时 reservation 提示；最终账本在 PostgreSQL。
-- API 多实例之间的 SSE 状态通知、在线连接路由和去重提示。
 - 短时防抖、热点保护和 circuit breaker 协调。
 
 ### 禁止用途
@@ -379,7 +367,7 @@ COMMIT
 ### 故障降级
 
 - 缓存失败：绕过 Redis 读取 PostgreSQL，并用请求合并和并发上限防止缓存击穿。
-- SSE 协调失败：断开或发送重连提示；客户端使用带抖动轮询查询 PostgreSQL。
+- 状态查询不依赖 Redis 通知；客户端断线后按原任务 ID 轮询 PostgreSQL 权威状态。
 - 注册/登录限流失败：当前应用失败关闭并返回可重试 503；生产流量仍须叠加可信代理与边缘防护。
 - 普通读缓存或非认证限流失败：按对应切片决定绕过、边缘 WAF 或实例内有界保护，不套用认证入口规则。
 - 付费生成配额失败：保守 fail-closed 或只允许 PostgreSQL 原子校验，不能无限 fail-open。
@@ -514,7 +502,7 @@ HTTP request、幂等记录、Outbox、Kafka message、Inbox、job、provider jo
 | Migration | 空库全量、从发布版本逐步升级、生产快照副本、checksum、drift、expand/contract 和失败恢复 |
 | API 契约 | OpenAPI 3.1.2 校验、operationId、状态码、错误体、iOS Client 重新生成编译、破坏性变更 |
 | 消息集成 | 真实 Kafka acks/offset、重复、跨 topic 乱序、断线与 rebalance；生产另测多副本、延迟重试与 DLQ |
-| Redis 集成 | 缓存失效、限流原子性、故障降级、Pub/Sub 丢失和 SSE 重连补查 |
+| Redis 集成 | 缓存失效、限流原子性、故障降级；Redis 不可用时任务事实仍可恢复 |
 | 对象存储 | 签名范围、超大/伪 MIME/文件炸弹、版本、加密、隔离、生命周期、级联删除 |
 | 供应商契约 | 超时、429/5xx、回调重放、幂等 key、迟到结果、取消、删除和 schema 漂移 |
 | 端到端 | 上传—检查—推荐—试穿—动态预览—反馈—删除，包含 App 退出和断网 |
@@ -548,7 +536,7 @@ HTTP request、幂等记录、Outbox、Kafka message、Inbox、job、provider jo
 3. worker offset 提交前后、供应商接受后、本地结果提交前分别杀死 worker。
 4. 重复投递同一 message 100 次，结果、扣费和对象引用只能生效一次。
 5. Kafka 写入被拒、ISR 不足、消费组 rebalance、隔离 topic 不可写并恢复。
-6. Redis 全部不可用，验证缓存、SSE、限流和付费配额各自的降级策略。
+6. Redis 全部不可用，验证读缓存、任务轮询、认证限流和付费配额各自的降级策略。
 7. 对象上传一半、伪造 MIME、hash 不符、结果对象成功但数据库提交失败。
 8. 用户处理过程中撤回同意、取消任务或删除账号，迟到回调不得恢复内容。
 9. 新旧 API/worker 版本同时运行，验证消息 schema 和数据库 expand 兼容。
@@ -563,7 +551,7 @@ HTTP request、幂等记录、Outbox、Kafka message、Inbox、job、provider jo
 4. Redis 限流的精确算法、集群时钟/热点 key、故障时 fail-open/fail-closed 清单。
 5. 对象存储和 AI 供应商的数据地域、跨境、保留、训练、删除和分包商条款。
 6. 各任务 SLO、最大运行时、重试次数、成本 reservation 与退款规则。
-7. SSE 连接规模、移动网络重连策略和轮询退避。
+7. 状态轮询频率、移动网络恢复、有界退避和请求量预算。
 8. 用户撤回同意、账号删除、备份恢复和迟到供应商回调的竞态。
 9. 若发现旧 Then 服务端账号或同步数据，明确盘点、保留/删除、迁移和最小权限隔离方案；没有证据时不假定可以共库。
 10. POC、内部测试、灰度和生产各环境的 feature flag、流量比例、停止条件与回滚责任人。

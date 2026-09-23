@@ -1,8 +1,10 @@
 # 验收文档
 
-只记录真实证据与明确范围。场景可为 pending、in_progress、blocked、passed 或 failed。模拟器、真机、CI 和生产结果分别认领；当前已开始后端分片验收，不能把局部通过写成社区完成。
+只记录真实证据与明确范围。场景可为 pending、in_progress、blocked、passed 或 failed；superseded/deferred 仅记录被替代/延期，不能当作通过。模拟器、真机、CI 和生产结果分别认领；新 Look 设计的 AVATAR-ACC-029～031、TRYON-ACC-011/012、CLOUD-ACC-012、PRIVACY-ACC-011 和系统 ACC-017/018 均待实施；已有后端局部通过不能抵扣。
 
 [返回总索引](../README.md) · [当前产品进度](../plan/10-OOTD产品实施计划.md)
+
+本轮新增[统一非功能验收协议（SYS-ACC-019）](10-OOTD产品系统验收.md#非功能验收协议)、[App账号验收](17-云端生成与任务管理验收.md#account-acc-011-app账户与云端访问)、[日记与社区客户端验收](19-每日记录与穿搭社区验收.md#当前客户端验收标准2026-09-22)，并细化完整图/GLB的输入、故障和恢复矩阵。新增标准全部pending；通过必须有版本、环境、步骤、实测值及限制，不能把文档检查写成能力通过。
 
 ## 当前文档
 

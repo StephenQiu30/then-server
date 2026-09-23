@@ -1,188 +1,44 @@
-# Three.js 人物、换装与灵动交互研究
+# Three.js、Tripo 与图片转三维研究
 
-研究日期：2026-09-15。用户指定 GitHub、Firecrawl、Context7，并在本轮回复中授权确定人物格式，允许评估付费授权资产（采购前确认预算），确认首版增加眨眼与轻微视线跟随。
+核查：2026-09-22。当前采用方向为 **完整穿搭图 → Tripo 静态 GLB → Three.js**；生产供应商与样本验收仍待完成。主设计归 [Design 20](20-OOTD完整产品能力与阶段架构设计.md)，本文件只保存可核实证据，不另立人物基线。
 
-本文是技术证据与取舍记录；当前基线统一回写 [Design 01](01-技术选型.md#人物技术冻结与变更规则)。当前没有安装新运行依赖、调用资产生成服务、购买资产或修改 App 运行代码；仅在 `/tmp` 隔离目录读取供应商官方示例，并用本地 Three.js 页面核对眼部数据是否真实可见。示例未进入仓库，也不是生产人物。
+## 三种名称必须区分
 
-## 结论与已确定的边界
-
-**使用 Three.js + 标准 GLB，保留 SwiftUI 页面和隔离 WKWebView。** 人物微动由现有变换实现，眨眼通过 GLB 已有的面部形变数据控制，视线跟随通过已制作的眼球节点控制；需要完整骨骼动作时使用 Three.js 自带 AnimationMixer。当前不增加 three-vrm、React Three Fiber、游戏引擎或 Blender 工具链。
-
-选择标准 GLB 的原因：当前明确要求的呼吸、眨眼、轻微注视和受控换装均可在现有 Three.js 能力内实现；VRM 的标准人物语义、弹簧骨等有价值，但本轮没有验证可直接交付且符合画风的 VRM 资产。新增格式无法替代资产质量与授权。先固定一套受控资产家族，成本比建设通用人物导入/重定向平台更可控。
-
-这不是永久禁止 VRM。它作为已经研究的备选保留，只有实际 GLB 交付无法满足已确认要求、或已验证 VRM 交付明确降低总成本时，才走变更 SOP；不能因某个示例更好看就切换。
-
-| 问题 | 当前状态 |
-| --- | --- |
-| Three.js 是否使用 | 用户固定，已确定 |
-| GLB 还是 VRM | 用户授权本轮技术决策：标准 GLB；VRM 不进入当前运行依赖 |
-| 是否用 Blender | 用户禁止；项目制作、修复、转换、构建和验收均不依赖它 |
-| 是否允许付费资产 | 允许评估；具体采购必须先确认预算和交付范围 |
-| 首版是否眨眼、注视 | 用户确认必需；原工程夹具还未具备生产表情验收证据 |
-| 具体人物资产与价格 | 未确定；必须看代表交付包，不能把仓库/商品页当验收 |
-| 是否使用 img2threejs 生产人物 | 当前研究参考，不作为已验证的生产生成链 |
-
-## 证据怎么取得
-
-- **GitHub**：读取官方 README、package.json、关键实现、默认分支提交和仓库许可证元数据。记录参考提交，避免随着默认分支更新混淆结论。
-- **Firecrawl**：检索公开开源方案，并实时抓取 VRoid 官方功能/条款、Quaternius 官方资产说明；KayKit 记录为官方作者页面的搜索摘录，未冒充完整下载检查。
-- **Context7**：使用 `/mrdoob/three.js` 查询 glTF 骨骼/表情动画和 SkinnedMesh 绑定；使用 `/pixiv/three-vrm` 查询 expression、lookAt、humanoid 和 springbone。Three.js 返回的示例来自 `dev`，版本列表只显示 r110，因此另外读取 GitHub `r185` 对应实现核对，不把索引版本当本项目安装版本。
-
-逐项来源、参考提交和许可证边界直接保存在本文的一手链接与候选实测表中。Firecrawl 原始搜索结果只保存在本地忽略目录，不作为可交付证据或运行资源；不再维护第二份易失效的来源清单。
-
-证据分级：官方说明/源码证明能力存在；本项目样本运行才证明适配；画风、所有换装组合与设备结果通过后才能证明产品交付。仓库有 star、声明 game-ready、提供 GLB、许可证标为 MIT，均不同时证明上述三层。
-
-## 开源项目对照
-
-| 项目与本轮参考提交 | 已有能力 | 对本项目的价值 | 边界与决定 |
-| --- | --- | --- | --- |
-| [Three.js](https://github.com/mrdoob/three.js/tree/2431a09f46f34c560bc8e44b33be0e567723d5b9)，r185，MIT | glTF 加载、骨骼/形变、动作混合、材质、相机、拾取 | 人物渲染和交互主干 | 已选；不自动生成高质量人物或适配衣服 |
-| [pixiv/three-vrm](https://github.com/pixiv/three-vrm/tree/1b4fc0cc7ef39a49d62bb7a66dcfeca8f65316f7)，MIT | VRM 加载、标准 humanoid、expression、lookAt、springbone | 多来源标准人物、表情和头发动态的备选 | 未选；依然需要真实资产数据和衣服适配；不保证任意衣服通穿 |
-| [Character Studio](https://github.com/m3-org/characterstudio/tree/293182bf4a6087f4a4a7fd00e4fbdfb590029da7)，MIT 代码 | 人物/衣服 trait、manifest、组合限制、遮挡、眨眼/注视管理、导出 | 最贴近本项目的换装应用实现参考 | 借鉴局部组织方式；不整仓移植，其依赖包含 React、链上/NFT 等无关内容，资源许可单独查 |
-| [img2threejs](https://github.com/img2threejs/img2threejs/tree/6e60b5e22419464b4853e01ddb6c0e6f6659a733)，Apache-2.0 | 图片分析、程序化 Three.js 几何、材质/轮廓对照和分步质量门 | 不依赖 Blender 的程序化造型研究、可追踪视觉验证 | 不是现成 Woo 人物与衣橱生成器；当前人物样例标为 placeholder，clothing 不在已交付能力中 |
-| [plugin-character](https://github.com/img2threejs/plugin-character/tree/d8750638f9fc092714e7fcb4941053514455295d)，Apache-2.0 | 读取 GLB 骨架、绑定/动作测量、12 项质量门 | 借鉴实际测量动作是否生效的方法 | README 明确 4 项检查尚无输入生成器；不能当自动补齐骨架/服装的成熟方案 |
-| [TRELLIS](https://github.com/microsoft/TRELLIS/tree/442aa1e1afb9014e80681d3bf604e8d728a86ee7) | 图片生成 mesh、Gaussian 等表示，GLB 导出 | 原创单体形状或道具实验 | 官方需要 NVIDIA ≥16 GB 与 CUDA；部分子模块有单独许可。当前不部署，不承诺可换装人体输出 |
-| [TripoSR](https://github.com/VAST-AI-Research/TripoSR/tree/107cefdc244c39106fa830359024f6a2f1c78871)，MIT | 单图快速重建 mesh；README 将代码与权重纳入 MIT | 单体重建研究 | 无本项目可用的衣服槽位、眨眼或骨骼交付证据；A100 耗时不等于 Mac/iPhone 耗时 |
-| [glTF-Validator](https://github.com/KhronosGroup/glTF-Validator/tree/434283be08a668a8fb4e437145630ddbf93b0686)，Apache-2.0 | glTF 结构、buffer、图像与动画输入检查 | 继续作为离线资产验收工具 | 格式通过不代表可爱、不穿模或可商用 |
-| [glTF Transform](https://github.com/donmccurdy/glTF-Transform/tree/781dbb677b42ad0995a0eececb1d7fa30188364a)，MIT | glTF 读写、去重、清理、纹理缩放、优化 | 需要时可用成熟 CLI 整理/检查资源，无需 Blender | 条件工具，只有实测超预算再引入；不默认启用压缩解码器或新增项目脚本 |
-
-本轮查阅的仓库元数据未显示这些主仓库已归档，但这不构成维护承诺。默认分支最后提交时间与 `pushed_at` 含义不同，不把其他分支活动描述成主分支近期更新。尤其不以研究模型开源替代其完整依赖、权重和输入素材的权利检查。
-
-## img2threejs 的具体判断
-
-### 它实际做什么
-
-主项目由参考图提取组件、比例、材质与轮廓描述，再输出创建 `THREE.Group` 的 TypeScript 工厂。几何可以来自基础形体或生成曲面；这是程序化建模，确实不必使用 Blender。它还要求将渲染结果与参考图分阶段对照，避免只凭“代码生成成功”判断外观成功。[README](https://github.com/img2threejs/img2threejs/blob/6e60b5e22419464b4853e01ddb6c0e6f6659a733/README.md)
-
-因此，Three.js 不只是加载 GLB 的播放器，也能创建几何。问题在于“能生成几何”和“稳定生成三套可爱、能换衣、会眨眼的人物”是不同验收目标。
-
-### 为什么没有直接选它作为生产链
-
-1. **人物质量未完成**：README 的人体/女孩演示仍有 placeholder 标记，不能据此保证 Woo 画风。
-2. **衣服模块未闭环**：已交付列表明确不包含 clothing。用户选一件上衣后，如何保留脸、身体、下装、鞋并避免穿模，仍需额外工作。
-3. **动作仍依赖数据**：plugin-character 从已有 GLB 提取骨架与动作；不能把“从 GLB 读取骨架”写成“从任意照片自动得到骨架”。其 12 项门禁还有 4 项缺少生产输入。
-4. **主输出不是标准交付包**：TypeScript 几何工厂不同于已校验 GLB。若直接发运行代码，会改变当前随包数据资产合同；若转成 GLB，又要验证材质、层级、形变与动画保真。
-5. **单张图存在信息缺口**：侧面和背面没有被观察，可能由推断形成。三视图约束能减少不确定性，但不保证身体/服装拓扑和身份一致。
-6. **工具成本真实存在**：其主流程包含 Python/Node 工具、生成步骤和多次视觉审查。项目禁止仓库脚本，不能整套拷入服务并称为轻量依赖。
-
-[plugin-img2glb](https://github.com/img2threejs/plugin-img2glb/blob/6f7b62a26ca7025a373f1579876ce8e8fff5bb00/README.md) 是另一路：通过网络调用托管 TRELLIS 取得 GLB；它不等于主项目靠 Three.js 从图建模，也没有证明生成物带正确眼球、眼睑、配套衣服与动作。
-
-**采用范围**：借鉴参考图细节清单、正侧背轮廓核对、阶段门禁、动作实测。需要验证程序化造型时，只使用原创参考、一个代表人物和单独记录的实验；不安装它为 App/Go 的运行依赖，不自动调用付费/托管生成。是否值得继续以样本结果判断，不能据此改变 Three.js 主干。
-
-## 不使用 Blender，资产可以从哪里来
-
-| 取得方式 | 是否减少建模工作 | 查到的依据 | 对当前产品的判断 |
-| --- | --- | --- | --- |
-| 授权成品人物＋同系列衣服 | 可以，前提是直接提供 GLB、表情、配套衣服 | 需实际供应方交付验证 | 推荐的首轮评估方向；用户允许评估付费，未授权采购 |
-| Quaternius 成品 | glTF/FBX 已提供，不必读取附带 `.blend` | [官方 Universal Base Characters](https://quaternius.com/packs/universalbasecharacters.html) 标明 CC0、Humanoid rig、glTF、可组合头发；不同版本内容不同 | 可用于工程基线比较；没有新的代表样本证明符合 Woo 画风与现代女装，不直接选为生产人物 |
-| KayKit 角色与动作 | 提供 rig 与 glTF 动作 | [作者角色页](https://kaylousberg.itch.io/kaykit-adventurers)、[动作页](https://kaylousberg.itch.io/kaykit-character-animations) 的官方搜索摘要注明 CC0 | 偏幻想游戏内容，未验证服装可拆换或面部能力；只作动作/加载参考 |
-| Character Studio 附带/引用资源 | 可能减少编辑工作，但需要完整且适配的资源包 | [loot-assets](https://github.com/m3-org/loot-assets) 与程序仓库分离；本轮未见根许可证 | 不能从程序 MIT 推导模型许可，不进入正式内容库 |
-| VRoid Studio | 预设和滑杆可降低手工造型门槛，支持 VRM 导出 | [官方功能](https://vroid.com/en/studio) 与 [使用指南](https://vroid.com/en/studio/guidelines) | 软件免费不代表开源；其预设并非 CC0，角色生成类应用有额外许可边界，当前不选 |
-| AI 图片转 3D | 可减少初始几何制作，未必减少后续整理 | TRELLIS、TripoSR、img2threejs | 仅用于研究；生成静态整人 mesh 不会自动形成可替换衣服或表情数据 |
-
-VRoid 官方指南允许多种商业用途，但明确提到：生成或输出由 Studio 网格/纹理变形组合而成角色的应用需要另行许可。本项目具有角色组合和换装行为，适用范围须取得明确依据，不能自行认定“不导出模型就没限制”。three-vrm 的 MIT 许可与 VRoid 的内容许可是两件事；独立授权 VRM 也不自动受 VRoid 来源限制。
-
-“来源方使用了什么制作软件”不需要由我们的工程接管。项目要求的是交付包能在没有 Blender 的开发与构建环境中工作；需要团队手工改拓扑、绑骨或修衣服的交付不适配。授权必须覆盖 App 随包发布、用户组合/换装、结果图片分享，以及需要时的 MinIO 分发；普通商品页的“商用”标签不足以确认全部范围。
-
-## 当前代表候选实测与采购门槛
-
-以下检查只回答“供应商能否交付 Three.js 可读取的眼部输入”，不等于画风、衣物组合、授权或设备性能通过。官方示例只在 `/tmp` 运行，未复制到 App、MinIO 或公开仓库。
-
-| 候选 | 本地实测 | 官方能力与价格 | 当前决定 |
-| --- | --- | --- | --- |
-| [MetaPerson / Avatar SDK](https://avatarsdk.com/metaperson-creator/) | 官方 [Three.js loader 仓库](https://github.com/avatarsdk/metaperson-loader-threejs/tree/ba6eb2505ea3e4d05874bdf7c31a4e45003653d4) 的 `sample_avatar.glb` 为 10,662,760 bytes，SHA-256 `62fb69d6a9ebe720d9028af1c48aa222c7ccfabeccbd642b7f9d7758b64f4d82`；11 个 mesh，含 `eyeBlinkLeft/Right`、各方向 eye look morph 及左右眼球节点。本地 Three.js 页面能显示模型，强制 blink 权重后眼睑可见闭合。 | [人物说明](https://avatarsdk.com/avatars/)列出 realistic/cartoon、full body、blendshapes/bones 和服装；[Cartoonish 文档](https://docs.metaperson.avatarsdk.com/cartoonish/)说明可使用更大的卡通眼；[REST 文档](https://docs.metaperson.avatarsdk.com/rest_api/)列出完整 outfit 或 top/bottom/shoes。公开[价格](https://avatarsdk.com/pricing-cloud/)为 Pro USD 800/月、6000 avatars，Enterprise 报价制并提供自定义拓扑/形变、服装与条款。 | **首选代表包商务验证对象**。眼部技术输入已证明；现有示例偏写实、T-pose 且单文件超过当前 2 MB 单资产预算，不能通过 Woo 画风或性能门。需要供应商交付卡通、模块衣物代表包和书面许可后才编码眼部功能。 |
-| [Avaturn](https://avaturn.me/pricing) | 官方 [Three.js 示例](https://github.com/avaturn/avaturn-threejs-example/tree/07f646391a200be497d6bd453763b3ca07b32848) 的 `default_model.glb` 为 2,629,056 bytes，SHA-256 `4b84a158971a4f490ccffa8377502c39eb44a855975df4ecdc8ae390b76a8431`；5 个 mesh，但未发现 morph target 或独立眼球节点，当前样例无法作为 ACC-027 输入。官方另有 [iOS WKWebView 示例](https://github.com/avaturn/ios-example/tree/f2711c3f216a3186fff351fdf0616d1ba252a7a2)。 | 公开价格为 Pro USD 800/月、1000 avatars，包含 API/SDK、自有用户、品牌与自定义服装上传。 | **次选**。集成路径可参考，但必须先由供应商提供具有可验证眨眼/注视数据的实际 GLB、卡通画风、模块衣物和授权说明；仅有 SDK 页面不进入产品候选。 |
-
-MetaPerson loader 仓库根许可证标为 BSD-3-Clause，但其 `AvatarController.js` 文件头另含专有/保密使用限制。项目不复制供应商 loader 源码，继续使用现有 Three.js 与 GLTFLoader；将来只消费合同明确授权的标准 GLB。开源示例代码许可证也不自动覆盖示例人物、生成结果或商业服务条款。
-
-采购前必须取得书面交付清单，至少覆盖：iOS App 随包或私有下载分发、用户组合换装、截图/视频结果分享、必要的私有 MinIO 缓存、三套人物预设、独立上装/下装/鞋槽、无本人照片也可创建与使用、数据保留与删除、停止订阅后的既有版本连续使用，以及一次性/月度/超量总价。缺少任何一项时保持 `pending`，不以程序兼容层或项目内手工修模补救。
-
-## 功能怎样由 Three.js 实现
-
-### 灵动分层
-
-| 用户可见行为 | Three.js 机制 | 资产前置 | 本轮范围 |
-| --- | --- | --- | --- |
-| 呼吸、重心偏移、拖动反馈 | 独立人物根节点的小幅变换、平滑插值 | 可显示的实体层级 | 已有工程实现，继续验收 |
-| 眨眼 | 眼睑 morph target 的权重随短时间曲线变化 | 至少一套正确闭眼形变；有左右独立数据时可协调控制 | 新确认的首版必需能力，待生产资产和实现 |
-| 轻微视线跟随 | 将触点/关注目标转为人物局部目标，平滑限制眼球节点朝向 | 左右眼球节点、默认朝向与可用角度；不能仅用整个人转身假装眼睛跟随 | 新确认的首版必需能力，待资产和实现 |
-| 待机切换一次展示动作 | AnimationMixer、AnimationAction、LoopOnce、完成回调和渐变过渡 | 同一骨架的合法 clip | 挥手/行走未在本轮新增为首版必需 |
-| 发丝/衣摆摆动 | 骨骼 clip 或后续专门动态系统 | 可动骨链与参数 | 本轮不引入实时布料或 springbone |
-
-眨眼与注视可以在 plain GLB 内通过通用节点/形变表达，业务含义由同一资产合同映射。需要保护上衣、身体与脸的变换所有权：整体微动控制人物根节点；注视只控制眼球；眨眼只控制眼睑；AnimationMixer 如果同时写同一节点/权重，就必须明确通道和覆盖规则，不能让多个动画循环互相抢写。
-
-眼球朝向需要依据交付模型的本地坐标系和默认姿态计算，不能无条件对每个眼球调用同一 `lookAt` 就认为结果正确。拖动旋转期间以旋转为主；没有触点时缓慢回到默认视线。眨眼节奏、注视幅度和速度在样本可见评审时确定，避免给未测试数值贴“自然”标签。
-
-Reduce Motion 开启后停止装饰性微动、自动眨眼及视线追随；直接旋转、选择和保存继续可操作。舞台不可见时停止更新；换人物时移除旧 mixer/listener，按引用关系释放共享 geometry、material、texture。Context7 的 SkeletonUtils 文档明确克隆仍可能共享几何与材质，不能将移除一个人物简单等同于销毁全部共享资源。
-
-### 换装是主要难点
-
-Three.js 的 `SkinnedMesh.bind` 只建立绑定关系，并不生成衣服或自动适配人体。衣物必须与人物的骨骼顺序、rest pose、skinIndex/skinWeight、inverse bind matrices 和变换空间一致。仅让两个文件骨名相同，仍可能产生袖口错位或身体穿出。[r185 SkinnedMesh](https://github.com/mrdoob/three.js/blob/2431a09f46f34c560bc8e44b33be0e567723d5b9/src/objects/SkinnedMesh.js)
-
-首轮采用同一人物家族的受控配套衣物。若用户改变体型，衣服也要有对应变形/适配证据；本轮不把任意体型和任意外来服装作为隐含承诺。所谓“支持 VRM/GLB”只说明格式，不说明两件任意来源资产能组合。
-
-Character Studio 值得参考的部分是 manifest 中的 trait、required group、组合排斥和 culling layer。[trait 文档](https://github.com/m3-org/characterstudio/blob/293182bf4a6087f4a4a7fd00e4fbdfb590029da7/docs/docs/Modders/manifest-files/character-traits.md) 与 [遮挡实现](https://github.com/m3-org/characterstudio/blob/293182bf4a6087f4a4a7fd00e4fbdfb590029da7/src/library/cull-mesh.js) 提供了可读依据。
-
-本项目先使用交付包明确的身体遮蔽区域，随服装切换隐藏被覆盖的身体部分。不要首轮拷贝其运行时射线剔面系统：它依赖 BVH、距离参数并修改 Three.js 原型，仍需姿态验证；不能保证任意衣服不穿模。静态遮蔽也不能修复错误的衣服轮廓或权重，所以必须审查换装组合和动作全过程。
-
-应用顺序固定：选择槽位草稿 → 校验该人物支持的衣物 revision → 完成所有加载 → 准备完整场景与遮蔽 → 仅最新 revision 原子应用 → 反馈成功。旧加载迟到、文件损坏和不支持组合均保留上一有效 Look。保存人物/衣物 ID 与 revision、配方和用户确认状态，不序列化 Three.js 内存对象。
-
-### 模块换装与整套模型
-
-默认要求是独立上装、下装、鞋槽位。直接配套模块 GLB 可复用身体并减少重复资源；如果某来源只能交付整套 Look，则三人物×两上装×两下装×两双鞋会形成 24 套完整场景，增加包体、发布和一致性检查成本。整套三维场景仍是实际三维，但它不证明模块衣物适配；本轮不为这种来源改写当前槽位合同。先用代表包判断供应方能否直接支持所需模块。
-
-## 推荐的最小技术组合
-
-```text
-SwiftUI：页面、选择、草稿、保存、无障碍
-    ↓ 有限配置和 revision
-WKWebView：隔离的本地人物画布
-    ↓
-Three.js 0.185.1 / WebGL 2
-    ├─ GLTFLoader：已校验的标准 GLB
-    ├─ 人物根节点：微动、拖动反馈
-    ├─ morphTargetInfluences：眼睑
-    ├─ 眼球节点：轻微注视
-    └─ AnimationMixer：资产支持的骨骼/形变 clips
-
-随包默认资产 → 离线可用
-后续目录 API → 私有 MinIO → 完整校验和原子缓存
-GRDB → Look 配方与本地业务事实
-```
-
-- Three.js 版本维持当前锁定值，不因官方 dev 示例升级。GLTFLoader/addon 与主包必须同版。
-- 当前无需 react-three-fiber、drei、GSAP 来实现这些有限动作；是否引入任何新运行依赖必须对应真实需求。
-- 先用现有材质、灯光和阴影手段验证画风。Woo 的可爱感还取决于脸型、头身比、眼睛、发型、服装轮廓和色彩；仅加灯光或动画无法修复不合适的模型。
-- glTF-Validator 用于离线格式检查。GLB 必须无任意远程 URI，资源大小、hash、允许扩展与依赖由本地加载门检查；未支持压缩格式不自动安装解码器。
-- 只有出现实测资源问题时才使用 glTF Transform CLI，保留原包与变换后的 hash；不要新增仓库脚本，也不要默认运行批量破坏性优化。
-- 角色互动、换装与默认资产不依赖 Go/Redis/Kafka。Go 负责需要时的目录、版本、权限和 MinIO 下载；Kafka 服务真实 AI/视频异步任务，不参与每帧动画。
-
-## 下一阶段的可验收输入与步骤
-
-以下是资产验证规格，执行周期从取得可合法测试的交付包开始计算，不把等候供应商和采购时间藏进开发承诺。
-
-1. **取得一个代表包**：一个符合三套既定画风之一的人物、两件独立上装、一件下装、一双鞋；提供眼睑形变、左右眼球节点、默认姿态、骨架/服装适配说明、许可证、revision 和原始包。不限定自制 20-joint，不要求大而全的表情集。
-2. **格式与可重复导入**：在无 Blender 环境读取文件，检查节点、形变、依赖、hash、glTF 报告。若提供 glTF＋贴图，应由来源方提供自包含 GLB 或经明确验证的标准打包；不假设改扩展名即可转换。
-3. **首个可见样本**：正、侧、背连续观察；更换两件上装；确认脸型、发型、眼睑闭合、瞳孔朝向、袖口与身体遮挡。严重缺陷为 0 才继续。
-4. **动作与状态**：录制微动、眨眼、轻微注视、拖动优先、换装后状态、Reduce Motion、前后台恢复及快速切换。测试要断言实际权重/节点变化和已应用 revision，录屏证明可见效果。
-5. **性能测量**：按既有 Design 20 记录首次可见时间、换装时间、帧时间、App＋WebContent 内存和热状态。模拟器只作开发证据；最低支持设备和生产性能阈值须有实测依据再冻结。
-6. **扩大内容**：代表包通过后再固定同一骨架/槽位/表达合同，扩展三人物及完整 24 套组合。逐套审查，不以一个样本通过替代整个目录。
-
-每个候选最多完成一轮完整代表检查和一次由来源方修正后的复验；仍需要项目手工建模/绑骨/修衣服的候选停止。付费候选先提交具体供应方、许可范围、总价和交付缺口给用户决定，不进行未授权采购。
-
-## 需求与验收追踪
-
-| 项目 | 当前结论 | 追踪 |
+| 项目 | 官方能力/源码证据 | 对本项目的意义 |
 | --- | --- | --- |
-| 来源汇总、格式选择、无 Blender 边界 | 本轮完成研究；格式选择在用户授权内已定案 | AVATAR-BASELINE-01、REQ-036/037、ACC-026 文档子集 |
-| 呼吸/拖动/换装反馈 | 已有工程增量，剩余动态/设备验收继续 | 11-04、REQ-032～035、ACC-025 |
-| 眨眼与轻微视线跟随 | 用户批准的首版能力，尚未实现/验收 | REQ-038、ACC-027 |
-| 生产人物、衣服、授权与价格 | MetaPerson 眼部技术样例已通过输入检查；卡通画风、模块衣物、正式授权、体积优化与报价仍待代表包 | ACC-026 资产子集 |
+| [Tripo 云 API](https://developers.tripo3d.ai/en/docs/introduction) | 图片/多视图转模型、纹理、自动绑骨、动作、分割/补全等独立接口 | 使用图片转带纹理 GLB 即可；其他调用不是展示前置 |
+| [TripoSR](https://github.com/VAST-AI-Research/TripoSR) | 开源单图三维重建；代码/权重许可见仓库 | 自部署几何实验，不等于 Tripo 云服务或完整人物/服装系统 |
+| [img2threejs](https://github.com/img2threejs/img2threejs/tree/6e60b5e22419464b4853e01ddb6c0e6f6659a733) | 将视觉目标变成程序化 Three.js 场景，另有 GLB/character 插件 | 不需要加入 Then 生产链，不能把名称理解成图片直接得到可换装角色 |
 
-### 仍需用户决定的事情
+GitHub 核对 img2threejs main `6e60b5e22419464b4853e01ddb6c0e6f6659a733`：主线输出 TypeScript/THREE.Group；人物示例仍有占位内容，img2glb 插件调用托管 TRELLIS，character 插件消费既有 rigged GLB，未提供可靠的人物/衣物资产生产链。仓库可运行不等于已经解决穿搭保真、同骨架衣物或眼部资产。
 
-- 代表人物是否达到已选 Woo 式画风：提供真实运行截图/录屏后决定，不再用风格名称代替视觉确认。
-- 具体付费来源、预算与许可范围：优先向 MetaPerson 核验 Enterprise 代表包与条款；联系供应商和支付均需用户明确授权，本轮“允许评估”不等于授权对外联络或支付。
-- 最低支持真机与可接受的性能/发热边界：提供样本测量结果后确认；开发阶段继续按用户要求使用模拟器。
+## Three.js 加载与观察
 
-格式和实现机制已由本轮授权确定，不重复询问。若来源无法满足已确认需求，先给出缺失数据和候选比较；未经明确决定，不降低画风、取消换装、恢复 Blender 或改为纯图片产品。
+Context7 对 `/mrdoob/three.js` 的文档核对表明：GLTFLoader 返回 `gltf.scene`，将其加入场景即可观察静态 mesh；改变对象或相机旋转无需 skeleton 或 AnimationMixer。只有消费模型动作 clips 才需动画播放管理；骨骼形变要求模型本身提供 skin、关节和权重。[GLTFLoader 官方文档](https://threejs.org/docs/#GLTFLoader)
+
+Then 保留 Three.js `0.185.1`、WebGL2、隔离 WKWebView 和离线依赖。不能因生成器变化引入 Unity、RealityKit、VRM 或 WebGPU 必需门槛。风格、脸、衣物轮廓来自资产与灯光取景，换渲染器不自动修复这些问题。
+
+## Tripo 补充评估（2026-09-22）
+
+| 能力 | 已核查边界 | 首片决定 |
+| --- | --- | --- |
+| [单图转模型](https://developers.tripo3d.ai/en/docs/generation-image-to-model) | H3.1 `v3.1-20260211`，可指定纹理、面数等 | standard texture、triangle；约 2 万面起测 |
+| [多视图](https://developers.tripo3d.ai/en/docs/generation-multiview-to-model) | front 必须存在，至少两个有效视图；各图需同人物/姿态/穿搭 | 有真实一致参考时再用，不额外合成三图作为固定前置 |
+| [图像编辑](https://developers.tripo3d.ai/en/docs/generation-image-to-image) | Seedream v5 支持最多四个参考输入 | 可测试一人物加三衣物；多参考能力不保证细节保真 |
+| [绑骨](https://developers.tripo3d.ai/en/docs/animations-rig)、[动作](https://developers.tripo3d.ai/en/docs/animations-retarget) | 云端有独立能力，不能以 TripoSR 缺少动画否定它 | 当前不调用；也不能据此保证眼睑 morph/眼球节点 |
+| [分割](https://developers.tripo3d.ai/en/docs/mesh-segment)、[补全](https://developers.tripo3d.ai/en/docs/mesh-complete) | 部件/语义分割与补全有独立参数和成本 | 不能直接推导得到兼容的换装衣物；当前不调用 |
+| [转换](https://developers.tripo3d.ai/en/docs/models-convert) | 输出格式/方向/压缩有明确约束 | 首片保留普通 GLB，避免额外转换成本和解码器 |
+
+参数注意：quad 会改变输出格式为 FBX，不能送入现有 GLTFLoader 路线；parts 与 texture/PBR 等有组合限制，smart low-poly 下也不应假设一定产出部件。首片全部关闭这些非必要选项。使用压缩或 export orientation 前依官方任务阶段约束验证，避免成功状态掩盖格式/方向错误。
+
+## 当前代码需要改变什么
+
+2026-09-22 核对：App 的 AvatarAssetCatalog 只接受八个工程资产、固定单 mesh/skin/material 与 rig，拒绝 images/textures/animations；JS 通过 visibility 切模块，未消费导入动画 clips。当前仅能证明工程纵切。新路线需允许经过验证的内嵌纹理和多 mesh/material、整套模型加载/释放、缩放/复位、原子切换及版本化缓存；不能直接把 Tripo 文件换进去或关闭校验。
+
+固定姿势 GLB 无需新增动画系统。已完成的整体微动/生命周期可复用，Reduce Motion 下直接操作仍保留。旧 MetaPerson 样例证明过眼部输入的技术可能性，但不再是当前首版资产采购或开工依赖；Avaturn/VRM/模块衣物保留为高级角色能力的后续研究。
+
+## 服务使用边界与结论
+
+[Tripo API 条款](https://developers.tripo3d.ai/en/terms)（页面条款日期 2025-07-11，2026-09-22 核查）区分免费与付费产物权利；向终端用户提供生成服务的条款要求事先书面许可。正式应用前核实适用合同、分发权、地域、人物处理与删除；本次研究不是法律许可或供应商准入结果。
+
+费用、调用选择、失败放大系数统一见 [Design 20](20-OOTD完整产品能力与阶段架构设计.md#供应商选择与成本)。没有调用付费接口，没有真实 Tripo 产物在最低真机完成验收。现阶段可以确认**架构适合优先验证**，不能确认特定输入必然产出合格人物、真实背面、兼容衣物或自然眼部动画。
