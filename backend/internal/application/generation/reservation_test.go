@@ -141,6 +141,64 @@ func TestQuotaReservationRejectsNonQueuedOrSubmittedTask(t *testing.T) {
 	}
 }
 
+func TestQuotaReservationRejectsMalformedPersistedFacts(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*QuotaReservation)
+	}{
+		{
+			name: "missing state revision",
+			mutate: func(reservation *QuotaReservation) {
+				reservation.StateRevision = 0
+			},
+		},
+		{
+			name: "missing created time",
+			mutate: func(reservation *QuotaReservation) {
+				reservation.CreatedAt = time.Time{}
+			},
+		},
+		{
+			name: "updated before created",
+			mutate: func(reservation *QuotaReservation) {
+				reservation.UpdatedAt = reservation.CreatedAt.Add(-time.Second)
+			},
+		},
+		{
+			name: "unknown state",
+			mutate: func(reservation *QuotaReservation) {
+				reservation.State = ReservationState("unknown")
+			},
+		},
+		{
+			name: "finalized state has initial revision",
+			mutate: func(reservation *QuotaReservation) {
+				reservation.State = ReservationReleased
+			},
+		},
+		{
+			name: "empty hold",
+			mutate: func(reservation *QuotaReservation) {
+				reservation.ReservedQuotaUnits = 0
+				reservation.EstimatedMinorUnits = 0
+				reservation.Currency = ""
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reservation, err := NewQuotaReservation("reservation-1", reservationTask(), generationTestNow.Add(time.Minute))
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.mutate(&reservation)
+			if err := reservation.Release(generationTestNow.Add(2 * time.Minute)); !errors.Is(err, ErrInvalidQuotaReservation) {
+				t.Fatalf("malformed reservation was finalized: %v", err)
+			}
+		})
+	}
+}
+
 func mustTask(input CreateInput) Task {
 	task, err := NewTask(input, generationTestNow)
 	if err != nil {
