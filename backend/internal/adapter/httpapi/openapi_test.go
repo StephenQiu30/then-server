@@ -81,6 +81,10 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"getWearEvent":                    true,
 		"updateWearEvent":                 true,
 		"deleteWearEvent":                 true,
+		"getWearFeedback":                 true,
+		"saveWearFeedback":                true,
+		"deleteWearFeedback":              true,
+		"getWearStatistics":               true,
 		"createDiaryEntry":                true,
 		"listDiaryEntries":                true,
 		"getDiaryEntry":                   true,
@@ -170,7 +174,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.17.0" || operations != 98 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.18.0" || operations != 102 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
 	for _, operationID := range []string{"getCurrentProfile", "putCurrentProfile", "getPublicProfile", "createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent", "createDiaryEntry", "listDiaryEntries", "getDiaryEntry", "updateDiaryEntry", "getDiaryEntryDeletionImpact", "deleteDiaryEntry", "getCalendarMonth", "createPost", "listOwnPosts", "getOwnPost", "updatePost", "submitPost", "withdrawPost", "deletePost", "getPublicPost", "getPublicPostImage", "listPostModerationCandidates", "getPostModerationCandidate", "getPostModerationImage", "decidePostModeration", "removePublishedPost", "createPostReport", "listOwnReports", "listCommunityReports", "resolveCommunityReport", "listModerationActions", "listAdminUsers", "suspendUser", "restoreUser"} {

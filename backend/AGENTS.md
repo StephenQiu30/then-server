@@ -25,6 +25,7 @@ backend/
 │   │   ├── wardrobe/
 │   │   ├── outfitplan/
 │   │   ├── wearevent/
+│   │   ├── outfitfeedback/
 │   │   ├── diary/
 │   │   ├── community/
 │   │   ├── media/

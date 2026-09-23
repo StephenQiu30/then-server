@@ -182,6 +182,7 @@ backend/
 │   │   ├── wardrobe/              # 真实衣橱
 │   │   ├── outfitplan/             # 穿搭计划
 │   │   ├── wearevent/              # 实际穿着
+│   │   ├── outfitfeedback/         # 穿后反馈与穿着统计
 │   │   ├── diary/                  # 私人日记/日历
 │   │   ├── community/              # 发布、互动与治理
 │   │   ├── media/                  # 媒体生命周期

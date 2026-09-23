@@ -155,7 +155,7 @@ func TestWearEventPersistenceLifecycle(t *testing.T) {
 
 	_, err = accounts.DeleteCurrentUser(ctx, owner.Token)
 	serviceOK(t, "delete wear event owner", err)
-	for _, table := range []string{"wear_events", "wear_event_items", "wear_event_deletions"} {
+	for _, table := range []string{"wear_events", "wear_event_items", "wear_event_deletions", "wear_feedback", "wear_feedback_mutations"} {
 		var count int64
 		serviceOK(t, "count account-owned "+table, database.WithContext(ctx).Table(table).Where("owner_id = ?", owner.User.ID).Count(&count).Error)
 		if count != 0 {

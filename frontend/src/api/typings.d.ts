@@ -384,6 +384,13 @@ declare namespace API {
     expected_revision?: number
   }
 
+  type deleteWearFeedbackParams = {
+    wear_event_id: string
+    feedback_id?: string
+    mutation_id?: string
+    expected_revision?: number
+  }
+
   type DeletionRequestResponse = {
     attempts: number
     backup_expires_at: string
@@ -443,6 +450,20 @@ declare namespace API {
     message: string
     request_id: string
     retryable: boolean
+  }
+
+  type FeedbackResponse = {
+    activity_comfort?: 'uncomfortable' | 'okay' | 'comfortable'
+    created_at: string
+    id: string
+    issue_tags: any
+    note?: string
+    occasion_fit?: 'tooCasual' | 'right' | 'tooFormal'
+    repeat_intent?: 'yes' | 'unsure' | 'no'
+    revision: number
+    thermal_comfort?: 'cold' | 'comfortable' | 'hot'
+    updated_at: string
+    wear_event_id: string
   }
 
   type followProfileParams = {
@@ -516,6 +537,15 @@ declare namespace API {
 
   type getWearEventParams = {
     wear_event_id: string
+  }
+
+  type getWearFeedbackParams = {
+    wear_event_id: string
+  }
+
+  type getWearStatisticsParams = {
+    from?: string
+    to?: string
   }
 
   type likePostParams = {
@@ -943,6 +973,22 @@ declare namespace API {
     user_id: string
   }
 
+  type SaveFeedbackRequest = {
+    activity_comfort?: 'uncomfortable' | 'okay' | 'comfortable'
+    expected_revision?: number
+    feedback_id: string
+    issue_tags: any
+    mutation_id: string
+    note?: string
+    occasion_fit?: 'tooCasual' | 'right' | 'tooFormal'
+    repeat_intent?: 'yes' | 'unsure' | 'no'
+    thermal_comfort?: 'cold' | 'comfortable' | 'hot'
+  }
+
+  type saveWearFeedbackParams = {
+    wear_event_id: string
+  }
+
   type searchCommunityPostsParams = {
     limit?: number
     after_id?: string
@@ -1178,6 +1224,19 @@ declare namespace API {
     source_plan_revision?: number
     time_zone: string
     updated_at: string
+  }
+
+  type WearItemUseResponse = {
+    count: number
+    item_id: string
+  }
+
+  type WearStatisticsResponse = {
+    from: string
+    item_uses: any
+    to: string
+    wear_days: number
+    wear_events: number
   }
 
   type withdrawConsentParams = {

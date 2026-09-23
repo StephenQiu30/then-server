@@ -17,6 +17,8 @@ func Migrate(ctx context.Context, database *gorm.DB) error {
 		&outfitPlanDeletionRecord{},
 		&wearEventRecord{},
 		&wearEventItemRecord{},
+		&wearFeedbackRecord{},
+		&wearFeedbackMutationRecord{},
 		&wearEventDeletionRecord{},
 		&credentialRecord{},
 		&sessionRecord{},

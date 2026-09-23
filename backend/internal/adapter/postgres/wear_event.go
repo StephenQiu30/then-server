@@ -24,20 +24,22 @@ func NewWearEventRepository(database *gorm.DB) *WearEventRepository {
 }
 
 type wearEventRecord struct {
-	OwnerID            string                `gorm:"column:owner_id;type:uuid;primaryKey;index:wear_events_owner_order_idx,priority:1"`
-	ID                 string                `gorm:"column:id;type:uuid;primaryKey;uniqueIndex:wear_events_id_unique"`
-	LocalDate          time.Time             `gorm:"column:local_date;type:date;not null;index:wear_events_owner_order_idx,priority:2,sort:desc"`
-	TimeZone           string                `gorm:"column:time_zone;type:text;not null;check:wear_events_time_zone_check,char_length(time_zone) BETWEEN 1 AND 255"`
-	Completeness       string                `gorm:"column:completeness;type:text;not null;check:wear_events_completeness_check,completeness IN ('partial','complete')"`
-	ContextSummary     *string               `gorm:"column:context_summary;type:text;check:wear_events_context_summary_check,context_summary IS NULL OR (context_summary = btrim(context_summary) AND char_length(context_summary) BETWEEN 1 AND 120)"`
-	SourcePlanID       *string               `gorm:"column:source_plan_id;type:uuid;index:wear_events_owner_source_plan_idx,priority:2"`
-	SourcePlanRevision *int                  `gorm:"column:source_plan_revision"`
-	SourceKind         string                `gorm:"column:source_kind;type:text;not null;check:wear_events_source_check,(source_kind = 'unplanned' AND source_plan_id IS NULL AND source_plan_revision IS NULL) OR (source_kind IN ('followed_plan','changed_plan','different_outfit') AND source_plan_id IS NOT NULL AND source_plan_revision >= 1)"`
-	CreateFingerprint  string                `gorm:"column:create_fingerprint;type:char(64);not null;check:wear_events_create_fingerprint_check,char_length(create_fingerprint) = 64"`
-	Revision           int                   `gorm:"column:revision;not null;check:wear_events_revision_check,revision >= 1"`
-	CreatedAt          time.Time             `gorm:"column:created_at;type:timestamptz;not null;index:wear_events_owner_order_idx,priority:3,sort:desc"`
-	UpdatedAt          time.Time             `gorm:"column:updated_at;type:timestamptz;not null;check:wear_events_timestamps_check,updated_at >= created_at"`
-	Items              []wearEventItemRecord `gorm:"foreignKey:OwnerID,EventID;references:OwnerID,ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	OwnerID            string                       `gorm:"column:owner_id;type:uuid;primaryKey;index:wear_events_owner_order_idx,priority:1"`
+	ID                 string                       `gorm:"column:id;type:uuid;primaryKey;uniqueIndex:wear_events_id_unique"`
+	LocalDate          time.Time                    `gorm:"column:local_date;type:date;not null;index:wear_events_owner_order_idx,priority:2,sort:desc"`
+	TimeZone           string                       `gorm:"column:time_zone;type:text;not null;check:wear_events_time_zone_check,char_length(time_zone) BETWEEN 1 AND 255"`
+	Completeness       string                       `gorm:"column:completeness;type:text;not null;check:wear_events_completeness_check,completeness IN ('partial','complete')"`
+	ContextSummary     *string                      `gorm:"column:context_summary;type:text;check:wear_events_context_summary_check,context_summary IS NULL OR (context_summary = btrim(context_summary) AND char_length(context_summary) BETWEEN 1 AND 120)"`
+	SourcePlanID       *string                      `gorm:"column:source_plan_id;type:uuid;index:wear_events_owner_source_plan_idx,priority:2"`
+	SourcePlanRevision *int                         `gorm:"column:source_plan_revision"`
+	SourceKind         string                       `gorm:"column:source_kind;type:text;not null;check:wear_events_source_check,(source_kind = 'unplanned' AND source_plan_id IS NULL AND source_plan_revision IS NULL) OR (source_kind IN ('followed_plan','changed_plan','different_outfit') AND source_plan_id IS NOT NULL AND source_plan_revision >= 1)"`
+	CreateFingerprint  string                       `gorm:"column:create_fingerprint;type:char(64);not null;check:wear_events_create_fingerprint_check,char_length(create_fingerprint) = 64"`
+	Revision           int                          `gorm:"column:revision;not null;check:wear_events_revision_check,revision >= 1"`
+	CreatedAt          time.Time                    `gorm:"column:created_at;type:timestamptz;not null;index:wear_events_owner_order_idx,priority:3,sort:desc"`
+	UpdatedAt          time.Time                    `gorm:"column:updated_at;type:timestamptz;not null;check:wear_events_timestamps_check,updated_at >= created_at"`
+	Items              []wearEventItemRecord        `gorm:"foreignKey:OwnerID,EventID;references:OwnerID,ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Feedback           *wearFeedbackRecord          `gorm:"foreignKey:OwnerID,EventID;references:OwnerID,ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	FeedbackMutations  []wearFeedbackMutationRecord `gorm:"foreignKey:OwnerID,EventID;references:OwnerID,ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 }
 
 func (wearEventRecord) TableName() string { return "wear_events" }

@@ -55,6 +55,7 @@
 | [17-31 Web 衣橱数据核验](17-31-Web衣橱数据核验执行计划.md)、[17-32 Web 穿搭计划数据核验](17-32-Web穿搭计划数据核验执行计划.md)、[17-33 Web 实际穿着核验](17-33-Web实际穿着数据核验执行计划.md) | approved / local development complete | 实际 PG/Redis/Go/Next 验证衣橱、手工计划与主动实际记录；计划不自动生成实际，A/B 隔离、revision、重复确认与删除重算通过 | 公开账号门禁、App 离线 Look/推荐/记录与穿后反馈未由此抵扣 |
 | [17-22 账号穿搭计划 API](17-22-账号穿搭计划API执行计划.md) | approved / completed（后端开发范围） | 6 个计划 operation、服务端衣物快照、revision/tombstone、两种衣物删除影响策略与远程 CI 通过 | App Client/主动同步、实际穿着、反馈和第二设备恢复不在本片 |
 | [17-23 账号实际穿着 API](17-23-账号实际穿着API执行计划.md) | approved / completed（后端开发范围） | 5 个实际事件 operation、not-worn/restore、服务端快照、完整创建命令幂等、重复确认、待洗/计划事务和覆盖两类历史的删除影响；本机与远程三项 CI 全绿 | App Client/主动同步、反馈和第二设备恢复不在本片 |
+| [17-34 账号反馈与穿着统计 API](17-34-账号反馈与穿着统计API执行计划.md) | approved / local development complete | 账号反馈 GET/PUT/DELETE、实际穿着统计、命令重试/revision/owner/级联；隔离 PG18、运行 HTTP、完整 Go race 与生成客户端验证通过 | Web 页面接续 17-35；App 主动同步、云推荐证据、远端 CI 与公开发布未验 |
 | [17-14 仓库与 CI](17-14-客户端服务端仓库拆分与CI执行计划.md)、[17-15 OpenAPI/GORM](17-15-OpenAPI文档门户与Umi生成执行计划.md) | approved / completed | 独立仓库/CI、运行时契约与 AutoMigrate | Web SDK 正式接入不在本片 |
 | [17-13 frontend](17-13-Web账户管理执行计划.md) | 基础工程 completed；账户页面 draft / pending | Next.js 16 App Router、Radix UI、Axios/Umi 生成请求层与同源 rewrites 已完成 | 页面稿与状态矩阵批准后实现账户旅程 |
 | [17-28 Frontend 目录规范化](17-28-Frontend目录结构规范化.md) | approved / completed（本地） | Provider 独立、测试目录简化、应用/测试类型检查分离、源码依赖检查已执行 | 远端验证见对应提交的 Actions；页面视觉与业务范围保持 17-27 基线 |

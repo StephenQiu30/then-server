@@ -14,6 +14,7 @@
 - [App账户与云端访问](17-30-App账户与云端访问执行计划.md)（approved/pending）
 - [私人日记与月历客户端](19-07-私人日记与月历客户端执行计划.md)（approved/pending）
 - [社区发现发布与治理客户端](19-08-社区发现发布与治理客户端执行计划.md)（approved_with_gates/pending）
+- [账号反馈与穿着统计 API](17-34-账号反馈与穿着统计API执行计划.md)（approved/local development complete；BL-HISTORY-02 后端片）
 
 - [后端需求与数据设计审核计划](19-01-后端需求与数据设计审核计划.md)（approved/completed）
 - [账号状态与公开资料执行计划](19-02-账号状态与公开资料执行计划.md)（approved/completed）
