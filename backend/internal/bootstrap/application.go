@@ -27,6 +27,7 @@ import (
 	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
 	"github.com/StephenQiu30/then-server/backend/internal/platform/database"
 	"github.com/StephenQiu30/then-server/backend/internal/platform/httpserver"
+	"github.com/StephenQiu30/then-server/backend/internal/platform/mail"
 	"github.com/StephenQiu30/then-server/backend/internal/platform/ratelimit"
 	"github.com/gin-gonic/gin"
 )
@@ -109,6 +110,17 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 	if err != nil {
 		return err
 	}
+	var accountMail *accountapp.MailService
+	if cfg.MailEnabled {
+		sender, senderErr := mail.NewSender(cfg.MailSMTPAddr, cfg.MailFrom, cfg.MailAuthCode)
+		if senderErr != nil {
+			return senderErr
+		}
+		accountMail, err = accountapp.NewMailService(accounts, postgres.NewAccountRepository(pool.ORM()), sender, cfg.MailKey, cfg.MailLinkBase)
+		if err != nil {
+			return err
+		}
+	}
 	gin.SetMode(gin.ReleaseMode)
 	privacy, err := privacyapp.NewPrivacyService(accounts, postgres.NewPrivacyRepository(pool.ORM()))
 	if err != nil {
@@ -150,7 +162,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		communityHandler = httpapi.NewCommunityHandler(community, objects, cfg.SessionSecure)
 		probes = append(probes, objects)
 	}
-	router, err := httpapi.NewRouterWithFeedback(startup, cfg.DocsEnabled, probes, httpapi.NewAccountHandler(accounts, cfg.SessionSecure, limiter), httpapi.NewPrivacyHandler(privacy, cfg.SessionSecure), httpapi.NewWardrobeHandler(wardrobe, cfg.SessionSecure), httpapi.NewOutfitPlanHandler(outfits, cfg.SessionSecure), httpapi.NewWearEventHandler(wearEvents, cfg.SessionSecure), httpapi.NewDiaryHandler(diaries, cfg.SessionSecure), communityHandler, httpapi.NewFeedbackHandler(feedback, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler)
+	router, err := httpapi.NewRouterWithFeedback(startup, cfg.DocsEnabled, probes, httpapi.NewAccountHandlerWithMail(accounts, accountMail, cfg.SessionSecure, limiter), httpapi.NewPrivacyHandler(privacy, cfg.SessionSecure), httpapi.NewWardrobeHandler(wardrobe, cfg.SessionSecure), httpapi.NewOutfitPlanHandler(outfits, cfg.SessionSecure), httpapi.NewWearEventHandler(wearEvents, cfg.SessionSecure), httpapi.NewDiaryHandler(diaries, cfg.SessionSecure), communityHandler, httpapi.NewFeedbackHandler(feedback, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler)
 	if err != nil {
 		return err
 	}
@@ -159,6 +171,17 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		return errors.New("HTTP listen failed")
 	}
 	log.Info("api_started", "address", listener.Addr().String(), "role", cfg.Role)
+	if accountMail != nil {
+		work, cancelMail := context.WithCancel(ctx)
+		defer cancelMail()
+		results := make(chan error, 2)
+		go func() { results <- accountMail.Run(work) }()
+		go func() { results <- httpserver.Serve(work, listener, router, cfg.ShutdownTimeout, router.Drain) }()
+		err = <-results
+		cancelMail()
+		<-results
+		return err
+	}
 	if err = httpserver.Serve(ctx, listener, router, cfg.ShutdownTimeout, router.Drain); err != nil {
 		return err
 	}

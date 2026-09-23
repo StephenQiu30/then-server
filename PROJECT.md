@@ -192,7 +192,7 @@ backend/
 │   │   ├── postgres/               # GORM records、事务、查询、AutoMigrate
 │   │   ├── objectstore/            # MinIO 适配
 │   │   └── messagequeue/           # Kafka 适配
-│   └── platform/                  # config/database/httpserver/ratelimit 生命周期
+│   └── platform/                  # config/database/httpserver/mail/ratelimit 生命周期
 ├── tests/
 │   ├── services/                  # 本机真实依赖
 │   ├── integration/               # 实际进程 + 隔离依赖

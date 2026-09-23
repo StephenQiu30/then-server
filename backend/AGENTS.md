@@ -40,6 +40,7 @@ backend/
 │       ├── config/                 # 类型化配置
 │       ├── database/               # PostgreSQL/GORM 连接与探测
 │       ├── httpserver/             # HTTP 生命周期
+│       ├── mail/                   # TLS SMTP 发信适配器
 │       └── ratelimit/              # Redis 认证限流、探测与连接生命周期
 ├── tests/                          # 跨包测试；根目录不直接放 Go 文件
 │   ├── services/                   # 本机真实依赖，build tag: services

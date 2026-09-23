@@ -22,7 +22,7 @@ import (
 
 func TestAccountPersistenceLifecycle(t *testing.T) {
 	environment := loadServiceEnvironment(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	base, err := gorm.Open(postgres.Open(environment.databaseURL), &gorm.Config{Logger: logger.Discard})

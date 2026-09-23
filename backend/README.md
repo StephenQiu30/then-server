@@ -44,8 +44,14 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `GET /users/me`
 - `PATCH /users/me`
 - `DELETE /users/me`
+- `POST /auth/email-verifications`
+- `POST /auth/email-verifications/confirm`
+- `POST /auth/password-resets`
+- `POST /auth/password-resets/confirm`
 
-浏览器会话使用 HttpOnly、SameSite=Strict Cookie。本机回环开发可设置 `SESSION_COOKIE_SECURE=false`；非回环监听必须使用安全 Cookie。注册按直连源 IP 每小时 5 次、登录每 15 分钟 10 次，Redis 原子计数超限返回 429 与 `Retry-After`；Redis 不可用时认证失败关闭且 readiness 返回 503。邮件验证、找回密码、可信代理/边缘防护和生产审计尚未完成，因此当前端点只用于开发 MVP。
+浏览器会话使用 HttpOnly、SameSite=Strict Cookie。本机回环开发可设置 `SESSION_COOKIE_SECURE=false`；非回环监听必须使用安全 Cookie。注册按直连源 IP 每小时 5 次、登录每 15 分钟 10 次，Redis 原子计数超限返回 429 与 `Retry-After`；Redis 不可用时认证失败关闭且 readiness 返回 503。
+
+账号邮件功能需要在运行环境同时配置 `ACCOUNT_MAIL_FROM`（完整 163 邮箱）、`ACCOUNT_MAIL_AUTH_CODE`（网易客户端授权码）、`ACCOUNT_MAIL_KEY`（至少 32 随机字节的无填充 base64url）和 `ACCOUNT_MAIL_LINK_BASE`（HTTPS 应用入口）。`ACCOUNT_MAIL_SMTP_ADDR` 默认为 `smtp.163.com:465`，只使用验证证书的 TLS；缺少邮件配置时四个新端点返回 503，不会发送。授权码、挑战密钥不写入仓库或日志。验证/找回后端已支持合成环境；正式送达、App/Web 链接入口、可信代理/边缘防护、地域与生产审计仍是公开注册门禁。
 
 ## 隐私前置 API
 
@@ -64,7 +70,7 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `PUT /wardrobe/items/{item_id}`
 - `DELETE /wardrobe/items/{item_id}`
 
-2026-09-22 生成合同检查为 OpenAPI 文档版本 0.17.0，共 98 个 operation，覆盖账号、衣橱、计划、实际事件、私人日记与社区互动治理，并保持业务路径无版本前缀。本人资源更新必须提交 `expected_revision`；公开帖子只包含批准版本的公开字段，来源日记、媒体 ID、owner、对象 key、对象 version 和同意记录不进入公开响应，HttpOnly 会话 Cookie 不进入生成客户端参数。
+当前运行时 OpenAPI 文档版本为 0.19.0，共 106 个 operation，覆盖账号邮件、衣橱、计划、实际事件、反馈统计、私人日记与社区互动治理，并保持业务路径无版本前缀。本人资源更新必须提交 `expected_revision`；公开帖子只包含批准版本的公开字段，来源日记、媒体 ID、owner、对象 key、对象 version 和同意记录不进入公开响应，HttpOnly 会话 Cookie 不进入生成客户端参数。
 
 ## 账号穿搭计划 API
 

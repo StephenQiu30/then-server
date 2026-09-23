@@ -34,18 +34,30 @@ type AccountService interface {
 	DeleteCurrentUser(context.Context, string) (accountapp.AccountDeletionRequest, error)
 }
 
+type AccountMailService interface {
+	RequestVerification(context.Context, string) error
+	ConfirmVerification(context.Context, string, string) error
+	RequestPasswordReset(context.Context, string) error
+	ConfirmPasswordReset(context.Context, string, string) error
+}
+
 type AuthenticationRateLimiter interface {
 	Allow(context.Context, string, string, int, time.Duration) (bool, time.Duration, error)
 }
 
 type AccountHandler struct {
 	service      AccountService
+	mail         AccountMailService
 	limiter      AuthenticationRateLimiter
 	secureCookie bool
 }
 
 func NewAccountHandler(service AccountService, secureCookie bool, limiter AuthenticationRateLimiter) *AccountHandler {
 	return &AccountHandler{service: service, limiter: limiter, secureCookie: secureCookie}
+}
+
+func NewAccountHandlerWithMail(service AccountService, mail AccountMailService, secureCookie bool, limiter AuthenticationRateLimiter) *AccountHandler {
+	return &AccountHandler{service: service, mail: mail, limiter: limiter, secureCookie: secureCookie}
 }
 
 func (h *AccountHandler) login(ctx context.Context, input *createSessionInput) (*authenticatedUserOutput, error) {
@@ -74,6 +86,10 @@ func (h *AccountHandler) enforceAuthenticationRateLimit(ctx context.Context, sco
 	if allowed {
 		return nil
 	}
+	return rateLimitError(ctx, retryAfter)
+}
+
+func rateLimitError(ctx context.Context, retryAfter time.Duration) error {
 	seconds := int64((retryAfter + time.Second - 1) / time.Second)
 	if seconds < 1 {
 		seconds = 1
@@ -168,6 +184,10 @@ func accountError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, accountapp.ErrInvalidAccountInput):
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
+	case errors.Is(err, accountapp.ErrInvalidChallenge):
+		response := newErrorResponse(http.StatusBadRequest, requestID(ctx))
+		response.Code, response.Message = "INVALID_CHALLENGE", "Challenge is invalid or expired."
+		return response
 	case errors.Is(err, accountapp.ErrEmailConflict):
 		return newErrorResponse(http.StatusConflict, requestID(ctx))
 	case errors.Is(err, accountapp.ErrAccountConflict):
@@ -197,7 +217,8 @@ func authenticatedSessionError(ctx context.Context, secureCookie bool) error {
 func newUserResponse(user accountapp.User) UserResponse {
 	return UserResponse{
 		ID: user.ID, Email: user.Email, DisplayName: user.DisplayName,
-		Status: string(user.Status), Role: string(user.Role), Revision: user.Revision,
+		EmailVerified: user.EmailVerified,
+		Status:        string(user.Status), Role: string(user.Role), Revision: user.Revision,
 		CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt,
 	}
 }
