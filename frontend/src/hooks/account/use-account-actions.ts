@@ -16,10 +16,12 @@ export function useAccountActions() {
     () => ({
       async register(body: API.RegisterAccountRequest) {
         const result = await registerAccount(body)
+        queryClient.clear()
         queryClient.setQueryData(currentUserKey, result.user)
       },
       async login(body: API.CreateSessionRequest) {
         const result = await createSession(body)
+        queryClient.clear()
         queryClient.setQueryData(currentUserKey, result.user)
       },
       async update(body: Parameters<typeof updateCurrentUser>[0]) {
@@ -37,7 +39,7 @@ export function useAccountActions() {
         return receipt
       },
       clearCurrent() {
-        queryClient.removeQueries({ queryKey: currentUserKey })
+        queryClient.clear()
       },
     }),
     [queryClient],

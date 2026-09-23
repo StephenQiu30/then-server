@@ -234,6 +234,9 @@ export function WardrobePanel() {
             <Link href="/plans">查看穿搭计划</Link>
           </Button>
           <Button asChild variant="outline">
+            <Link href="/wear">查看实际穿着</Link>
+          </Button>
+          <Button asChild variant="outline">
             <Link href="/account">账户资料</Link>
           </Button>
         </div>

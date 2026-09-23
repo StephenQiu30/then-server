@@ -36,3 +36,4 @@
 - [WebGPU + Three.js 虚拟形象展示独立评估](webgpu-avatar-assessment.md)（维持 WebGL2；WebGPU 后续实验，不是首版前置）
 - [Web 衣橱数据核验设计](25-Web衣橱数据核验设计.md)（then-server 账号无图衣橱页面）
 - [Web 穿搭计划数据核验设计](26-Web穿搭计划数据核验设计.md)（then-server 账号计划页面）
+- [Web 实际穿着数据核验设计](27-Web实际穿着数据核验设计.md)（then-server 账号实际记录页面）
