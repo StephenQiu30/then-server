@@ -100,6 +100,9 @@ func validSettlementTime(task Task, at time.Time) bool {
 }
 
 func validSettlementLease(task Task, at time.Time) bool {
+	if task.Status.terminal() {
+		return task.LeaseOwner == "" && task.LeaseUntil == nil && task.LeaseAttempt >= 0
+	}
 	if task.LeaseUntil == nil {
 		// A released task may be settled by a user-facing cancellation path,
 		// but its persisted lease shape must still be internally consistent.
