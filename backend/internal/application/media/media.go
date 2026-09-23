@@ -172,7 +172,7 @@ func validUploadInput(input CreateMediaUploadInput) bool {
 	switch input.Purpose {
 	case MediaPurposeAvatarSourcePreparation:
 		return input.ConsentID != ""
-	case MediaPurposeDiaryImage, MediaPurposeCommunityPublish:
+	case MediaPurposeDiaryImage, MediaPurposeCommunityPublish, MediaPurposeProfileAvatar:
 		return input.ConsentID == ""
 	default:
 		return false

@@ -131,3 +131,19 @@ func TestNormalizedJPEGRejectsAppendedSecondFrame(t *testing.T) {
 		t.Fatal("multi-frame JPEG input was accepted")
 	}
 }
+
+func TestProfileAvatarNormalizationDropsSourceMetadata(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 2, 2)), nil); err != nil {
+		t.Fatal(err)
+	}
+	metadata := []byte("Exif\x00\x00GPS test location")
+	segment := append([]byte{0xff, 0xe1, 0, byte(len(metadata) + 2)}, metadata...)
+	source := append(append(bytes.Clone(encoded.Bytes()[:2]), segment...), encoded.Bytes()[2:]...)
+	runner := &Runner{objects: &workerObjectStoreStub{data: source}}
+	media := mediaapp.MediaAsset{Purpose: mediaapp.MediaPurposeProfileAvatar, RawObjectKey: "source.jpg", ObjectVersionID: "fixed-version", ByteSize: int64(len(source)), SHA256: fmt.Sprintf("%x", sha256.Sum256(source))}
+	normalized, _, _, reason, err := runner.normalizedJPEG(context.Background(), media)
+	if err != nil || reason != "" || bytes.Contains(normalized, []byte("GPS test location")) || bytes.Contains(normalized, []byte("Exif")) {
+		t.Fatalf("profile avatar normalization retained metadata: reason=%s err=%v", reason, err)
+	}
+}

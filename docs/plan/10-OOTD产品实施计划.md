@@ -63,6 +63,7 @@
 | [18-02 本人结构化数据导出后端](18-02-本人数据导出后端执行计划.md) | 本地合成数据后端 completed | 四个 Huma operation、39 表迁移、持久任务与私有 ZIP；Go/四服务/实际进程/OCI 本地门禁通过 | 媒体档接续 18-03；客户端展示与注销后回执另验 |
 | [18-03 本人原图数据导出后端](18-03-本人原图数据导出后端执行计划.md) | 本地合成数据后端 completed | `with_media` 固定原图版本、`partial`、删图撤销与对象清理；真实服务/进程/只读 OCI 本地通过 | Client 展示与真实用户发布仍待验；注销后回执接续 18-04；`BL-DATA-02` 未完成 |
 | [18-04 注销后删除回执后端](18-04-注销后删除回执后端执行计划.md) | 本地合成数据后端 completed | 202 一次性凭据、注销后 Bearer 查询/撤销、真实媒体进度与 7 天查询权；Go/四服务/进程/只读 OCI 本地通过 | Client 展示与真实用户发布另验；`BL-DATA-03` 未完成 |
+| [17-37 公开资料头像后端](17-37-公开资料头像后端执行计划.md) | 本地合成数据后端 completed | 独立 profile_avatar 用途、净化固定版本、绑定/替换/撤下及匿名读取；真实 PG/MinIO、Go/进程本地通过 | Client 展示、真实用户素材与公开发布另验；`BL-ACCOUNT-05` 整体未完成 |
 | [17-14 仓库与 CI](17-14-客户端服务端仓库拆分与CI执行计划.md)、[17-15 OpenAPI/GORM](17-15-OpenAPI文档门户与Umi生成执行计划.md) | approved / completed | 独立仓库/CI、运行时契约与 AutoMigrate | Web SDK 正式接入不在本片 |
 | [17-13 frontend](17-13-Web账户管理执行计划.md) | 基础工程 completed；账户页面 draft / pending | Next.js 16 App Router、Radix UI、Axios/Umi 生成请求层与同源 rewrites 已完成 | 页面稿与状态矩阵批准后实现账户旅程 |
 | [17-28 Frontend 目录规范化](17-28-Frontend目录结构规范化.md) | approved / completed（本地） | Provider 独立、测试目录简化、应用/测试类型检查分离、源码依赖检查已执行 | 远端验证见对应提交的 Actions；页面视觉与业务范围保持 17-27 基线 |

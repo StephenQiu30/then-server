@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
 )
 
 var profileHandlePattern = regexp.MustCompile(`^[a-z0-9_]{3,30}$`)
@@ -40,6 +42,36 @@ func (s *AccountService) PutCurrentProfile(ctx context.Context, token string, in
 	}
 	input.Handle, input.Bio = handle, bio
 	return s.repository.PutProfile(ctx, user.ID, input, s.now().UTC())
+}
+
+func (s *AccountService) PutProfileAvatar(ctx context.Context, token, mediaID string, expectedRevision int) (PublicProfile, error) {
+	user, err := s.CurrentUser(ctx, token)
+	if err != nil {
+		return PublicProfile{}, err
+	}
+	if uuid.Validate(mediaID) != nil || expectedRevision < 1 {
+		return PublicProfile{}, ErrInvalidProfileInput
+	}
+	return s.repository.PutProfileAvatar(ctx, user.ID, mediaID, expectedRevision, s.now().UTC())
+}
+
+func (s *AccountService) DeleteProfileAvatar(ctx context.Context, token string, expectedRevision int) (PublicProfile, error) {
+	user, err := s.CurrentUser(ctx, token)
+	if err != nil {
+		return PublicProfile{}, err
+	}
+	if expectedRevision < 1 {
+		return PublicProfile{}, ErrInvalidProfileInput
+	}
+	return s.repository.DeleteProfileAvatar(ctx, user.ID, expectedRevision, s.now().UTC())
+}
+
+func (s *AccountService) PublicProfileAvatar(ctx context.Context, handle string) (ProfileAvatarReference, error) {
+	handle, ok := normalizeProfileHandle(handle)
+	if !ok {
+		return ProfileAvatarReference{}, ErrProfileNotFound
+	}
+	return s.repository.FindProfileAvatar(ctx, handle)
 }
 
 func normalizeProfileHandle(value string) (string, bool) {

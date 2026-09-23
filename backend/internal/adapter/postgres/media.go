@@ -40,7 +40,7 @@ type mediaAssetRecord struct {
 	ID              string                  `gorm:"column:id;type:uuid;primaryKey"`
 	OwnerID         string                  `gorm:"column:owner_id;type:uuid;not null;index:media_assets_owner_idx"`
 	ConsentID       *string                 `gorm:"column:consent_id;type:uuid;index:media_assets_consent_idx"`
-	Purpose         string                  `gorm:"column:purpose;type:text;not null;check:media_assets_purpose_check,purpose IN ('avatar_source_preparation','diary_image','community_publish');check:media_assets_purpose_category_check,(purpose = 'avatar_source_preparation' AND category = 'person_photo' AND consent_id IS NOT NULL) OR (purpose IN ('diary_image','community_publish') AND category = 'ordinary_image' AND consent_id IS NULL)"`
+	Purpose         string                  `gorm:"column:purpose;type:text;not null;check:media_assets_purpose_check,purpose IN ('avatar_source_preparation','diary_image','community_publish','profile_avatar');check:media_assets_purpose_category_check,(purpose = 'avatar_source_preparation' AND category = 'person_photo' AND consent_id IS NOT NULL) OR (purpose IN ('diary_image','community_publish','profile_avatar') AND category = 'ordinary_image' AND consent_id IS NULL)"`
 	Category        string                  `gorm:"column:category;type:text;not null;check:media_assets_category_check,category IN ('person_photo','ordinary_image')"`
 	ContentType     string                  `gorm:"column:content_type;type:text;not null;check:media_assets_content_type_check,content_type = 'image/jpeg'"`
 	ByteSize        int64                   `gorm:"column:byte_size;not null;check:media_assets_byte_size_check,byte_size BETWEEN 1 AND 12582912"`
@@ -182,8 +182,11 @@ func (r *MediaRepository) CreateMedia(ctx context.Context, ownerID string, input
 	record := mediaAssetRecord{ID: mediaID, OwnerID: ownerID, ConsentID: consentID, Purpose: input.Purpose, Category: category, ContentType: input.ContentType, ByteSize: input.ByteSize, SHA256: input.SHA256, RawObjectKey: "owners/" + ownerID + "/media/" + mediaID + "/source.jpg", Status: string(mediaapp.MediaPendingUpload), UploadExpiresAt: at.Add(mediaapp.UploadIntentLifetime), CreatedAt: at, UpdatedAt: at}
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user userRecord
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", ownerID).First(&user).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status").Where("id = ?", ownerID).First(&user).Error; err != nil {
 			return err
+		}
+		if user.Status != "active" {
+			return mediaapp.ErrMediaConflict
 		}
 		if input.Purpose == mediaapp.MediaPurposeAvatarSourcePreparation {
 			var consent consentRecord
@@ -195,6 +198,9 @@ func (r *MediaRepository) CreateMedia(ctx context.Context, ownerID string, input
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return mediaapp.MediaAsset{}, mediaapp.ErrConsentRequired
+	}
+	if errors.Is(err, mediaapp.ErrMediaConflict) {
+		return mediaapp.MediaAsset{}, err
 	}
 	if err != nil {
 		return mediaapp.MediaAsset{}, mediaapp.ErrMediaUnavailable
@@ -240,41 +246,22 @@ func (r *MediaRepository) CompleteMedia(ctx context.Context, ownerID, mediaID, v
 func (r *MediaRepository) DeleteMedia(ctx context.Context, ownerID, mediaID string, at time.Time) (mediaapp.DeletionRequest, error) {
 	var request deletionRequestRecord
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var media mediaAssetRecord
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND owner_id = ?", mediaID, ownerID).First(&media).Error; err != nil {
+		var user userRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ? AND status = ?", ownerID, "active").First(&user).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("media_id = ? AND owner_id = ?", mediaID, ownerID).First(&request).Error; err == nil {
-			return nil
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		var profile userProfileRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", ownerID).First(&profile).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if media.Status == string(mediaapp.MediaDeleted) {
-			return mediaapp.ErrMediaConflict
+		if profile.AvatarMediaID != nil && *profile.AvatarMediaID == mediaID {
+			if err := tx.Model(&profile).Updates(map[string]any{"avatar_media_id": nil, "revision": profile.Revision + 1, "updated_at": at}).Error; err != nil {
+				return err
+			}
 		}
-		var publishedReferences int64
-		if err := tx.Table("post_revision_media prm").Joins("JOIN posts p ON p.id = prm.post_id").Where("prm.media_id = ? AND p.state <> ?", mediaID, "deleted").Count(&publishedReferences).Error; err != nil {
-			return err
-		}
-		if publishedReferences != 0 {
-			return mediaapp.ErrMediaConflict
-		}
-		if err := unlinkMediaFromDiaries(tx, ownerID, mediaID, at); err != nil {
-			return err
-		}
-		request = deletionRequestRecord{ID: uuid.NewString(), OwnerID: ownerID, MediaID: mediaID, Status: string(mediaapp.DeletionPending), ReadRevokedAt: at, BackupExpiresAt: at, NextAttemptAt: at, CreatedAt: at, UpdatedAt: at}
-		if err := tx.Model(&media).Updates(map[string]any{"status": string(mediaapp.MediaDeleting), "updated_at": at}).Error; err != nil {
-			return err
-		}
-		if err := tx.Create(&request).Error; err != nil {
-			return err
-		}
-		// A previously built ZIP may contain this original. Revoke its read right
-		// in the same transaction that revokes the media's read right.
-		if err := tx.Model(&dataExportRecord{}).Where("owner_id = ? AND mode = ? AND status IN ?", ownerID, "with_media", []string{"preparing", "ready", "partial"}).Updates(map[string]any{"status": "revoked", "revoked_at": at}).Error; err != nil {
-			return err
-		}
-		return tx.Create(&outboxEventRecord{ID: uuid.NewString(), EventType: "media.deletion_requested", AggregateID: mediaID, Payload: []byte(`{"media_id":"` + mediaID + `"}`), CreatedAt: at}).Error
+		var err error
+		request, err = deleteMediaInTx(tx, ownerID, mediaID, at)
+		return err
 	})
 	if err != nil {
 		if errors.Is(err, mediaapp.ErrMediaConflict) {
@@ -283,6 +270,45 @@ func (r *MediaRepository) DeleteMedia(ctx context.Context, ownerID, mediaID stri
 		return mediaapp.DeletionRequest{}, mediaLookupError(err)
 	}
 	return deletionFromRecord(request), nil
+}
+
+func deleteMediaInTx(tx *gorm.DB, ownerID, mediaID string, at time.Time) (deletionRequestRecord, error) {
+	var request deletionRequestRecord
+	var media mediaAssetRecord
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND owner_id = ?", mediaID, ownerID).First(&media).Error; err != nil {
+		return request, err
+	}
+	if err := tx.Where("media_id = ? AND owner_id = ?", mediaID, ownerID).First(&request).Error; err == nil {
+		return request, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return request, err
+	}
+	if media.Status == string(mediaapp.MediaDeleted) {
+		return request, mediaapp.ErrMediaConflict
+	}
+	var publishedReferences int64
+	if err := tx.Table("post_revision_media prm").Joins("JOIN posts p ON p.id = prm.post_id").Where("prm.media_id = ? AND p.state <> ?", mediaID, "deleted").Count(&publishedReferences).Error; err != nil {
+		return request, err
+	}
+	if publishedReferences != 0 {
+		return request, mediaapp.ErrMediaConflict
+	}
+	if err := unlinkMediaFromDiaries(tx, ownerID, mediaID, at); err != nil {
+		return request, err
+	}
+	request = deletionRequestRecord{ID: uuid.NewString(), OwnerID: ownerID, MediaID: mediaID, Status: string(mediaapp.DeletionPending), ReadRevokedAt: at, BackupExpiresAt: at, NextAttemptAt: at, CreatedAt: at, UpdatedAt: at}
+	if err := tx.Model(&media).Updates(map[string]any{"status": string(mediaapp.MediaDeleting), "updated_at": at}).Error; err != nil {
+		return request, err
+	}
+	if err := tx.Create(&request).Error; err != nil {
+		return request, err
+	}
+	// A previously built ZIP may contain this original. Revoke its read right
+	// in the same transaction that revokes the media's read right.
+	if err := tx.Model(&dataExportRecord{}).Where("owner_id = ? AND mode = ? AND status IN ?", ownerID, "with_media", []string{"preparing", "ready", "partial"}).Updates(map[string]any{"status": "revoked", "revoked_at": at}).Error; err != nil {
+		return request, err
+	}
+	return request, tx.Create(&outboxEventRecord{ID: uuid.NewString(), EventType: "media.deletion_requested", AggregateID: mediaID, Payload: []byte(`{"media_id":"` + mediaID + `"}`), CreatedAt: at}).Error
 }
 
 func unlinkMediaFromDiaries(tx *gorm.DB, ownerID, mediaID string, at time.Time) error {

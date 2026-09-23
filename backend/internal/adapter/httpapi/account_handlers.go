@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -30,6 +31,9 @@ type AccountService interface {
 	CurrentProfile(context.Context, string) (accountapp.PublicProfile, error)
 	PublicProfile(context.Context, string) (accountapp.PublicProfile, error)
 	PutCurrentProfile(context.Context, string, accountapp.PutProfileInput) (accountapp.PublicProfile, error)
+	PutProfileAvatar(context.Context, string, string, int) (accountapp.PublicProfile, error)
+	DeleteProfileAvatar(context.Context, string, int) (accountapp.PublicProfile, error)
+	PublicProfileAvatar(context.Context, string) (accountapp.ProfileAvatarReference, error)
 	Logout(context.Context, string) error
 	DeleteCurrentUser(context.Context, string) (accountapp.AccountDeletionRequest, error)
 	GetDeletionReceipt(context.Context, string, string) (accountapp.AccountDeletionRequest, error)
@@ -47,11 +51,21 @@ type AuthenticationRateLimiter interface {
 	Allow(context.Context, string, string, int, time.Duration) (bool, time.Duration, error)
 }
 
+type ProfileAvatarObjectStore interface {
+	OpenDerivedVersion(context.Context, string, string) (io.ReadCloser, error)
+}
+
 type AccountHandler struct {
-	service      AccountService
-	mail         AccountMailService
-	limiter      AuthenticationRateLimiter
-	secureCookie bool
+	service       AccountService
+	avatarObjects ProfileAvatarObjectStore
+	mail          AccountMailService
+	limiter       AuthenticationRateLimiter
+	secureCookie  bool
+}
+
+func (h *AccountHandler) WithAvatarObjects(objects ProfileAvatarObjectStore) *AccountHandler {
+	h.avatarObjects = objects
+	return h
 }
 
 func NewAccountHandler(service AccountService, secureCookie bool, limiter AuthenticationRateLimiter) *AccountHandler {

@@ -170,9 +170,13 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		communityHandler = httpapi.NewCommunityHandler(community, objects, cfg.SessionSecure)
 		probes = append(probes, objects)
 	}
+	accountHandler := httpapi.NewAccountHandlerWithMail(accounts, accountMail, cfg.SessionSecure, limiter)
+	if objects != nil {
+		accountHandler.WithAvatarObjects(objects)
+	}
 	router, err := httpapi.NewRouterWithExport(
 		startup, cfg.DocsEnabled, probes,
-		httpapi.NewAccountHandlerWithMail(accounts, accountMail, cfg.SessionSecure, limiter),
+		accountHandler,
 		httpapi.NewPrivacyHandler(privacy, cfg.SessionSecure),
 		httpapi.NewWardrobeHandler(wardrobe, cfg.SessionSecure),
 		httpapi.NewOutfitPlanHandler(outfits, cfg.SessionSecure),

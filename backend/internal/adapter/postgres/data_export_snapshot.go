@@ -16,7 +16,7 @@ var exportQueries = []struct {
 	name, projection, source, predicate string
 }{
 	{"account", "u.id::text AS sort_key, u.id, c.email, u.display_name, u.status, u.role, (u.email_verified_at IS NOT NULL) AS email_verified, u.created_at, u.updated_at", "users u JOIN user_credentials c ON c.user_id = u.id", "u.id = ?"},
-	{"profile", "p.user_id::text AS sort_key, p.handle, p.bio, p.revision, p.created_at, p.updated_at", "user_profiles p", "p.user_id = ?"},
+	{"profile", "p.user_id::text AS sort_key, p.handle, p.bio, p.avatar_media_id, p.revision, p.created_at, p.updated_at", "user_profiles p", "p.user_id = ?"},
 	{"wardrobe", "w.id::text AS sort_key, w.id, w.name, w.category, w.availability, w.source, w.formality_band, w.warmth_band, w.rain_use, w.walking_use, w.revision, w.created_at, w.updated_at", "wardrobe_items w", "w.owner_id = ?"},
 	{"outfit_plans", "p.id::text AS sort_key, p.id, p.local_date, p.time_zone, p.context_summary, p.status, p.revision, p.created_at, p.updated_at", "outfit_plans p", "p.owner_id = ?"},
 	{"outfit_plan_items", "i.plan_id::text || ':' || lpad(i.ordinal::text, 3, '0') AS sort_key, i.plan_id, i.ordinal, i.wardrobe_item_id, i.item_revision, i.name, i.category, i.availability, i.formality_band, i.warmth_band, i.rain_use, i.walking_use, i.redacted", "outfit_plan_items i", "i.owner_id = ?"},
@@ -83,7 +83,7 @@ func (r *DataExportRepository) Snapshot(ctx context.Context, ownerID, mode strin
 		}
 		if mode == exportapp.ModeWithMedia {
 			var records []mediaAssetRecord
-			if err := tx.Select("id", "raw_object_key", "object_version_id", "byte_size", "sha256", "source_deleted_at").Where("owner_id = ? AND status = 'ready' AND purpose IN ?", ownerID, []string{"avatar_source_preparation", "diary_image", "community_publish"}).Order("id ASC").Limit(10001).Find(&records).Error; err != nil {
+			if err := tx.Select("id", "raw_object_key", "object_version_id", "byte_size", "sha256", "source_deleted_at").Where("owner_id = ? AND status = 'ready' AND purpose IN ?", ownerID, []string{"avatar_source_preparation", "diary_image", "community_publish", "profile_avatar"}).Order("id ASC").Limit(10001).Find(&records).Error; err != nil {
 				return err
 			}
 			if len(records) > 10000 {

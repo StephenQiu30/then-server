@@ -91,6 +91,18 @@ func (s *accountServiceStub) PutCurrentProfile(_ context.Context, token string, 
 	return s.profile, s.err
 }
 
+func (s *accountServiceStub) PutProfileAvatar(context.Context, string, string, int) (accountapp.PublicProfile, error) {
+	return s.profile, s.err
+}
+
+func (s *accountServiceStub) DeleteProfileAvatar(context.Context, string, int) (accountapp.PublicProfile, error) {
+	return s.profile, s.err
+}
+
+func (s *accountServiceStub) PublicProfileAvatar(context.Context, string) (accountapp.ProfileAvatarReference, error) {
+	return accountapp.ProfileAvatarReference{}, s.err
+}
+
 func (s *accountServiceStub) Logout(_ context.Context, token string) error {
 	s.token = token
 	return s.err

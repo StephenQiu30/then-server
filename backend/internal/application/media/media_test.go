@@ -116,18 +116,20 @@ func TestMediaServiceReturnsOnlySignedUploadResponse(t *testing.T) {
 	}
 }
 
-func TestDiaryImageDoesNotReusePersonPhotoConsentGate(t *testing.T) {
-	repository := &mediaRepositoryStub{adult: false, media: MediaAsset{ID: "media-id", Purpose: MediaPurposeDiaryImage, Category: MediaCategoryOrdinaryImage}}
-	objects := &mediaObjectStoreStub{upload: SignedUpload{Method: "PUT", URL: "http://127.0.0.1/signed"}}
-	service, err := NewMediaService(&mediaAuthenticatorStub{user: accountapp.User{ID: "owner"}}, repository, objects)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = service.CreateMediaUpload(context.Background(), "session", CreateMediaUploadInput{Purpose: MediaPurposeDiaryImage, ContentType: MediaContentTypeJPEG, ByteSize: 1024, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if repository.adultCalls != 0 || repository.mediaInput.ConsentID != "" {
-		t.Fatalf("diary image reused person-photo gate: adult_calls=%d input=%+v", repository.adultCalls, repository.mediaInput)
+func TestOrdinaryImagesDoNotReusePersonPhotoConsentGate(t *testing.T) {
+	for _, purpose := range []string{MediaPurposeDiaryImage, MediaPurposeProfileAvatar} {
+		repository := &mediaRepositoryStub{adult: false, media: MediaAsset{ID: "media-id", Purpose: purpose, Category: MediaCategoryOrdinaryImage}}
+		objects := &mediaObjectStoreStub{upload: SignedUpload{Method: "PUT", URL: "http://127.0.0.1/signed"}}
+		service, err := NewMediaService(&mediaAuthenticatorStub{user: accountapp.User{ID: "owner"}}, repository, objects)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = service.CreateMediaUpload(context.Background(), "session", CreateMediaUploadInput{Purpose: purpose, ContentType: MediaContentTypeJPEG, ByteSize: 1024, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if repository.adultCalls != 0 || repository.mediaInput.ConsentID != "" {
+			t.Fatalf("%s reused person-photo gate: adult_calls=%d input=%+v", purpose, repository.adultCalls, repository.mediaInput)
+		}
 	}
 }

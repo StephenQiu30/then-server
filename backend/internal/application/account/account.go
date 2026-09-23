@@ -35,6 +35,9 @@ type AccountRepository interface {
 	FindProfileByUserID(context.Context, string) (PublicProfile, error)
 	FindProfileByHandle(context.Context, string) (PublicProfile, error)
 	PutProfile(context.Context, string, PutProfileInput, time.Time) (PublicProfile, error)
+	PutProfileAvatar(context.Context, string, string, int, time.Time) (PublicProfile, error)
+	DeleteProfileAvatar(context.Context, string, int, time.Time) (PublicProfile, error)
+	FindProfileAvatar(context.Context, string) (ProfileAvatarReference, error)
 	DeleteSession(context.Context, []byte) error
 	BeginAccountDeletion(context.Context, string, []byte, time.Time, time.Time) (AccountDeletionRequest, error)
 	GetDeletionReceipt(context.Context, string, []byte, time.Time) (AccountDeletionRequest, error)
