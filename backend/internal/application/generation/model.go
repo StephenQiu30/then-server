@@ -332,6 +332,9 @@ func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 	if t == nil || !t.Status.CanTransitionTo(next) || at.IsZero() {
 		return ErrInvalidGenerationState
 	}
+	if next == StatusSucceeded && t.ResultAssetID == "" {
+		return ErrGenerationOutputRequired
+	}
 	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
 		return ErrInvalidGenerationState
 	}
