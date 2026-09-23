@@ -158,6 +158,47 @@ func TestSubmissionGuardsRejectMalformedPersistedFacts(t *testing.T) {
 	}
 }
 
+func TestTaskGuardsRejectMalformedPersistedFacts(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*Task)
+	}{
+		{
+			name: "non canonical parameters",
+			mutate: func(task *Task) {
+				task.Parameters = []byte(`{"temperature":1,"seed":"fixed"}`)
+			},
+		},
+		{
+			name: "missing creation time",
+			mutate: func(task *Task) {
+				task.CreatedAt = time.Time{}
+			},
+		},
+		{
+			name: "invalid input snapshot",
+			mutate: func(task *Task) {
+				task.Inputs.References[0].SHA256 = "invalid"
+			},
+		},
+		{
+			name: "missing result on succeeded task",
+			mutate: func(task *Task) {
+				task.Status = StatusSucceeded
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			task := mustTask(validCreateInput())
+			tc.mutate(&task)
+			if _, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), time.Minute); !errors.Is(err, ErrInvalidGenerationState) {
+				t.Fatalf("malformed task acquired a lease: %v", err)
+			}
+		})
+	}
+}
+
 func TestWorkerStateWritesRequireAnActiveLease(t *testing.T) {
 	task := mustTask(validCreateInput())
 	if _, err := task.BeginSubmission(generationTestNow.Add(time.Minute)); !errors.Is(err, ErrGenerationLeaseConflict) {

@@ -33,8 +33,11 @@ func (t *Task) AcquireLease(owner string, at time.Time, ttl time.Duration) (Leas
 	if !activeStatus(t.Status) {
 		return Lease{}, ErrInvalidGenerationState
 	}
-	if !t.validSubmissionFacts() {
+	if !t.validTaskCoreFacts() {
 		return Lease{}, ErrInvalidGenerationState
+	}
+	if !t.validLeaseFacts() {
+		return Lease{}, ErrInvalidGenerationLease
 	}
 	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
 		return Lease{}, ErrInvalidGenerationLease
@@ -109,6 +112,9 @@ func (t Task) ValidateLease(lease Lease, at time.Time) error {
 }
 
 func (t Task) validateActiveLeaseAt(at time.Time) error {
+	if !t.validTaskFacts() || !t.validLeaseFacts() {
+		return ErrInvalidGenerationLease
+	}
 	if (t.LeaseUntil == nil) != (t.LeaseOwner == "") || t.LeaseAttempt < 0 {
 		return ErrInvalidGenerationLease
 	}
@@ -128,7 +134,7 @@ func (t Task) validateActiveLeaseAt(at time.Time) error {
 }
 
 func (t Task) validateLease(lease Lease, at time.Time) error {
-	if !validID(t.ID) || !validID(lease.TaskID) || lease.TaskID != t.ID || !validID(lease.Owner) || lease.FencingToken == 0 || lease.Attempt < 1 || lease.ExpiresAt.IsZero() {
+	if !t.validTaskFacts() || !t.validLeaseFacts() || !validID(lease.TaskID) || lease.TaskID != t.ID || !validID(lease.Owner) || lease.FencingToken == 0 || lease.Attempt < 1 || lease.ExpiresAt.IsZero() {
 		return ErrInvalidGenerationLease
 	}
 	if t.LeaseOwner != lease.Owner || t.FencingToken != lease.FencingToken || t.LeaseAttempt != lease.Attempt || t.LeaseUntil == nil || !t.LeaseUntil.Equal(lease.ExpiresAt) {

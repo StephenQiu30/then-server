@@ -55,6 +55,17 @@ func TestPrepareAcceptanceReusesReplayBeforePolicyAndCopiesTask(t *testing.T) {
 	}
 }
 
+func TestPrepareAcceptanceRejectsMalformedExistingTask(t *testing.T) {
+	existing, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing.UpdatedAt = existing.CreatedAt.Add(-time.Second)
+	if _, err := PrepareAcceptance(AdmissionPolicy{}, AdmissionUsage{}, []Task{existing}, validCreateInput(), "", "", generationTestNow.Add(time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("malformed existing task was reused: %v", err)
+	}
+}
+
 func TestPrepareAcceptanceContentDedupeReturnsExistingTask(t *testing.T) {
 	existingInput := validCreateInput()
 	existing, err := NewTask(existingInput, generationTestNow)

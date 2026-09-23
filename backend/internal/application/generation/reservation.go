@@ -64,15 +64,13 @@ func (r QuotaReservation) validFacts() bool {
 func NewQuotaReservation(id string, task Task, now time.Time) (QuotaReservation, error) {
 	if !validID(id) || !validID(task.ID) || !validID(task.OwnerID) || !task.Purpose.valid() || now.IsZero() ||
 		task.Status != StatusQueued || task.SubmissionState != SubmissionNotStarted || task.ExternalTaskID != "" ||
-		task.CancelRequestedAt != nil || task.StatusRevision < 1 || task.CreatedAt.IsZero() || !task.validSubmissionFacts() {
+		task.CancelRequestedAt != nil || task.StatusRevision < 1 || task.CreatedAt.IsZero() || !task.validTaskFacts() {
 		return QuotaReservation{}, ErrInvalidQuotaReservation
 	}
 	if now.Before(task.CreatedAt) || (!task.UpdatedAt.IsZero() && now.Before(task.UpdatedAt)) {
 		return QuotaReservation{}, ErrInvalidQuotaReservation
 	}
-	if task.Cost.ReservedQuotaUnits < 0 || task.Cost.EstimatedMinorUnits < 0 ||
-		(task.Cost.EstimatedMinorUnits > 0 && !validToken(task.Cost.Currency, 16)) ||
-		(task.Cost.EstimatedMinorUnits == 0 && task.Cost.Currency != "" && !validToken(task.Cost.Currency, 16)) ||
+	if !validCostEstimate(task.Cost) ||
 		(task.Cost.ReservedQuotaUnits == 0 && task.Cost.EstimatedMinorUnits == 0) {
 		return QuotaReservation{}, ErrInvalidQuotaReservation
 	}
