@@ -146,3 +146,28 @@ func TestPublishOutputRejectsMalformedAssetAndStaleSettlement(t *testing.T) {
 		t.Fatalf("stale settlement error = %v", err)
 	}
 }
+
+func TestSettlementRejectsExpiredActiveLease(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if _, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusValidating, "", generationTestNow.Add(90*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	asset, err := NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(90*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("expired output settlement error = %v", err)
+	}
+
+	task = mustTask(validCreateInput())
+	if _, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FinalizeWithoutOutput(task, nil, StatusFailed, "provider_error", generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("expired failure settlement error = %v", err)
+	}
+}
