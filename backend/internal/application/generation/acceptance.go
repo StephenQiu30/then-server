@@ -31,6 +31,15 @@ type OutboxEvent struct {
 	CreatedAt         time.Time
 }
 
+func (e OutboxEvent) validFacts() bool {
+	return validID(e.ID) &&
+		e.EventType == GenerationRequestedEvent &&
+		validID(e.AggregateID) &&
+		e.AggregateRevision >= 1 &&
+		e.Purpose.valid() &&
+		!e.CreatedAt.IsZero()
+}
+
 // NewOutboxEvent creates the dispatch intent for a queued task. A task that
 // was already canceled or submitted must not create a second dispatch event.
 func NewOutboxEvent(id string, task Task, now time.Time) (OutboxEvent, error) {
@@ -46,14 +55,18 @@ func NewOutboxEvent(id string, task Task, now time.Time) (OutboxEvent, error) {
 		return OutboxEvent{}, ErrInvalidGenerationOutbox
 	}
 	now = now.UTC()
-	return OutboxEvent{
+	event := OutboxEvent{
 		ID:                id,
 		EventType:         GenerationRequestedEvent,
 		AggregateID:       task.ID,
 		AggregateRevision: task.StatusRevision,
 		Purpose:           task.Purpose,
 		CreatedAt:         now,
-	}, nil
+	}
+	if !event.validFacts() {
+		return OutboxEvent{}, ErrInvalidGenerationOutbox
+	}
+	return event, nil
 }
 
 // AcceptanceResult is the side-effect-free result of generation admission.
