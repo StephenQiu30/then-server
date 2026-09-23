@@ -25,6 +25,7 @@ var (
 	ErrSubmissionInProgress     = errors.New("generation submission is already in progress")
 	ErrSubmissionOutcomeUnknown = errors.New("generation submission outcome is unknown")
 	ErrExternalTaskConflict     = errors.New("external generation task conflict")
+	ErrGenerationOutputRequired = errors.New("validated generation output is required before success")
 )
 
 var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -387,12 +388,20 @@ func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
 }
 
 // ApplyProviderState reconciles an observation that has already been mapped
-// by an adapter to the domain state machine. Repeated observations are
-// idempotent; stale or cross-task observations cannot move a task backwards or
-// attach a result to another task.
+// by an adapter to the domain state machine. A provider-success observation
+// stops at validating; PublishOutput is the only path that can mark a task
+// succeeded after object validation and lineage checks. Repeated observations
+// are idempotent; stale or cross-task observations cannot move a task backwards
+// or attach a result to another task.
 func (t *Task) ApplyProviderState(externalID string, next Status, failureCode string, at time.Time) error {
 	if t == nil || !validToken(externalID, 256) || t.ExternalTaskID == "" || t.ExternalTaskID != externalID {
 		return ErrExternalTaskConflict
+	}
+	if next == StatusSucceeded {
+		if t.Status.terminal() {
+			return ErrInvalidGenerationState
+		}
+		return ErrGenerationOutputRequired
 	}
 	if next == t.Status {
 		if failureCode != t.FailureCode {
