@@ -59,6 +59,45 @@ func TestNewTaskCanonicalizesParametersAndCopiesInputs(t *testing.T) {
 	}
 }
 
+func TestTaskRejectsStatusRevisionOverflowBeforeMutation(t *testing.T) {
+	t.Run("transition", func(t *testing.T) {
+		task := mustTask(validCreateInput())
+		task.StatusRevision = maxInt()
+		if err := task.Transition(StatusRunning, "", generationTestNow.Add(time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+			t.Fatalf("overflowing transition error = %v", err)
+		}
+		if task.Status != StatusQueued || task.StatusRevision != maxInt() || !task.UpdatedAt.Equal(generationTestNow) {
+			t.Fatalf("overflowing transition mutated task: %+v", task)
+		}
+	})
+
+	t.Run("lease recovery", func(t *testing.T) {
+		task := mustTask(validCreateInput())
+		first := acquireTestLease(t, &task, generationTestNow.Add(time.Minute), time.Minute)
+		task.StatusRevision = maxInt()
+		before := task
+		if _, err := task.AcquireLease("worker-b", first.ExpiresAt, time.Minute); !errors.Is(err, ErrInvalidGenerationState) {
+			t.Fatalf("overflowing lease recovery error = %v", err)
+		}
+		if task.StatusRevision != before.StatusRevision || task.LeaseOwner != before.LeaseOwner || !task.LeaseUntil.Equal(*before.LeaseUntil) {
+			t.Fatalf("overflowing lease recovery mutated task: %+v", task)
+		}
+	})
+
+	t.Run("submission", func(t *testing.T) {
+		task := mustTask(validCreateInput())
+		acquireTestLease(t, &task, generationTestNow.Add(time.Minute), time.Minute)
+		task.StatusRevision = maxInt()
+		before := task
+		if _, err := task.BeginSubmission(generationTestNow.Add(90 * time.Second)); !errors.Is(err, ErrInvalidGenerationState) {
+			t.Fatalf("overflowing submission error = %v", err)
+		}
+		if task.SubmissionState != before.SubmissionState || task.SubmissionAttempt != before.SubmissionAttempt || task.StatusRevision != before.StatusRevision {
+			t.Fatalf("overflowing submission mutated task: %+v", task)
+		}
+	})
+}
+
 func TestSubmissionGuardRequiresExplicitReconciliation(t *testing.T) {
 	task, err := NewTask(validCreateInput(), generationTestNow)
 	if err != nil {

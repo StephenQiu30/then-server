@@ -112,6 +112,9 @@ func (r *QuotaReservation) finalize(next ReservationState, at time.Time) error {
 	if r.State != ReservationReserved {
 		return ErrQuotaReservationClosed
 	}
+	if r.StateRevision == maxInt() {
+		return ErrInvalidQuotaReservation
+	}
 	if !r.UpdatedAt.IsZero() && at.Before(r.UpdatedAt) {
 		return ErrInvalidQuotaReservation
 	}
