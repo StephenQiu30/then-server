@@ -209,6 +209,14 @@ func TestPublishOutputRejectsMalformedAssetAndStaleSettlement(t *testing.T) {
 	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(90*time.Second)); !errors.Is(err, ErrInvalidGenerationSettlement) {
 		t.Fatalf("stale settlement error = %v", err)
 	}
+	asset.PublishedAt = task.CreatedAt.Add(-time.Second)
+	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(4*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("output before task creation error = %v", err)
+	}
+	asset.PublishedAt = task.CreatedAt.Add(time.Second)
+	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(4*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("output before validation error = %v", err)
+	}
 }
 
 func TestSettlementRejectsExpiredActiveLease(t *testing.T) {

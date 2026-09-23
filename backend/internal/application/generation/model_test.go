@@ -199,6 +199,35 @@ func TestTaskGuardsRejectMalformedPersistedFacts(t *testing.T) {
 	}
 }
 
+func TestClassifyRequestRejectsUnknownStatusAndFailureShape(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*Task)
+	}{
+		{
+			name: "unknown status",
+			mutate: func(task *Task) {
+				task.Status = Status("provider_unknown")
+			},
+		},
+		{
+			name: "failure code on queued task",
+			mutate: func(task *Task) {
+				task.FailureCode = "provider_error"
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			task := mustTask(validCreateInput())
+			tc.mutate(&task)
+			if _, err := ClassifyRequest(task, validCreateInput()); !errors.Is(err, ErrInvalidGenerationState) {
+				t.Fatalf("malformed task was classified: %v", err)
+			}
+		})
+	}
+}
+
 func TestWorkerStateWritesRequireAnActiveLease(t *testing.T) {
 	task := mustTask(validCreateInput())
 	if _, err := task.BeginSubmission(generationTestNow.Add(time.Minute)); !errors.Is(err, ErrGenerationLeaseConflict) {

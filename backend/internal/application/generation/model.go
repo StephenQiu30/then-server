@@ -223,7 +223,7 @@ func (t Task) validTaskCoreFacts() bool {
 		!validSnapshot(t.Purpose, t.LookID, t.LookRevision, t.Inputs) || !validConsent(t.Purpose, t.Consent) ||
 		!validCostEstimate(t.Cost) || !sha256Pattern.MatchString(t.IdempotencyKeyHash) || !sha256Pattern.MatchString(t.DedupeKey) ||
 		t.StatusRevision < 1 || t.CreatedAt.IsZero() || t.UpdatedAt.IsZero() || t.UpdatedAt.Before(t.CreatedAt) ||
-		t.Consent.AcceptedAt.After(t.CreatedAt) || !t.validSubmissionFacts() {
+		t.Consent.AcceptedAt.After(t.CreatedAt) || !validFailureState(t.Status, t.FailureCode) || !t.validSubmissionFacts() {
 		return false
 	}
 	parameters, err := canonicalJSON(t.Parameters)
