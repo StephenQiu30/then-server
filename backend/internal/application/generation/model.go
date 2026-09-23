@@ -36,6 +36,18 @@ const (
 
 func (p Purpose) valid() bool { return p == PurposeImage || p == PurposeModel }
 
+// RequestMatch classifies an existing owner-scoped task against a new
+// request. The repository uses this result inside its idempotent transaction;
+// the domain does not expose whether a task or asset is readable.
+type RequestMatch string
+
+const (
+	RequestMatchNone                RequestMatch = "none"
+	RequestMatchIdempotentReplay    RequestMatch = "idempotent_replay"
+	RequestMatchContentDedupe       RequestMatch = "content_dedupe"
+	RequestMatchIdempotencyConflict RequestMatch = "idempotency_conflict"
+)
+
 // Status is the persisted, user-visible task state. Cancellation requests are
 // tracked separately because an external provider may acknowledge them later.
 type Status string
@@ -279,6 +291,39 @@ func (t *Task) RequestCancel(at time.Time) error {
 	return nil
 }
 
+// ClassifyRequest compares a new request with one task already found in the
+// same owner scope. A failed, canceled, or expired task does not block an
+// explicitly new attempt through content deduplication, while replaying its
+// original idempotency key still returns that task.
+func ClassifyRequest(existing Task, input CreateInput) (RequestMatch, error) {
+	_, idempotencyKeyHash, dedupeKey, err := identity(input)
+	if err != nil {
+		return RequestMatchNone, err
+	}
+	if existing.OwnerID != input.OwnerID {
+		return RequestMatchNone, nil
+	}
+	if existing.IdempotencyKeyHash == idempotencyKeyHash {
+		if existing.DedupeKey == dedupeKey {
+			return RequestMatchIdempotentReplay, nil
+		}
+		return RequestMatchIdempotencyConflict, nil
+	}
+	if existing.DedupeKey == dedupeKey && dedupeEligible(existing.Status) {
+		return RequestMatchContentDedupe, nil
+	}
+	return RequestMatchNone, nil
+}
+
+func dedupeEligible(status Status) bool {
+	switch status {
+	case StatusQueued, StatusRunning, StatusValidating, StatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Identity returns the stable hashes used for idempotency and content
 // deduplication. The raw idempotency key is never retained.
 func Identity(input CreateInput) (idempotencyKeyHash, dedupeKey string, err error) {
@@ -327,6 +372,7 @@ func validSnapshot(purpose Purpose, lookID string, lookRevision int, snapshot In
 	}
 	seenIDs := make(map[string]struct{}, len(snapshot.References))
 	seenOrdinals := make(map[int]struct{}, len(snapshot.References))
+	personCount, garmentCount, lookImageCount := 0, 0, 0
 	for _, reference := range snapshot.References {
 		if !validID(reference.MediaID) || !reference.Role.valid() || reference.Revision < 1 || reference.Ordinal < 0 || !sha256Pattern.MatchString(reference.SHA256) {
 			return false
@@ -339,11 +385,27 @@ func validSnapshot(purpose Purpose, lookID string, lookRevision int, snapshot In
 		}
 		seenIDs[reference.MediaID] = struct{}{}
 		seenOrdinals[reference.Ordinal] = struct{}{}
+		switch reference.Role {
+		case InputRolePerson:
+			personCount++
+		case InputRoleGarment:
+			garmentCount++
+		case InputRoleLookImage:
+			lookImageCount++
+		}
 	}
 	if purpose == PurposeModel {
-		return validID(snapshot.ImageAssetID) && sha256Pattern.MatchString(snapshot.ImageSHA256)
+		if !validID(snapshot.ImageAssetID) || !sha256Pattern.MatchString(snapshot.ImageSHA256) || lookImageCount != 1 || personCount != 0 || garmentCount != 0 {
+			return false
+		}
+		for _, reference := range snapshot.References {
+			if reference.Role == InputRoleLookImage {
+				return reference.MediaID == snapshot.ImageAssetID && reference.SHA256 == snapshot.ImageSHA256
+			}
+		}
+		return false
 	}
-	return snapshot.ImageAssetID == "" && snapshot.ImageSHA256 == ""
+	return snapshot.ImageAssetID == "" && snapshot.ImageSHA256 == "" && personCount == 1 && garmentCount <= 3 && lookImageCount == 0
 }
 
 func validConsent(purpose Purpose, receipt ConsentReceipt) bool {
