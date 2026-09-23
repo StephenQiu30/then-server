@@ -203,7 +203,7 @@ type Task struct {
 // external ID or a non-idle submission state must be reconciled instead of
 // being submitted again.
 func (t Task) PrepareSubmission() (Submission, error) {
-	if !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted {
+	if !t.validSubmissionFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted {
 		return Submission{}, ErrGenerationNotSubmittable
 	}
 	return t.submission(), nil
@@ -215,6 +215,32 @@ func submissionStatusAllowed(status Status) bool {
 
 func activeStatus(status Status) bool {
 	return status == StatusQueued || status == StatusRunning || status == StatusValidating
+}
+
+func (t Task) validSubmissionFacts() bool {
+	if t.SubmissionAttempt < 0 || (t.SubmissionStartedAt != nil && t.SubmissionStartedAt.IsZero()) || (t.SubmissionUnknownAt != nil && t.SubmissionUnknownAt.IsZero()) {
+		return false
+	}
+	if t.SubmissionStartedAt != nil && !t.UpdatedAt.IsZero() && t.SubmissionStartedAt.After(t.UpdatedAt) {
+		return false
+	}
+	if t.SubmissionUnknownAt != nil {
+		if t.SubmissionStartedAt == nil || t.SubmissionUnknownAt.Before(*t.SubmissionStartedAt) || (!t.UpdatedAt.IsZero() && t.SubmissionUnknownAt.After(t.UpdatedAt)) {
+			return false
+		}
+	}
+	switch t.SubmissionState {
+	case SubmissionNotStarted:
+		return t.ExternalTaskID == "" && t.SubmissionUnknownAt == nil && ((t.SubmissionAttempt == 0 && t.SubmissionStartedAt == nil) || (t.SubmissionAttempt > 0 && t.SubmissionStartedAt != nil))
+	case SubmissionInFlight:
+		return t.ExternalTaskID == "" && t.SubmissionAttempt > 0 && t.SubmissionStartedAt != nil && t.SubmissionUnknownAt == nil
+	case SubmissionUnknown:
+		return t.ExternalTaskID == "" && t.SubmissionAttempt > 0 && t.SubmissionStartedAt != nil && t.SubmissionUnknownAt != nil
+	case SubmissionAccepted:
+		return validToken(t.ExternalTaskID, 256) && t.SubmissionAttempt > 0 && t.SubmissionUnknownAt == nil
+	default:
+		return false
+	}
 }
 
 func (t Task) submission() Submission {
@@ -236,7 +262,7 @@ func (t Task) submission() Submission {
 // request. If the request outcome is lost, the task can then be marked unknown
 // and cannot be submitted again until reconciliation.
 func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
-	if t == nil || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" {
+	if t == nil || !t.validSubmissionFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" {
 		return Submission{}, ErrGenerationNotSubmittable
 	}
 	if err := t.validateActiveLeaseAt(at); err != nil {
@@ -256,6 +282,9 @@ func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
 	default:
 		return Submission{}, ErrInvalidGenerationState
 	}
+	if t.SubmissionAttempt == int(^uint(0)>>1) {
+		return Submission{}, ErrInvalidGenerationState
+	}
 	at = at.UTC()
 	t.SubmissionState = SubmissionInFlight
 	t.SubmissionAttempt++
@@ -270,7 +299,7 @@ func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
 // active lease. It deliberately leaves the task queued while blocking blind
 // resubmission until an explicit reconciliation.
 func (t *Task) MarkSubmissionUnknown(at time.Time) error {
-	if t == nil || t.SubmissionState != SubmissionInFlight || at.IsZero() {
+	if t == nil || !t.validSubmissionFacts() || t.SubmissionState != SubmissionInFlight || at.IsZero() {
 		return ErrInvalidGenerationState
 	}
 	if err := t.validateActiveLeaseAt(at); err != nil {
@@ -292,7 +321,7 @@ func (t *Task) MarkSubmissionUnknown(at time.Time) error {
 // accepted. The worker must hold an active lease; a new attempt then uses the
 // same idempotency identity.
 func (t *Task) ReconcileSubmissionNotAccepted(at time.Time) error {
-	if t == nil || t.SubmissionState != SubmissionUnknown || at.IsZero() {
+	if t == nil || !t.validSubmissionFacts() || t.SubmissionState != SubmissionUnknown || at.IsZero() {
 		return ErrInvalidGenerationState
 	}
 	if err := t.validateActiveLeaseAt(at); err != nil {
@@ -349,7 +378,7 @@ func NewTask(input CreateInput, now time.Time) (Task, error) {
 // Transition applies a legal status transition and increments the optimistic
 // revision. A failure code is retained as a stable, non-sensitive reason.
 func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
-	if t == nil || !t.Status.CanTransitionTo(next) || at.IsZero() {
+	if t == nil || !t.validSubmissionFacts() || !t.Status.CanTransitionTo(next) || at.IsZero() {
 		return ErrInvalidGenerationState
 	}
 	if next.terminal() && (t.LeaseOwner != "" || t.LeaseUntil != nil || t.LeaseAttempt < 0) {
@@ -387,7 +416,7 @@ func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 // cleanup can find the provider task; a different provider identity is never
 // allowed to overwrite the first one.
 func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
-	if t == nil || !validToken(externalID, 256) || at.IsZero() {
+	if t == nil || !t.validSubmissionFacts() || !validToken(externalID, 256) || at.IsZero() {
 		return ErrInvalidGenerationState
 	}
 	if t.ExternalTaskID != "" {
@@ -438,6 +467,9 @@ func (t *Task) ApplyProviderState(externalID string, next Status, failureCode st
 	if t == nil || !validToken(externalID, 256) || t.ExternalTaskID == "" || t.ExternalTaskID != externalID {
 		return ErrExternalTaskConflict
 	}
+	if !t.validSubmissionFacts() {
+		return ErrInvalidGenerationState
+	}
 	if at.IsZero() {
 		return ErrInvalidGenerationState
 	}
@@ -475,6 +507,9 @@ func (t *Task) ApplyProviderState(externalID string, next Status, failureCode st
 func (t *Task) RequestCancel(at time.Time) error {
 	if t == nil || t.Status.terminal() || at.IsZero() {
 		return ErrGenerationNotCancellable
+	}
+	if !t.validSubmissionFacts() {
+		return ErrInvalidGenerationState
 	}
 	if t.CancelRequestedAt != nil {
 		return nil
