@@ -203,7 +203,7 @@ type Task struct {
 // external ID or a non-idle submission state must be reconciled instead of
 // being submitted again.
 func (t Task) PrepareSubmission() (Submission, error) {
-	if !t.validSubmissionFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted {
+	if !t.validTaskFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted {
 		return Submission{}, ErrGenerationNotSubmittable
 	}
 	return t.submission(), nil
@@ -215,6 +215,49 @@ func submissionStatusAllowed(status Status) bool {
 
 func activeStatus(status Status) bool {
 	return status == StatusQueued || status == StatusRunning || status == StatusValidating
+}
+
+func (t Task) validTaskCoreFacts() bool {
+	if !validID(t.ID) || !validID(t.OwnerID) || !validID(t.LookID) || t.LookRevision < 1 ||
+		!t.Purpose.valid() || !validToken(t.Provider, 96) || !validToken(t.Model, 128) ||
+		!validSnapshot(t.Purpose, t.LookID, t.LookRevision, t.Inputs) || !validConsent(t.Purpose, t.Consent) ||
+		!validCostEstimate(t.Cost) || !sha256Pattern.MatchString(t.IdempotencyKeyHash) || !sha256Pattern.MatchString(t.DedupeKey) ||
+		t.StatusRevision < 1 || t.CreatedAt.IsZero() || t.UpdatedAt.IsZero() || t.UpdatedAt.Before(t.CreatedAt) ||
+		t.Consent.AcceptedAt.After(t.CreatedAt) || !t.validSubmissionFacts() {
+		return false
+	}
+	parameters, err := canonicalJSON(t.Parameters)
+	if err != nil || !bytes.Equal(parameters, t.Parameters) {
+		return false
+	}
+	if !validTaskTime(t.SubmissionStartedAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.SubmissionUnknownAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.CancelRequestedAt, t.CreatedAt, t.UpdatedAt) {
+		return false
+	}
+	if t.ResultAssetID != "" && !validID(t.ResultAssetID) {
+		return false
+	}
+	if t.Status == StatusSucceeded {
+		if t.ResultAssetID == "" {
+			return false
+		}
+	} else if t.Status != StatusValidating && t.ResultAssetID != "" {
+		return false
+	}
+	return true
+}
+
+func (t Task) validLeaseFacts() bool {
+	if t.LeaseAttempt < 0 || (t.LeaseUntil == nil) != (t.LeaseOwner == "") {
+		return false
+	}
+	if t.LeaseUntil == nil {
+		return true
+	}
+	return !t.Status.terminal() && !t.LeaseUntil.IsZero() && validID(t.LeaseOwner) && t.FencingToken > 0 && t.LeaseAttempt > 0
+}
+
+func (t Task) validTaskFacts() bool {
+	return t.validTaskCoreFacts() && t.validLeaseFacts()
 }
 
 func (t Task) validSubmissionFacts() bool {
@@ -243,6 +286,10 @@ func (t Task) validSubmissionFacts() bool {
 	}
 }
 
+func validTaskTime(value *time.Time, createdAt, updatedAt time.Time) bool {
+	return value == nil || (!value.IsZero() && !value.Before(createdAt) && !value.After(updatedAt))
+}
+
 func (t Task) submission() Submission {
 	return Submission{
 		TaskID:      t.ID,
@@ -262,7 +309,7 @@ func (t Task) submission() Submission {
 // request. If the request outcome is lost, the task can then be marked unknown
 // and cannot be submitted again until reconciliation.
 func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
-	if t == nil || !t.validSubmissionFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" {
+	if t == nil || !t.validTaskFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" {
 		return Submission{}, ErrGenerationNotSubmittable
 	}
 	if err := t.validateActiveLeaseAt(at); err != nil {
@@ -299,7 +346,7 @@ func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
 // active lease. It deliberately leaves the task queued while blocking blind
 // resubmission until an explicit reconciliation.
 func (t *Task) MarkSubmissionUnknown(at time.Time) error {
-	if t == nil || !t.validSubmissionFacts() || t.SubmissionState != SubmissionInFlight || at.IsZero() {
+	if t == nil || !t.validTaskFacts() || t.SubmissionState != SubmissionInFlight || at.IsZero() {
 		return ErrInvalidGenerationState
 	}
 	if err := t.validateActiveLeaseAt(at); err != nil {
@@ -321,7 +368,7 @@ func (t *Task) MarkSubmissionUnknown(at time.Time) error {
 // accepted. The worker must hold an active lease; a new attempt then uses the
 // same idempotency identity.
 func (t *Task) ReconcileSubmissionNotAccepted(at time.Time) error {
-	if t == nil || !t.validSubmissionFacts() || t.SubmissionState != SubmissionUnknown || at.IsZero() {
+	if t == nil || !t.validTaskFacts() || t.SubmissionState != SubmissionUnknown || at.IsZero() {
 		return ErrInvalidGenerationState
 	}
 	if err := t.validateActiveLeaseAt(at); err != nil {
@@ -378,7 +425,13 @@ func NewTask(input CreateInput, now time.Time) (Task, error) {
 // Transition applies a legal status transition and increments the optimistic
 // revision. A failure code is retained as a stable, non-sensitive reason.
 func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
-	if t == nil || !t.validSubmissionFacts() || !t.Status.CanTransitionTo(next) || at.IsZero() {
+	if t == nil {
+		return ErrInvalidGenerationState
+	}
+	if next == StatusSucceeded && t.Status == StatusValidating && t.ResultAssetID != "" && !validID(t.ResultAssetID) {
+		return ErrGenerationOutputRequired
+	}
+	if !t.validTaskFacts() || !t.Status.CanTransitionTo(next) || at.IsZero() {
 		return ErrInvalidGenerationState
 	}
 	if next.terminal() && (t.LeaseOwner != "" || t.LeaseUntil != nil || t.LeaseAttempt < 0) {
@@ -416,7 +469,7 @@ func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 // cleanup can find the provider task; a different provider identity is never
 // allowed to overwrite the first one.
 func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
-	if t == nil || !t.validSubmissionFacts() || !validToken(externalID, 256) || at.IsZero() {
+	if t == nil || !t.validTaskFacts() || !validToken(externalID, 256) || at.IsZero() {
 		return ErrInvalidGenerationState
 	}
 	if t.ExternalTaskID != "" {
@@ -467,7 +520,7 @@ func (t *Task) ApplyProviderState(externalID string, next Status, failureCode st
 	if t == nil || !validToken(externalID, 256) || t.ExternalTaskID == "" || t.ExternalTaskID != externalID {
 		return ErrExternalTaskConflict
 	}
-	if !t.validSubmissionFacts() {
+	if !t.validTaskFacts() {
 		return ErrInvalidGenerationState
 	}
 	if at.IsZero() {
@@ -508,7 +561,7 @@ func (t *Task) RequestCancel(at time.Time) error {
 	if t == nil || t.Status.terminal() || at.IsZero() {
 		return ErrGenerationNotCancellable
 	}
-	if !t.validSubmissionFacts() {
+	if !t.validTaskFacts() {
 		return ErrInvalidGenerationState
 	}
 	if t.CancelRequestedAt != nil {
@@ -529,6 +582,9 @@ func (t *Task) RequestCancel(at time.Time) error {
 // explicitly new attempt through content deduplication, while replaying its
 // original idempotency key still returns that task.
 func ClassifyRequest(existing Task, input CreateInput) (RequestMatch, error) {
+	if !existing.validTaskFacts() {
+		return RequestMatchNone, ErrInvalidGenerationState
+	}
 	_, idempotencyKeyHash, dedupeKey, err := identity(input)
 	if err != nil {
 		return RequestMatchNone, err
@@ -568,10 +624,7 @@ func identity(input CreateInput) ([]byte, string, string, error) {
 	if !validID(input.OwnerID) || !validID(input.LookID) || input.LookRevision < 1 || !input.Purpose.valid() || !validToken(input.Provider, 96) || !validToken(input.Model, 128) || !validToken(input.IdempotencyKey, 256) {
 		return nil, "", "", ErrInvalidGenerationInput
 	}
-	if input.Cost.EstimatedMinorUnits < 0 || input.Cost.ReservedQuotaUnits < 0 || input.Cost.EstimatedMinorUnits > 0 && !validToken(input.Cost.Currency, 16) {
-		return nil, "", "", ErrInvalidGenerationInput
-	}
-	if input.Cost.EstimatedMinorUnits == 0 && input.Cost.Currency != "" && !validToken(input.Cost.Currency, 16) {
+	if !validCostEstimate(input.Cost) {
 		return nil, "", "", ErrInvalidGenerationInput
 	}
 	parameters, err := canonicalJSON(input.Parameters)
@@ -647,6 +700,16 @@ func validSnapshot(purpose Purpose, lookID string, lookRevision int, snapshot In
 
 func validConsent(purpose Purpose, receipt ConsentReceipt) bool {
 	return validID(receipt.ID) && receipt.Purpose == purpose && validToken(receipt.PolicyVersion, 96) && !receipt.AcceptedAt.IsZero()
+}
+
+func validCostEstimate(cost CostEstimate) bool {
+	if cost.EstimatedMinorUnits < 0 || cost.ReservedQuotaUnits < 0 {
+		return false
+	}
+	if cost.EstimatedMinorUnits > 0 {
+		return validToken(cost.Currency, 16)
+	}
+	return cost.Currency == "" || validToken(cost.Currency, 16)
 }
 
 func canonicalJSON(value []byte) ([]byte, error) {

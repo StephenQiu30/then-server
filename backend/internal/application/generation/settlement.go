@@ -28,7 +28,7 @@ type Settlement struct {
 // and consumes its temporary quota hold. Repeating the same success command is
 // idempotent when the task already records the same asset and consumed hold.
 func PublishOutput(task Task, reservation *QuotaReservation, asset OutputAsset, at time.Time) (Settlement, error) {
-	if !task.validSubmissionFacts() || !validSettlementTime(task, at) || !validFailureState(task.Status, task.FailureCode) || !validOutputAsset(task, asset) || asset.PublishedAt.After(at) || !reservationMatchesTask(task, reservation) {
+	if !task.validTaskFacts() || !validSettlementTime(task, at) || !validFailureState(task.Status, task.FailureCode) || !validOutputAsset(task, asset) || asset.PublishedAt.After(at) || !reservationMatchesTask(task, reservation) {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
 	if task.Status == StatusSucceeded {
@@ -64,7 +64,7 @@ func PublishOutput(task Task, reservation *QuotaReservation, asset OutputAsset, 
 // and releases its temporary hold. Repeating the same terminal command is
 // idempotent when the task already carries the same failure and released hold.
 func FinalizeWithoutOutput(task Task, reservation *QuotaReservation, next Status, failureCode string, at time.Time) (Settlement, error) {
-	if !task.validSubmissionFacts() || !validSettlementTime(task, at) || !validSettlementLease(task, at) || !terminalWithoutOutput(next) || !reservationMatchesTask(task, reservation) {
+	if !task.validTaskFacts() || !validSettlementTime(task, at) || !validSettlementLease(task, at) || !terminalWithoutOutput(next) || !reservationMatchesTask(task, reservation) {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
 	if next == StatusFailed && !validToken(failureCode, 96) {

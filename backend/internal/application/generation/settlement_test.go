@@ -159,6 +159,14 @@ func TestSettlementRejectsMalformedReservationFacts(t *testing.T) {
 	}
 }
 
+func TestSettlementRejectsMalformedTaskFacts(t *testing.T) {
+	task := mustTask(validCreateInput())
+	task.CreatedAt = time.Time{}
+	if _, err := FinalizeWithoutOutput(task, nil, StatusCanceled, "", generationTestNow.Add(time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("malformed task was settled: %v", err)
+	}
+}
+
 func TestFinalizeWithoutOutputSupportsZeroCostCancelAndRejectsInvalidFailure(t *testing.T) {
 	task := mustTask(validCreateInput())
 	settled, err := FinalizeWithoutOutput(task, nil, StatusCanceled, "", generationTestNow.Add(time.Minute))
