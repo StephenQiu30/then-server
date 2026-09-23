@@ -127,7 +127,7 @@ func reservationMatchesTask(task Task, reservation *QuotaReservation) bool {
 	if reservation == nil {
 		return !needsReservation
 	}
-	return needsReservation && reservation.ID != "" && reservation.TaskID == task.ID && reservation.OwnerID == task.OwnerID && reservation.Purpose == task.Purpose && reservation.Currency == task.Cost.Currency && reservation.ReservedQuotaUnits == task.Cost.ReservedQuotaUnits && reservation.EstimatedMinorUnits == task.Cost.EstimatedMinorUnits
+	return needsReservation && reservation.validFacts() && !reservation.CreatedAt.Before(task.CreatedAt) && reservation.TaskID == task.ID && reservation.OwnerID == task.OwnerID && reservation.Purpose == task.Purpose && reservation.Currency == task.Cost.Currency && reservation.ReservedQuotaUnits == task.Cost.ReservedQuotaUnits && reservation.EstimatedMinorUnits == task.Cost.EstimatedMinorUnits
 }
 
 func reservationAvailable(reservation *QuotaReservation) bool {

@@ -147,6 +147,18 @@ func TestSettlementReplayRejectsMalformedSubmissionFacts(t *testing.T) {
 	}
 }
 
+func TestSettlementRejectsMalformedReservationFacts(t *testing.T) {
+	task := reservationTask()
+	reservation, err := NewQuotaReservation("reservation-1", task, generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservation.StateRevision = 0
+	if _, err := FinalizeWithoutOutput(task, &reservation, StatusCanceled, "", generationTestNow.Add(2*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("malformed reservation was settled: %v", err)
+	}
+}
+
 func TestFinalizeWithoutOutputSupportsZeroCostCancelAndRejectsInvalidFailure(t *testing.T) {
 	task := mustTask(validCreateInput())
 	settled, err := FinalizeWithoutOutput(task, nil, StatusCanceled, "", generationTestNow.Add(time.Minute))

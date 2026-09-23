@@ -38,6 +38,27 @@ type QuotaReservation struct {
 	UpdatedAt           time.Time
 }
 
+func (r QuotaReservation) validFacts() bool {
+	if !validID(r.ID) || !validID(r.TaskID) || !validID(r.OwnerID) || !r.Purpose.valid() ||
+		r.StateRevision < 1 || r.CreatedAt.IsZero() || r.UpdatedAt.IsZero() || r.UpdatedAt.Before(r.CreatedAt) {
+		return false
+	}
+	if r.ReservedQuotaUnits < 0 || r.EstimatedMinorUnits < 0 ||
+		(r.EstimatedMinorUnits > 0 && !validToken(r.Currency, 16)) ||
+		(r.EstimatedMinorUnits == 0 && r.Currency != "" && !validToken(r.Currency, 16)) ||
+		(r.ReservedQuotaUnits == 0 && r.EstimatedMinorUnits == 0) {
+		return false
+	}
+	switch r.State {
+	case ReservationReserved:
+		return r.StateRevision == 1
+	case ReservationReleased, ReservationConsumed:
+		return r.StateRevision >= 2
+	default:
+		return false
+	}
+}
+
 // NewQuotaReservation creates a temporary hold for a task after admission has
 // passed. A zero-cost task has no hold and must not create a fake reservation.
 func NewQuotaReservation(id string, task Task, now time.Time) (QuotaReservation, error) {
@@ -84,7 +105,7 @@ func (r *QuotaReservation) Consume(at time.Time) error {
 }
 
 func (r *QuotaReservation) finalize(next ReservationState, at time.Time) error {
-	if r == nil || at.IsZero() {
+	if r == nil || at.IsZero() || !r.validFacts() {
 		return ErrInvalidQuotaReservation
 	}
 	if r.State == next {
