@@ -35,6 +35,7 @@ func registerAccountOperations(api huma.API, handler *AccountHandler) {
 		Summary: "受理本人账户删除", Description: "立即撤销全部会话并关闭公开内容；对象存储清理完成后物理删除账户。", DefaultStatus: http.StatusAccepted,
 		Errors: []int{http.StatusUnauthorized, http.StatusInternalServerError},
 	}), handler.deleteCurrent)
+	registerAccountDeletionReceiptOperations(api, handler)
 	registerProfileOperations(api, handler)
 	registerAccountMailOperations(api, handler)
 }

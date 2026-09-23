@@ -68,13 +68,17 @@ type sessionRecord struct {
 func (sessionRecord) TableName() string { return "user_sessions" }
 
 type accountDeletionRequestRecord struct {
-	ID          string     `gorm:"column:id;type:uuid;primaryKey"`
-	UserID      string     `gorm:"column:user_id;type:uuid;not null;uniqueIndex:account_deletion_requests_user_unique"`
-	Status      string     `gorm:"column:status;type:text;not null;index:account_deletion_requests_status_idx;check:account_deletion_requests_status_check,status IN ('pending','complete')"`
-	MediaCount  int        `gorm:"column:media_count;not null;check:account_deletion_requests_media_count_check,media_count >= 0"`
-	RequestedAt time.Time  `gorm:"column:requested_at;type:timestamptz;not null"`
-	CompletedAt *time.Time `gorm:"column:completed_at;type:timestamptz;check:account_deletion_requests_completion_check,(status = 'pending' AND completed_at IS NULL) OR (status = 'complete' AND completed_at IS NOT NULL)"`
-	UpdatedAt   time.Time  `gorm:"column:updated_at;type:timestamptz;not null;check:account_deletion_requests_timestamps_check,updated_at >= requested_at"`
+	ID               string     `gorm:"column:id;type:uuid;primaryKey"`
+	UserID           string     `gorm:"column:user_id;type:uuid;not null;uniqueIndex:account_deletion_requests_user_unique"`
+	Status           string     `gorm:"column:status;type:text;not null;index:account_deletion_requests_status_idx;check:account_deletion_requests_status_check,status IN ('pending','complete')"`
+	MediaCount       int        `gorm:"column:media_count;not null;check:account_deletion_requests_media_count_check,media_count >= 0"`
+	RetryObserved    bool       `gorm:"column:retry_observed;not null;default:false"`
+	ReceiptHash      []byte     `gorm:"column:receipt_hash;type:bytea;check:account_deletion_requests_receipt_hash_check,receipt_hash IS NULL OR octet_length(receipt_hash) = 32"`
+	ReceiptExpiresAt *time.Time `gorm:"column:receipt_expires_at;type:timestamptz;index:account_deletion_requests_receipt_expiry_idx;check:account_deletion_requests_receipt_expiry_check,receipt_expires_at IS NULL OR receipt_expires_at > requested_at"`
+	ReceiptRevokedAt *time.Time `gorm:"column:receipt_revoked_at;type:timestamptz"`
+	RequestedAt      time.Time  `gorm:"column:requested_at;type:timestamptz;not null"`
+	CompletedAt      *time.Time `gorm:"column:completed_at;type:timestamptz;check:account_deletion_requests_completion_check,(status = 'pending' AND completed_at IS NULL) OR (status = 'complete' AND completed_at IS NOT NULL)"`
+	UpdatedAt        time.Time  `gorm:"column:updated_at;type:timestamptz;not null;check:account_deletion_requests_timestamps_check,updated_at >= requested_at"`
 }
 
 func (accountDeletionRequestRecord) TableName() string { return "account_deletion_requests" }
@@ -229,7 +233,10 @@ func (r *AccountRepository) DeleteSession(ctx context.Context, tokenHash []byte)
 	return nil
 }
 
-func (r *AccountRepository) BeginAccountDeletion(ctx context.Context, userID string, at time.Time) (accountapp.AccountDeletionRequest, error) {
+func (r *AccountRepository) BeginAccountDeletion(ctx context.Context, userID string, receiptHash []byte, at, expiresAt time.Time) (accountapp.AccountDeletionRequest, error) {
+	if len(receiptHash) != 32 || !expiresAt.After(at) {
+		return accountapp.AccountDeletionRequest{}, accountapp.ErrAccountUnavailable
+	}
 	var request accountDeletionRequestRecord
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user userRecord
@@ -237,7 +244,7 @@ func (r *AccountRepository) BeginAccountDeletion(ctx context.Context, userID str
 			return err
 		}
 		if user.Status == string(accountapp.AccountDeleting) {
-			return tx.Where("user_id = ?", userID).First(&request).Error
+			return accountapp.ErrAuthentication
 		}
 		if user.Status != string(accountapp.AccountActive) {
 			return accountapp.ErrAuthentication
@@ -259,7 +266,7 @@ func (r *AccountRepository) BeginAccountDeletion(ctx context.Context, userID str
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND status <> ?", userID, string(mediaapp.MediaDeleted)).Order("id ASC").Find(&mediaRecords).Error; err != nil {
 			return err
 		}
-		request = accountDeletionRequestRecord{ID: uuid.NewString(), UserID: userID, Status: string(accountapp.AccountDeletionPending), MediaCount: len(mediaRecords), RequestedAt: at, UpdatedAt: at}
+		request = accountDeletionRequestRecord{ID: uuid.NewString(), UserID: userID, Status: string(accountapp.AccountDeletionPending), MediaCount: len(mediaRecords), ReceiptHash: receiptHash, ReceiptExpiresAt: &expiresAt, RequestedAt: at, UpdatedAt: at}
 		if err := tx.Create(&request).Error; err != nil {
 			return err
 		}
@@ -277,6 +284,10 @@ func (r *AccountRepository) BeginAccountDeletion(ctx context.Context, userID str
 			media := &mediaRecords[index]
 			var existing deletionRequestRecord
 			if err := tx.Where("media_id = ?", media.ID).First(&existing).Error; err == nil {
+				linked := tx.Model(&deletionRequestRecord{}).Where("id = ? AND owner_id = ?", existing.ID, userID).Update("account_deletion_id", request.ID)
+				if linked.Error != nil || linked.RowsAffected != 1 {
+					return accountapp.ErrAccountUnavailable
+				}
 				if media.Status != string(mediaapp.MediaDeleting) {
 					if err := tx.Model(&mediaAssetRecord{}).Where("id = ?", media.ID).Updates(map[string]any{"status": string(mediaapp.MediaDeleting), "updated_at": at}).Error; err != nil {
 						return err
@@ -286,7 +297,7 @@ func (r *AccountRepository) BeginAccountDeletion(ctx context.Context, userID str
 			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
-			deletion := deletionRequestRecord{ID: uuid.NewString(), OwnerID: userID, MediaID: media.ID, Status: string(mediaapp.DeletionPending), ReadRevokedAt: at, BackupExpiresAt: at, NextAttemptAt: at, CreatedAt: at, UpdatedAt: at}
+			deletion := deletionRequestRecord{ID: uuid.NewString(), OwnerID: userID, AccountDeletionID: &request.ID, MediaID: media.ID, Status: string(mediaapp.DeletionPending), ReadRevokedAt: at, BackupExpiresAt: at, NextAttemptAt: at, CreatedAt: at, UpdatedAt: at}
 			if err := tx.Model(&mediaAssetRecord{}).Where("id = ?", media.ID).Updates(map[string]any{"status": string(mediaapp.MediaDeleting), "updated_at": at}).Error; err != nil {
 				return err
 			}
@@ -326,6 +337,10 @@ func finalizeAccountDeletionIfReady(ctx context.Context, tx *gorm.DB, userID str
 	if remaining != 0 {
 		return nil
 	}
+	var retried int64
+	if err := tx.Model(&deletionRequestRecord{}).Where("account_deletion_id = ? AND attempts > 1", request.ID).Count(&retried).Error; err != nil {
+		return err
+	}
 	rows, err := gorm.G[userRecord](tx).Where("id = ? AND status = ?", userID, string(accountapp.AccountDeleting)).Delete(ctx)
 	if err != nil {
 		return err
@@ -333,7 +348,7 @@ func finalizeAccountDeletionIfReady(ctx context.Context, tx *gorm.DB, userID str
 	if rows != 1 {
 		return accountapp.ErrAuthentication
 	}
-	result := tx.Model(&accountDeletionRequestRecord{}).Where("id = ? AND status = ?", request.ID, string(accountapp.AccountDeletionPending)).Updates(map[string]any{"status": string(accountapp.AccountDeletionComplete), "completed_at": at, "updated_at": at})
+	result := tx.Model(&accountDeletionRequestRecord{}).Where("id = ? AND status = ?", request.ID, string(accountapp.AccountDeletionPending)).Updates(map[string]any{"status": string(accountapp.AccountDeletionComplete), "completed_at": at, "updated_at": at, "retry_observed": retried > 0})
 	if result.Error != nil || result.RowsAffected != 1 {
 		return accountapp.ErrAccountUnavailable
 	}
@@ -341,7 +356,16 @@ func finalizeAccountDeletionIfReady(ctx context.Context, tx *gorm.DB, userID str
 }
 
 func accountDeletionFromRecord(record accountDeletionRequestRecord) accountapp.AccountDeletionRequest {
-	return accountapp.AccountDeletionRequest{ID: record.ID, Status: accountapp.AccountDeletionStatus(record.Status), MediaCount: record.MediaCount, RequestedAt: record.RequestedAt, CompletedAt: record.CompletedAt}
+	phase := "media_cleanup"
+	remaining := record.MediaCount
+	if record.Status == string(accountapp.AccountDeletionComplete) {
+		phase, remaining = "complete", 0
+	}
+	request := accountapp.AccountDeletionRequest{ID: record.ID, Status: accountapp.AccountDeletionStatus(record.Status), MediaCount: record.MediaCount, RemainingMediaCount: remaining, RetryObserved: record.RetryObserved, AccessClosed: true, Phase: phase, RequestedAt: record.RequestedAt, UpdatedAt: record.UpdatedAt, CompletedAt: record.CompletedAt}
+	if record.ReceiptExpiresAt != nil {
+		request.ReceiptExpiresAt = *record.ReceiptExpiresAt
+	}
+	return request
 }
 
 func findAccount(ctx context.Context, database *gorm.DB, userID string) (accountapp.User, error) {

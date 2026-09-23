@@ -219,7 +219,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 						Version string `json:"version"`
 					} `json:"info"`
 				}
-				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.21.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) || !strings.Contains(string(body), `"operationId":"createDiaryEntry"`) || !strings.Contains(string(body), `"operationId":"decidePostModeration"`) || !strings.Contains(string(body), `"operationId":"listCommunityFeed"`) || !strings.Contains(string(body), `"operationId":"requestEmailVerification"`) || !strings.Contains(string(body), `"operationId":"confirmPasswordReset"`) || !strings.Contains(string(body), `"operationId":"createDataExport"`) {
+				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.22.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) || !strings.Contains(string(body), `"operationId":"createDiaryEntry"`) || !strings.Contains(string(body), `"operationId":"decidePostModeration"`) || !strings.Contains(string(body), `"operationId":"listCommunityFeed"`) || !strings.Contains(string(body), `"operationId":"requestEmailVerification"`) || !strings.Contains(string(body), `"operationId":"confirmPasswordReset"`) || !strings.Contains(string(body), `"operationId":"createDataExport"`) || !strings.Contains(string(body), `"operationId":"getAccountDeletionReceipt"`) {
 					t.Fatal("binary did not serve a valid JSON representation of its compiled contract")
 				}
 			}
@@ -388,7 +388,22 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 	if !strings.Contains(string(deletionBody), `"status":"complete"`) || !strings.Contains(string(deletionBody), `"media_count":0`) {
 		t.Fatal("actual account deletion did not return its durable completion receipt")
 	}
+	var receipt struct {
+		ID    string `json:"id"`
+		Token string `json:"receipt_token"`
+	}
+	if json.Unmarshal(deletionBody, &receipt) != nil || receipt.ID == "" || len(receipt.Token) != 43 || deletion.Header.Get("Cache-Control") != "no-store" {
+		t.Fatal("actual account deletion did not issue a private receipt credential")
+	}
 	assertExpiredSessionCookie(t, deletion)
+	receiptURL := baseURL + "/account-deletion-requests/" + receipt.ID
+	accountRequest(t, ctx, client, http.MethodGet, receiptURL, "", nil, http.StatusNotFound)
+	receiptResponse, receiptBody := accountRequest(t, ctx, client, http.MethodGet, receiptURL, "", nil, http.StatusOK, receipt.Token)
+	if receiptResponse.Header.Get("Cache-Control") != "no-store" || !strings.Contains(string(receiptBody), `"phase":"complete"`) || strings.Contains(string(receiptBody), receipt.Token) {
+		t.Fatal("actual receipt lookup exposed wrong status or credential")
+	}
+	accountRequest(t, ctx, client, http.MethodDelete, receiptURL, "", nil, http.StatusNoContent, receipt.Token)
+	accountRequest(t, ctx, client, http.MethodGet, receiptURL, "", nil, http.StatusNotFound, receipt.Token)
 	deletedReplay, body := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/users/me", "", secondSession, http.StatusUnauthorized)
 	assertAuthenticationFailure(t, body)
 	assertExpiredSessionCookie(t, deletedReplay)
@@ -543,7 +558,7 @@ func extractUserID(t *testing.T, data []byte) string {
 	return payload.User.ID
 }
 
-func accountRequest(t *testing.T, ctx context.Context, client *http.Client, method, endpoint, body string, cookie *http.Cookie, expectedStatus int) (*http.Response, []byte) {
+func accountRequest(t *testing.T, ctx context.Context, client *http.Client, method, endpoint, body string, cookie *http.Cookie, expectedStatus int, bearer ...string) (*http.Response, []byte) {
 	t.Helper()
 	request, err := http.NewRequestWithContext(ctx, method, endpoint, strings.NewReader(body))
 	if err != nil {
@@ -554,6 +569,9 @@ func accountRequest(t *testing.T, ctx context.Context, client *http.Client, meth
 	}
 	if cookie != nil {
 		request.AddCookie(cookie)
+	}
+	if len(bearer) == 1 {
+		request.Header.Set("Authorization", "Bearer "+bearer[0])
 	}
 	response, err := client.Do(request)
 	if err != nil {

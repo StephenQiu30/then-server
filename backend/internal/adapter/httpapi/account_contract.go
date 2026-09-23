@@ -50,11 +50,13 @@ type AuthenticatedUserResponse struct {
 }
 
 type AccountDeletionResponse struct {
-	ID          string     `json:"id" format:"uuid"`
-	Status      string     `json:"status" enum:"pending,complete"`
-	MediaCount  int        `json:"media_count" minimum:"0"`
-	RequestedAt time.Time  `json:"requested_at" format:"date-time"`
-	CompletedAt *time.Time `json:"completed_at,omitempty" format:"date-time"`
+	ID               string     `json:"id" format:"uuid"`
+	Status           string     `json:"status" enum:"pending,complete"`
+	MediaCount       int        `json:"media_count" minimum:"0"`
+	RequestedAt      time.Time  `json:"requested_at" format:"date-time"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty" format:"date-time"`
+	ReceiptToken     string     `json:"receipt_token" minLength:"43" maxLength:"43" doc:"仅在注销 202 响应交付一次；请安全保存"`
+	ReceiptExpiresAt time.Time  `json:"receipt_expires_at" format:"date-time"`
 }
 
 type createSessionInput struct{ Body CreateSessionRequest }
@@ -85,9 +87,10 @@ type emptySessionOutput struct {
 }
 
 type accountDeletionOutput struct {
-	RequestID string                  `header:"X-Request-ID" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" doc:"服务端生成的请求关联标识，不采纳客户端原始值"`
-	SetCookie http.Cookie             `header:"Set-Cookie" doc:"清除当前会话 Cookie"`
-	Body      AccountDeletionResponse `json:"body"`
+	RequestID    string                  `header:"X-Request-ID" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" doc:"服务端生成的请求关联标识，不采纳客户端原始值"`
+	SetCookie    http.Cookie             `header:"Set-Cookie" doc:"清除当前会话 Cookie"`
+	CacheControl string                  `header:"Cache-Control"`
+	Body         AccountDeletionResponse `json:"body"`
 }
 
 type registerAccountInput struct{ Body RegisterAccountRequest }

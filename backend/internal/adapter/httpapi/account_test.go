@@ -20,17 +20,19 @@ import (
 )
 
 type accountServiceStub struct {
-	registered accountapp.RegisterAccountInput
-	loggedIn   accountapp.CreateSessionInput
-	updated    accountapp.UpdateCurrentUserInput
-	user       accountapp.User
-	profile    accountapp.PublicProfile
-	profilePut accountapp.PutProfileInput
-	deletion   accountapp.AccountDeletionRequest
-	token      string
-	err        error
-	registers  int
-	logins     int
+	registered   accountapp.RegisterAccountInput
+	loggedIn     accountapp.CreateSessionInput
+	updated      accountapp.UpdateCurrentUserInput
+	user         accountapp.User
+	profile      accountapp.PublicProfile
+	profilePut   accountapp.PutProfileInput
+	deletion     accountapp.AccountDeletionRequest
+	receiptID    string
+	receiptToken string
+	token        string
+	err          error
+	registers    int
+	logins       int
 }
 
 func (s *accountServiceStub) Register(_ context.Context, input accountapp.RegisterAccountInput) (accountapp.AuthenticatedUser, error) {
@@ -97,6 +99,22 @@ func (s *accountServiceStub) Logout(_ context.Context, token string) error {
 func (s *accountServiceStub) DeleteCurrentUser(_ context.Context, token string) (accountapp.AccountDeletionRequest, error) {
 	s.token = token
 	return s.deletion, s.err
+}
+
+func (s *accountServiceStub) GetDeletionReceipt(_ context.Context, id, token string) (accountapp.AccountDeletionRequest, error) {
+	s.receiptID, s.receiptToken = id, token
+	if token == "" {
+		return accountapp.AccountDeletionRequest{}, accountapp.ErrDeletionReceiptNotFound
+	}
+	return s.deletion, s.err
+}
+
+func (s *accountServiceStub) RevokeDeletionReceipt(_ context.Context, id, token string) error {
+	s.receiptID, s.receiptToken = id, token
+	if token == "" {
+		return accountapp.ErrDeletionReceiptNotFound
+	}
+	return s.err
 }
 
 func accountRouter(t *testing.T, service AccountService, secure bool) *Router {
@@ -327,7 +345,7 @@ func TestLogoutClearsOnlyCurrentCookie(t *testing.T) {
 
 func TestAccountDeletionIsAcceptedAndClearsSession(t *testing.T) {
 	requestedAt := time.Date(2026, 9, 16, 10, 0, 0, 0, time.UTC)
-	service := &accountServiceStub{user: fixtureUser(), deletion: accountapp.AccountDeletionRequest{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a17", Status: accountapp.AccountDeletionPending, MediaCount: 2, RequestedAt: requestedAt}}
+	service := &accountServiceStub{user: fixtureUser(), deletion: accountapp.AccountDeletionRequest{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a17", Status: accountapp.AccountDeletionPending, MediaCount: 2, RequestedAt: requestedAt, ReceiptToken: strings.Repeat("r", 43), ReceiptExpiresAt: requestedAt.Add(7 * 24 * time.Hour)}}
 	router := accountRouter(t, service, false)
 	request := httptest.NewRequest(http.MethodDelete, "/users/me", nil)
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
@@ -339,6 +357,43 @@ func TestAccountDeletionIsAcceptedAndClearsSession(t *testing.T) {
 	cookies := response.Result().Cookies()
 	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
 		t.Fatal("accepted account deletion did not clear the session cookie")
+	}
+}
+
+func TestAccountDeletionReceiptHTTPWithoutSession(t *testing.T) {
+	id := "018f1f74-a2d0-7c6d-9c17-4a0ea2400a17"
+	token := strings.Repeat("r", 43)
+	at := time.Date(2026, 9, 23, 8, 0, 0, 0, time.UTC)
+	service := &accountServiceStub{deletion: accountapp.AccountDeletionRequest{ID: id, Status: accountapp.AccountDeletionComplete, Phase: "complete", AccessClosed: true, RequestedAt: at, UpdatedAt: at, ReceiptExpiresAt: at.Add(7 * 24 * time.Hour)}}
+	router := accountRouter(t, service, false)
+	request := httptest.NewRequest(http.MethodGet, "/account-deletion-requests/"+id, nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" || service.receiptID != id || service.receiptToken != token || !strings.Contains(response.Body.String(), `"phase":"complete"`) || strings.Contains(response.Body.String(), token) {
+		t.Fatalf("receipt lookup failed: status=%d body=%s", response.Code, response.Body.String())
+	}
+	missing := httptest.NewRequest(http.MethodGet, "/account-deletion-requests/"+id, nil)
+	missingResponse := httptest.NewRecorder()
+	router.ServeHTTP(missingResponse, missing)
+	if missingResponse.Code != http.StatusNotFound {
+		t.Fatal("bare request ID granted receipt access")
+	}
+	revoke := httptest.NewRequest(http.MethodDelete, "/account-deletion-requests/"+id, nil)
+	revoke.Header.Set("Authorization", "Bearer "+token)
+	revokeResponse := httptest.NewRecorder()
+	router.ServeHTTP(revokeResponse, revoke)
+	if revokeResponse.Code != http.StatusNoContent || revokeResponse.Header().Get("Cache-Control") != "no-store" || service.receiptToken != token {
+		t.Fatal("receipt revocation did not require bearer token")
+	}
+	fault := &accountServiceStub{deletion: service.deletion}
+	faultRouter := accountRouterWithLimiter(t, fault, false, &authRateLimiterStub{err: errors.New("synthetic redis failure")})
+	faultRequest := httptest.NewRequest(http.MethodGet, "/account-deletion-requests/"+id, nil)
+	faultRequest.Header.Set("Authorization", "Bearer "+token)
+	faultResponse := httptest.NewRecorder()
+	faultRouter.ServeHTTP(faultResponse, faultRequest)
+	if faultResponse.Code != http.StatusServiceUnavailable || fault.receiptID != "" || strings.Contains(faultResponse.Body.String(), "synthetic redis failure") {
+		t.Fatal("receipt lookup did not close on rate limiter failure")
 	}
 }
 
@@ -370,7 +425,7 @@ func TestAccountSuccessResponsesMatchOpenAPI(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			service := &accountServiceStub{user: fixtureUser(), token: token, deletion: accountapp.AccountDeletionRequest{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a17", Status: accountapp.AccountDeletionPending, RequestedAt: fixtureUser().UpdatedAt}}
+			service := &accountServiceStub{user: fixtureUser(), token: token, deletion: accountapp.AccountDeletionRequest{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a17", Status: accountapp.AccountDeletionPending, RequestedAt: fixtureUser().UpdatedAt, ReceiptToken: strings.Repeat("r", 43), ReceiptExpiresAt: fixtureUser().UpdatedAt.Add(7 * 24 * time.Hour)}}
 			router := accountRouter(t, service, true)
 			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
 			if test.body != "" {
