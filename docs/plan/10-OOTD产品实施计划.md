@@ -64,6 +64,10 @@
 | [18-03 本人原图数据导出后端](18-03-本人原图数据导出后端执行计划.md) | 本地合成数据后端 completed | `with_media` 固定原图版本、`partial`、删图撤销与对象清理；真实服务/进程/只读 OCI 本地通过 | Client 展示与真实用户发布仍待验；注销后回执接续 18-04；`BL-DATA-02` 未完成 |
 | [18-04 注销后删除回执后端](18-04-注销后删除回执后端执行计划.md) | 本地合成数据后端 completed | 202 一次性凭据、注销后 Bearer 查询/撤销、真实媒体进度与 7 天查询权；Go/四服务/进程/只读 OCI 本地通过 | Client 展示与真实用户发布另验；`BL-DATA-03` 未完成 |
 | [17-37 公开资料头像后端](17-37-公开资料头像后端执行计划.md) | 本地合成数据后端 completed | 独立 profile_avatar 用途、净化固定版本、绑定/替换/撤下及匿名读取；真实 PG/MinIO、Go/进程本地通过 | Client 展示、真实用户素材与公开发布另验；`BL-ACCOUNT-05` 整体未完成 |
+| [17-38 多设备会话管理后端](17-38-多设备会话管理后端执行计划.md) | 本地合成账号后端 completed | 本人会话列表、单会话撤销、owner 隔离、当前会话保护与旧 Cookie 失效；本地真实服务验证通过 | 客户端安全提示、真实设备与生产告警另验；`BL-ACCOUNT-06` 整体未完成 |
+| [17-39 主动同步合同](17-39-主动同步合同执行计划.md) | 本地技术合同 completed | 固定主动范围、账号切换、revision/游标/墓碑、冲突和删除优先规则 | 服务端增量、客户端同意/导入和双设备验收由 17-40/17-30 及后续同步切片承担 |
+| [17-40 服务端增量同步](17-40-服务端增量同步执行计划.md) | 本地服务端 completed | owner 绑定的增量游标、连续 seq、幂等变更、衣橱墓碑和连带领域修订；真实 PG/HTTP/race/进程验证通过 | App 主动同步、断网双设备冲突与媒体缓存另验；`BL-SYNC-03/04` 未完成 |
+| [17-41 衣橱归档恢复与状态筛选后端](17-41-衣橱归档恢复与状态筛选后端执行计划.md) | approved / completed（后端开发范围） | `archived_at` 生命周期、默认 active 列表、lifecycle/availability 筛选、严格 revision 归档/恢复；归档衣物拒绝进入新计划/实际，历史快照保持不变 | 客户端管理/推荐 UI、离线本地库、真机和完整 `WARDROBE-ACC-005` 另验；`BL-WARDROBE-01` 整体未完成 |
 | [17-14 仓库与 CI](17-14-客户端服务端仓库拆分与CI执行计划.md)、[17-15 OpenAPI/GORM](17-15-OpenAPI文档门户与Umi生成执行计划.md) | approved / completed | 独立仓库/CI、运行时契约与 AutoMigrate | Web SDK 正式接入不在本片 |
 | [17-13 frontend](17-13-Web账户管理执行计划.md) | 基础工程 completed；账户页面 draft / pending | Next.js 16 App Router、Radix UI、Axios/Umi 生成请求层与同源 rewrites 已完成 | 页面稿与状态矩阵批准后实现账户旅程 |
 | [17-28 Frontend 目录规范化](17-28-Frontend目录结构规范化.md) | approved / completed（本地） | Provider 独立、测试目录简化、应用/测试类型检查分离、源码依赖检查已执行 | 远端验证见对应提交的 Actions；页面视觉与业务范围保持 17-27 基线 |
