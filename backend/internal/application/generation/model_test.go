@@ -229,6 +229,33 @@ func TestTaskCannotSucceedWithoutValidatedOutputReference(t *testing.T) {
 	}
 }
 
+func TestTaskCannotSucceedAfterCancellationRequest(t *testing.T) {
+	task, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusRunning, "", generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusValidating, "", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.RequestCancel(generationTestNow.Add(3 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	task.ResultAssetID = "asset-image-1"
+	if err := task.Transition(StatusSucceeded, "", generationTestNow.Add(4*time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("canceled task accepted direct success: %v", err)
+	}
+	asset, err := NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(4*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(5*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("canceled task accepted output settlement: %v", err)
+	}
+}
+
 func TestValidatingTaskCanBeCanceled(t *testing.T) {
 	task, err := NewTask(validCreateInput(), generationTestNow)
 	if err != nil {

@@ -37,7 +37,7 @@ func PublishOutput(task Task, reservation *QuotaReservation, asset OutputAsset, 
 		}
 		return Settlement{Task: cloneTask(task), Reservation: cloneReservation(reservation), Asset: cloneAsset(asset), FencingToken: task.FencingToken, Reused: true}, nil
 	}
-	if task.Status != StatusValidating || task.ResultAssetID != "" || !reservationAvailable(reservation) {
+	if task.Status != StatusValidating || task.CancelRequestedAt != nil || task.ResultAssetID != "" || !reservationAvailable(reservation) {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
 
