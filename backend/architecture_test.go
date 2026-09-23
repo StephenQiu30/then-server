@@ -39,6 +39,7 @@ var allowedApplicationImports = map[string]map[string]bool{
 	"media":          {"account": true},
 	"eventworker":    {"media": true},
 	"dataexport":     {"account": true},
+	"generation":     {},
 	"syncchange":     {"account": true},
 }
 
