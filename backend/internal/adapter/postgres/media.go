@@ -72,18 +72,19 @@ type mediaDerivationRecord struct {
 func (mediaDerivationRecord) TableName() string { return "media_derivations" }
 
 type deletionRequestRecord struct {
-	ID              string     `gorm:"column:id;type:uuid;primaryKey"`
-	OwnerID         string     `gorm:"column:owner_id;type:uuid;not null;index:deletion_requests_owner_idx"`
-	MediaID         string     `gorm:"column:media_id;type:uuid;not null;uniqueIndex:deletion_requests_media_unique"`
-	Status          string     `gorm:"column:status;type:text;not null;index:deletion_requests_status_idx;check:deletion_requests_status_check,status IN ('pending','running','complete','failed')"`
-	ReadRevokedAt   time.Time  `gorm:"column:read_revoked_at;type:timestamptz;not null"`
-	CompletedAt     *time.Time `gorm:"column:completed_at;type:timestamptz"`
-	BackupExpiresAt time.Time  `gorm:"column:backup_expires_at;type:timestamptz;not null"`
-	StableError     string     `gorm:"column:stable_error;type:text;not null;default:''"`
-	Attempts        int        `gorm:"column:attempts;not null;default:0;check:deletion_requests_attempts_check,attempts >= 0"`
-	NextAttemptAt   time.Time  `gorm:"column:next_attempt_at;type:timestamptz;not null;index:deletion_requests_next_attempt_idx"`
-	CreatedAt       time.Time  `gorm:"column:created_at;type:timestamptz;not null"`
-	UpdatedAt       time.Time  `gorm:"column:updated_at;type:timestamptz;not null"`
+	ID                string     `gorm:"column:id;type:uuid;primaryKey"`
+	OwnerID           string     `gorm:"column:owner_id;type:uuid;not null;index:deletion_requests_owner_idx"`
+	AccountDeletionID *string    `gorm:"column:account_deletion_id;type:uuid;index:deletion_requests_account_deletion_idx"`
+	MediaID           string     `gorm:"column:media_id;type:uuid;not null;uniqueIndex:deletion_requests_media_unique"`
+	Status            string     `gorm:"column:status;type:text;not null;index:deletion_requests_status_idx;check:deletion_requests_status_check,status IN ('pending','running','complete','failed')"`
+	ReadRevokedAt     time.Time  `gorm:"column:read_revoked_at;type:timestamptz;not null"`
+	CompletedAt       *time.Time `gorm:"column:completed_at;type:timestamptz"`
+	BackupExpiresAt   time.Time  `gorm:"column:backup_expires_at;type:timestamptz;not null"`
+	StableError       string     `gorm:"column:stable_error;type:text;not null;default:''"`
+	Attempts          int        `gorm:"column:attempts;not null;default:0;check:deletion_requests_attempts_check,attempts >= 0"`
+	NextAttemptAt     time.Time  `gorm:"column:next_attempt_at;type:timestamptz;not null;index:deletion_requests_next_attempt_idx"`
+	CreatedAt         time.Time  `gorm:"column:created_at;type:timestamptz;not null"`
+	UpdatedAt         time.Time  `gorm:"column:updated_at;type:timestamptz;not null"`
 }
 
 func (deletionRequestRecord) TableName() string { return "deletion_requests" }

@@ -341,7 +341,8 @@ func assertAccountDeleteAndMediaCreateSerialize(t *testing.T, ctx context.Contex
 		}()
 		go func() {
 			<-start
-			_, err := store.NewAccountRepository(database).BeginAccountDeletion(ctx, user.User.ID, time.Now().UTC())
+			at := time.Now().UTC()
+			_, err := store.NewAccountRepository(database).BeginAccountDeletion(ctx, user.User.ID, bytes.Repeat([]byte{0x42}, 32), at, at.Add(7*24*time.Hour))
 			deleteResult <- err
 		}()
 		close(start)

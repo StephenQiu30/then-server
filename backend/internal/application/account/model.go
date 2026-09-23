@@ -7,16 +7,17 @@ import (
 )
 
 var (
-	ErrInvalidAccountInput = errors.New("invalid account input")
-	ErrEmailConflict       = errors.New("email conflict")
-	ErrAccountConflict     = errors.New("account revision conflict")
-	ErrAuthentication      = errors.New("authentication failed")
-	ErrAccountUnavailable  = errors.New("account unavailable")
-	ErrInvalidProfileInput = errors.New("invalid profile input")
-	ErrProfileNotFound     = errors.New("profile not found")
-	ErrProfileConflict     = errors.New("profile revision conflict")
-	ErrHandleConflict      = errors.New("profile handle conflict")
-	ErrInvalidChallenge    = errors.New("invalid account challenge")
+	ErrInvalidAccountInput     = errors.New("invalid account input")
+	ErrEmailConflict           = errors.New("email conflict")
+	ErrAccountConflict         = errors.New("account revision conflict")
+	ErrAuthentication          = errors.New("authentication failed")
+	ErrAccountUnavailable      = errors.New("account unavailable")
+	ErrInvalidProfileInput     = errors.New("invalid profile input")
+	ErrProfileNotFound         = errors.New("profile not found")
+	ErrProfileConflict         = errors.New("profile revision conflict")
+	ErrHandleConflict          = errors.New("profile handle conflict")
+	ErrInvalidChallenge        = errors.New("invalid account challenge")
+	ErrDeletionReceiptNotFound = errors.New("deletion receipt not found")
 )
 
 type AccountStatus string
@@ -74,11 +75,18 @@ const (
 )
 
 type AccountDeletionRequest struct {
-	ID          string
-	Status      AccountDeletionStatus
-	MediaCount  int
-	RequestedAt time.Time
-	CompletedAt *time.Time
+	ID                  string
+	Status              AccountDeletionStatus
+	MediaCount          int
+	RemainingMediaCount int
+	RetryObserved       bool
+	AccessClosed        bool
+	Phase               string
+	RequestedAt         time.Time
+	UpdatedAt           time.Time
+	CompletedAt         *time.Time
+	ReceiptToken        string
+	ReceiptExpiresAt    time.Time
 }
 
 type RegisterAccountInput struct {

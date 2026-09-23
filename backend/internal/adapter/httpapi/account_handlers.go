@@ -32,6 +32,8 @@ type AccountService interface {
 	PutCurrentProfile(context.Context, string, accountapp.PutProfileInput) (accountapp.PublicProfile, error)
 	Logout(context.Context, string) error
 	DeleteCurrentUser(context.Context, string) (accountapp.AccountDeletionRequest, error)
+	GetDeletionReceipt(context.Context, string, string) (accountapp.AccountDeletionRequest, error)
+	RevokeDeletionReceipt(context.Context, string, string) error
 }
 
 type AccountMailService interface {
@@ -167,8 +169,8 @@ func (h *AccountHandler) deleteCurrent(ctx context.Context, input *authenticated
 	if err != nil {
 		return nil, h.authenticatedError(ctx, err)
 	}
-	return &accountDeletionOutput{RequestID: requestID(ctx), SetCookie: h.expiredSessionCookie(), Body: AccountDeletionResponse{
-		ID: deletion.ID, Status: string(deletion.Status), MediaCount: deletion.MediaCount, RequestedAt: deletion.RequestedAt, CompletedAt: deletion.CompletedAt,
+	return &accountDeletionOutput{RequestID: requestID(ctx), SetCookie: h.expiredSessionCookie(), CacheControl: "no-store", Body: AccountDeletionResponse{
+		ID: deletion.ID, Status: string(deletion.Status), MediaCount: deletion.MediaCount, RequestedAt: deletion.RequestedAt, CompletedAt: deletion.CompletedAt, ReceiptToken: deletion.ReceiptToken, ReceiptExpiresAt: deletion.ReceiptExpiresAt,
 	}}, nil
 }
 

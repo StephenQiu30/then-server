@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"log/slog"
 	"net/mail"
 	"strings"
 	"time"
@@ -18,10 +19,11 @@ import (
 )
 
 const (
-	passwordCost       = 12
-	sessionTTL         = 7 * 24 * time.Hour
-	tokenBytes         = 32
-	encodedTokenLength = 43
+	passwordCost            = 12
+	sessionTTL              = 7 * 24 * time.Hour
+	tokenBytes              = 32
+	encodedTokenLength      = 43
+	deletionReceiptLifetime = 7 * 24 * time.Hour
 )
 
 type AccountRepository interface {
@@ -34,7 +36,10 @@ type AccountRepository interface {
 	FindProfileByHandle(context.Context, string) (PublicProfile, error)
 	PutProfile(context.Context, string, PutProfileInput, time.Time) (PublicProfile, error)
 	DeleteSession(context.Context, []byte) error
-	BeginAccountDeletion(context.Context, string, time.Time) (AccountDeletionRequest, error)
+	BeginAccountDeletion(context.Context, string, []byte, time.Time, time.Time) (AccountDeletionRequest, error)
+	GetDeletionReceipt(context.Context, string, []byte, time.Time) (AccountDeletionRequest, error)
+	RevokeDeletionReceipt(context.Context, string, []byte, time.Time) error
+	PurgeDeletionReceipts(context.Context, time.Time) error
 }
 
 type AccountService struct {
@@ -191,7 +196,58 @@ func (s *AccountService) DeleteCurrentUser(ctx context.Context, token string) (A
 	if err != nil {
 		return AccountDeletionRequest{}, err
 	}
-	return s.repository.BeginAccountDeletion(ctx, user.ID, s.now().UTC())
+	receiptToken, receiptHash, err := s.newToken()
+	if err != nil {
+		return AccountDeletionRequest{}, ErrAccountUnavailable
+	}
+	now := s.now().UTC()
+	request, err := s.repository.BeginAccountDeletion(ctx, user.ID, receiptHash, now, now.Add(deletionReceiptLifetime))
+	if err != nil {
+		return AccountDeletionRequest{}, err
+	}
+	request.ReceiptToken = receiptToken
+	return request, nil
+}
+
+func (s *AccountService) GetDeletionReceipt(ctx context.Context, id, token string) (AccountDeletionRequest, error) {
+	hash, ok := hashToken(token)
+	if !ok {
+		return AccountDeletionRequest{}, ErrDeletionReceiptNotFound
+	}
+	if _, err := uuid.Parse(id); err != nil {
+		return AccountDeletionRequest{}, ErrDeletionReceiptNotFound
+	}
+	return s.repository.GetDeletionReceipt(ctx, id, hash, s.now().UTC())
+}
+
+func (s *AccountService) RevokeDeletionReceipt(ctx context.Context, id, token string) error {
+	hash, ok := hashToken(token)
+	if !ok {
+		return ErrDeletionReceiptNotFound
+	}
+	if _, err := uuid.Parse(id); err != nil {
+		return ErrDeletionReceiptNotFound
+	}
+	return s.repository.RevokeDeletionReceipt(ctx, id, hash, s.now().UTC())
+}
+
+func (s *AccountService) PurgeDeletionReceipts(ctx context.Context) error {
+	return s.repository.PurgeDeletionReceipts(ctx, s.now().UTC())
+}
+
+func (s *AccountService) RunReceiptCleanup(ctx context.Context, log *slog.Logger) error {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		if err := s.PurgeDeletionReceipts(ctx); err != nil && ctx.Err() == nil {
+			log.WarnContext(ctx, "deletion_receipt_cleanup_retry")
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *AccountService) newToken() (string, []byte, error) {

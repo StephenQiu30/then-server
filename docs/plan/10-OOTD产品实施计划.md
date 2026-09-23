@@ -61,7 +61,8 @@
 | [17-36 账号邮件验证与找回后端](17-36-账号邮件验证与找回后端执行计划.md) | 契约 approved_with_release_gates / 后端本地实施 completed | 网易 163 TLS SMTP 适配、单次挑战、四个账号 operation 与状态/限流；隔离 PG/Redis、邮件替身和运行时验证通过 | 真实送达、App/Web 链接入口、部署/数据地域与公开注册另验；当前只推进 backend |
 | [18-01 数据主体导出与删除回执合同](18-01-数据主体导出与删除回执合同执行计划.md) | 本地合成数据技术合同 approved/completed | 实施前 38 表盘点、两档导出范围、身份再验证、开发期时限与删号后回执凭据已固定 | `BL-DATA-02/03` 完整范围待做；真实用户范围、正式保留与地域另验 |
 | [18-02 本人结构化数据导出后端](18-02-本人数据导出后端执行计划.md) | 本地合成数据后端 completed | 四个 Huma operation、39 表迁移、持久任务与私有 ZIP；Go/四服务/实际进程/OCI 本地门禁通过 | 媒体档接续 18-03；客户端展示与注销后回执另验 |
-| [18-03 本人原图数据导出后端](18-03-本人原图数据导出后端执行计划.md) | 本地合成数据后端 completed | `with_media` 固定原图版本、`partial`、删图撤销与对象清理；真实服务/进程/只读 OCI 本地通过 | Client 展示、真实用户发布与注销后回执仍待验；`BL-DATA-02` 未完成 |
+| [18-03 本人原图数据导出后端](18-03-本人原图数据导出后端执行计划.md) | 本地合成数据后端 completed | `with_media` 固定原图版本、`partial`、删图撤销与对象清理；真实服务/进程/只读 OCI 本地通过 | Client 展示与真实用户发布仍待验；注销后回执接续 18-04；`BL-DATA-02` 未完成 |
+| [18-04 注销后删除回执后端](18-04-注销后删除回执后端执行计划.md) | 本地合成数据后端 completed | 202 一次性凭据、注销后 Bearer 查询/撤销、真实媒体进度与 7 天查询权；Go/四服务/进程/只读 OCI 本地通过 | Client 展示与真实用户发布另验；`BL-DATA-03` 未完成 |
 | [17-14 仓库与 CI](17-14-客户端服务端仓库拆分与CI执行计划.md)、[17-15 OpenAPI/GORM](17-15-OpenAPI文档门户与Umi生成执行计划.md) | approved / completed | 独立仓库/CI、运行时契约与 AutoMigrate | Web SDK 正式接入不在本片 |
 | [17-13 frontend](17-13-Web账户管理执行计划.md) | 基础工程 completed；账户页面 draft / pending | Next.js 16 App Router、Radix UI、Axios/Umi 生成请求层与同源 rewrites 已完成 | 页面稿与状态矩阵批准后实现账户旅程 |
 | [17-28 Frontend 目录规范化](17-28-Frontend目录结构规范化.md) | approved / completed（本地） | Provider 独立、测试目录简化、应用/测试类型检查分离、源码依赖检查已执行 | 远端验证见对应提交的 Actions；页面视觉与业务范围保持 17-27 基线 |

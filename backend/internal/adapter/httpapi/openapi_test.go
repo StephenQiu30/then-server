@@ -23,7 +23,8 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			Version string `json:"version"`
 		} `json:"info"`
 		Components struct {
-			Schemas map[string]struct {
+			SecuritySchemes map[string]json.RawMessage `json:"securitySchemes"`
+			Schemas         map[string]struct {
 				Required   []string `json:"required"`
 				Properties map[string]struct {
 					Enum []any `json:"enum"`
@@ -31,7 +32,8 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			} `json:"schemas"`
 		} `json:"components"`
 		Paths map[string]map[string]struct {
-			OperationID string `json:"operationId"`
+			OperationID string                `json:"operationId"`
+			Security    []map[string][]string `json:"security"`
 			Responses   map[string]struct {
 				Headers map[string]json.RawMessage `json:"headers"`
 			} `json:"responses"`
@@ -150,6 +152,14 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 				t.Fatalf("missing or duplicate operationId %q", operation.OperationID)
 			}
 			identifiers[operation.OperationID] = true
+			if operation.OperationID == "getAccountDeletionReceipt" || operation.OperationID == "revokeAccountDeletionReceipt" {
+				if len(spec.Components.SecuritySchemes["deletionReceiptAuth"]) == 0 || len(operation.Security) != 1 || len(operation.Security[0]) != 1 {
+					t.Fatal("deletion receipt operation lacks its dedicated bearer security contract")
+				}
+				if _, ok := operation.Security[0]["deletionReceiptAuth"]; !ok {
+					t.Fatal("deletion receipt operation exposes the wrong authentication scheme")
+				}
+			}
 			if _, exists := operation.Responses["422"]; exists {
 				t.Fatal("generated contract exposed the internal validation status 422")
 			}
@@ -176,7 +186,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.21.0" || operations != 110 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.22.0" || operations != 112 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
 	for _, operationID := range []string{"requestEmailVerification", "confirmEmailVerification", "requestPasswordReset", "confirmPasswordReset"} {

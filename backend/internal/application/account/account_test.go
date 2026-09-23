@@ -28,6 +28,7 @@ type accountRepositoryStub struct {
 	profileInput    PutProfileInput
 	deletedSession  []byte
 	deletedUser     string
+	deletionHash    []byte
 	deletion        AccountDeletionRequest
 }
 
@@ -81,10 +82,20 @@ func (r *accountRepositoryStub) DeleteSession(_ context.Context, hash []byte) er
 	return nil
 }
 
-func (r *accountRepositoryStub) BeginAccountDeletion(_ context.Context, userID string, _ time.Time) (AccountDeletionRequest, error) {
+func (r *accountRepositoryStub) BeginAccountDeletion(_ context.Context, userID string, hash []byte, _, _ time.Time) (AccountDeletionRequest, error) {
 	r.deletedUser = userID
+	r.deletionHash = hash
 	return r.deletion, nil
 }
+
+func (r *accountRepositoryStub) GetDeletionReceipt(context.Context, string, []byte, time.Time) (AccountDeletionRequest, error) {
+	return r.deletion, nil
+}
+
+func (r *accountRepositoryStub) RevokeDeletionReceipt(context.Context, string, []byte, time.Time) error {
+	return nil
+}
+func (r *accountRepositoryStub) PurgeDeletionReceipts(context.Context, time.Time) error { return nil }
 
 func newAccountServiceForTest(t *testing.T, repository *accountRepositoryStub) *AccountService {
 	t.Helper()
@@ -95,7 +106,7 @@ func newAccountServiceForTest(t *testing.T, repository *accountRepositoryStub) *
 	return &AccountService{
 		repository:        repository,
 		now:               func() time.Time { return time.Date(2026, 9, 14, 8, 0, 0, 0, time.UTC) },
-		random:            bytes.NewReader(bytes.Repeat([]byte{0x2a}, tokenBytes)),
+		random:            bytes.NewReader(bytes.Repeat([]byte{0x2a}, tokenBytes*4)),
 		passwordCost:      bcrypt.MinCost,
 		dummyPasswordHash: dummyPasswordHash,
 	}
@@ -204,7 +215,7 @@ func TestAuthenticatedUpdateLogoutAndDeleteUseSessionOwner(t *testing.T) {
 	}
 	repository.deletion = AccountDeletionRequest{ID: "deletion-id", Status: AccountDeletionPending, MediaCount: 2}
 	deletion, err := service.DeleteCurrentUser(context.Background(), registered.Token)
-	if err != nil || repository.deletedUser != "user-id" || deletion.ID != "deletion-id" || deletion.MediaCount != 2 {
+	if err != nil || repository.deletedUser != "user-id" || deletion.ID != "deletion-id" || deletion.MediaCount != 2 || len(deletion.ReceiptToken) != encodedTokenLength || len(repository.deletionHash) != 32 {
 		t.Fatal("account deletion did not use the authenticated owner")
 	}
 }

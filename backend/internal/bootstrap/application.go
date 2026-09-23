@@ -189,7 +189,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		return errors.New("HTTP listen failed")
 	}
 	log.Info("api_started", "address", listener.Addr().String(), "role", cfg.Role)
-	var background []func(context.Context) error
+	background := []func(context.Context) error{func(ctx context.Context) error { return accounts.RunReceiptCleanup(ctx, log) }}
 	if accountMail != nil {
 		background = append(background, accountMail.Run)
 	}

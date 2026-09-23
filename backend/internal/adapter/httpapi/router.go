@@ -120,7 +120,7 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 			return newErrorResponse(status, requestID(ctx.Context()))
 		}
 	})
-	config := huma.DefaultConfig("于是 OOTD API", "0.21.0")
+	config := huma.DefaultConfig("于是 OOTD API", "0.22.0")
 	config.OpenAPI.OpenAPI = "3.1.2"
 	config.Info.Description = "“于是”OOTD 产品后端接口。OpenAPI 由 Go operation 与类型字段标签生成。"
 	config.OpenAPIPath = ""
@@ -130,7 +130,8 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 	config.RejectUnknownQueryParameters = true
 	config.Servers = []*huma.Server{{URL: "/", Description: "Same-origin API"}}
 	config.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
-		"cookieAuth": {Type: "apiKey", In: "cookie", Name: sessionCookieName, Description: "HttpOnly、SameSite=Strict 会话 Cookie"},
+		"cookieAuth":          {Type: "apiKey", In: "cookie", Name: sessionCookieName, Description: "HttpOnly、SameSite=Strict 会话 Cookie"},
+		"deletionReceiptAuth": {Type: "http", Scheme: "bearer", BearerFormat: "opaque", Description: "注销 202 响应一次性交付的回执令牌"},
 	}
 	api := humagin.New(engine, config)
 	registerHealthOperations(api, router, probe, timeout)
