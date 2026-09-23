@@ -41,12 +41,73 @@ func TestNewTaskCanonicalizesParametersAndCopiesInputs(t *testing.T) {
 	if string(task.Parameters) != `{"seed":"fixed","temperature":1}` {
 		t.Fatalf("parameters were not canonicalized: %s", task.Parameters)
 	}
-	if task.Status != StatusQueued || task.StatusRevision != 1 || task.DedupeKey == "" || task.IdempotencyKeyHash == "" {
+	if task.Status != StatusQueued || task.StatusRevision != 1 || task.SubmissionState != SubmissionNotStarted || task.SubmissionAttempt != 0 || task.DedupeKey == "" || task.IdempotencyKeyHash == "" {
 		t.Fatalf("unexpected initial task: %+v", task)
 	}
 	input.Inputs.References[0].MediaID = "mutated"
 	if task.Inputs.References[0].MediaID != "person-1" {
 		t.Fatal("task retained mutable input slice")
+	}
+}
+
+func TestSubmissionGuardRequiresExplicitReconciliation(t *testing.T) {
+	task, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := task.BeginSubmission(generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("BeginSubmission() error = %v", err)
+	}
+	if first.Attempt != 1 || task.SubmissionState != SubmissionInFlight || task.SubmissionAttempt != 1 {
+		t.Fatalf("submission was not durably marked in flight: %+v", task)
+	}
+	if _, err := task.BeginSubmission(generationTestNow.Add(2 * time.Minute)); !errors.Is(err, ErrSubmissionInProgress) {
+		t.Fatalf("in-flight task allowed a second submission: %v", err)
+	}
+	if err := task.MarkSubmissionUnknown(generationTestNow.Add(2 * time.Minute)); err != nil {
+		t.Fatalf("MarkSubmissionUnknown() error = %v", err)
+	}
+	if _, err := task.PrepareSubmission(); !errors.Is(err, ErrGenerationNotSubmittable) {
+		t.Fatalf("unknown submission produced a retry payload: %v", err)
+	}
+	if _, err := task.BeginSubmission(generationTestNow.Add(3 * time.Minute)); !errors.Is(err, ErrSubmissionOutcomeUnknown) {
+		t.Fatalf("unknown submission was retried blindly: %v", err)
+	}
+	if err := task.ReconcileSubmissionNotAccepted(generationTestNow.Add(3 * time.Minute)); err != nil {
+		t.Fatalf("ReconcileSubmissionNotAccepted() error = %v", err)
+	}
+	second, err := task.BeginSubmission(generationTestNow.Add(4 * time.Minute))
+	if err != nil {
+		t.Fatalf("reconciled submission did not allow an explicit retry: %v", err)
+	}
+	if second.Attempt != 2 || task.SubmissionAttempt != 2 || task.SubmissionState != SubmissionInFlight {
+		t.Fatalf("retry attempt was not recorded: %+v", task)
+	}
+}
+
+func TestLateAcceptanceResolvesUnknownSubmissionWithoutResubmission(t *testing.T) {
+	task, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusRunning, "", generationTestNow.Add(30*time.Second)); err != nil {
+		t.Fatalf("worker state transition error = %v", err)
+	}
+	if _, err := task.BeginSubmission(generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.MarkSubmissionUnknown(generationTestNow.Add(2 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.RecordExternalTaskID("provider-after-timeout", generationTestNow.Add(3*time.Minute)); err != nil {
+		t.Fatalf("late acceptance was not recorded: %v", err)
+	}
+	if task.SubmissionState != SubmissionAccepted || task.SubmissionUnknownAt != nil || task.ExternalTaskID == "" {
+		t.Fatalf("late acceptance did not resolve uncertainty: %+v", task)
+	}
+	if _, err := task.BeginSubmission(generationTestNow.Add(4 * time.Minute)); !errors.Is(err, ErrGenerationNotSubmittable) {
+		t.Fatalf("accepted task allowed a duplicate submission: %v", err)
 	}
 }
 

@@ -57,9 +57,21 @@ func TestAdmissionPolicyRejectsEachLimitAndInvalidCost(t *testing.T) {
 			want:  ErrGenerationQuotaExceeded,
 		},
 		{
+			name:  "quota already over limit",
+			cost:  CostEstimate{Currency: "USD"},
+			usage: AdmissionUsage{ReservedQuotaUnits: 11},
+			want:  ErrGenerationQuotaExceeded,
+		},
+		{
 			name:  "budget",
 			cost:  CostEstimate{Currency: "USD", EstimatedMinorUnits: 601, ReservedQuotaUnits: 1},
 			usage: AdmissionUsage{ReservedMinorUnits: 400},
+			want:  ErrGenerationBudgetExceeded,
+		},
+		{
+			name:  "budget already over limit",
+			cost:  CostEstimate{Currency: "USD"},
+			usage: AdmissionUsage{ReservedMinorUnits: 1001},
 			want:  ErrGenerationBudgetExceeded,
 		},
 		{

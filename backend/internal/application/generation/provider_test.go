@@ -86,7 +86,7 @@ func TestSyntheticProviderLifecycleUsesOneSubmissionAndSupportsRecovery(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	submission, err := task.PrepareSubmission()
+	submission, err := task.BeginSubmission(generationTestNow.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("PrepareSubmission() error = %v", err)
 	}
@@ -114,7 +114,7 @@ func TestSyntheticProviderLifecycleUsesOneSubmissionAndSupportsRecovery(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherSubmission, err := otherTask.PrepareSubmission()
+	otherSubmission, err := otherTask.BeginSubmission(generationTestNow.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
