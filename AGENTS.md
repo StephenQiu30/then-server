@@ -42,7 +42,7 @@ UI 开发前读取 `DESIGN.md` 并按其中颜色、字体、间距、组件和�
 
 1. 先读相关代码、Design、PRD、Plan/checklist、Acceptance 和 Git 状态。
 2. 用户可见行为、API、数据或架构变化时，先把决定同步到 Design/PRD 和单切片 Plan。
-3. 实现最小端到端路径，不预建未来包、表、接口、兼容层或脚本。人物技术遵循 Design 01 的 `AVATAR-BASELINE-01`：不使用 Blender；调研不能自动改写已确认路线，具体资产来源未验证时保持待决。
+3. 实现最小端到端路径，不预建未来包、表、接口、兼容层或脚本。人物技术遵循 Design 01 的 `AVATAR-BASELINE-01`（2026-09-22 修订）：完整穿搭图优先、按需整套静态 GLB、Three.js 展示；不使用 Blender。现行设计已获用户替换授权，具体样本/供应商准入仍须验证；后续调研不能自行改写基线。
 4. 用可观察行为验证修复；数据库变化必须在真实 PostgreSQL 上验证。
 5. 回写 checklist 与 Acceptance，准确说明未运行的远程 CI、生产和设备验收。
 

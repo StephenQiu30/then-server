@@ -17,6 +17,18 @@ bin/
 *.test
 coverage.out
 
+# Local scratch files and generated test reports
+/tmp/
+/temp/
+/.tmp/
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.xcresult/
+
 # Local environment and secrets
 .env
 .env.*

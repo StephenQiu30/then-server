@@ -1,6 +1,6 @@
 # 设计文档
 
-技术版本以 Design 01 为准，完整产品以 Design 20 为准；功能设计保留当前行为和边界，研究候选不等于已采用。
+技术版本以 Design 01 为准，完整产品以 Design 20 为准。2026-09-22 已采用完整图优先、按需整套静态 GLB 的设计；实施和供应商准入待验，旧模块换装/眼部/视频后移。
 
 [返回总索引](../README.md) · [当前产品进度](../plan/10-OOTD产品实施计划.md)
 
@@ -30,7 +30,7 @@
 - [Web 账户管理设计](16-Web账户管理设计.md)
 - [Woo 页面与立体穿搭 UI 设计](17-Woo页面与三维穿搭UI设计.md)
 - [Woo 立体数字衣橱技术路线研究与决策](18-Woo立体数字衣橱技术路线研究与决策.md)
-- [数字衣橱与虚拟试穿竞品研究](19-数字衣橱与虚拟试穿竞品研究.md)
-- [OOTD 完整产品能力与阶段架构设计](20-OOTD完整产品能力与阶段架构设计.md)
-- [Three.js 人物、换装与灵动交互研究](threejs-avatar-research.md)
-- [WebGPU + Three.js 虚拟形象展示独立评估](webgpu-avatar-assessment.md)（研究建议；含独立 WKWebView 能力探测，不代表生产切换或真机验收）
+- [数字衣橱与虚拟试穿竞品研究](19-数字衣橱与虚拟试穿竞品研究.md)（2026-09-22 GitHub/Context7/Firecrawl 核验，含当前源码审计、成本与许可证边界）
+- [OOTD 完整产品能力与阶段架构设计](20-OOTD完整产品能力与阶段架构设计.md)（approved；当前完整图 + 按需静态 GLB 架构，实施 pending）
+- [Three.js 人物、换装与灵动交互研究](threejs-avatar-research.md)（Tripo 云服务、TripoSR 与 img2threejs 对比；静态 GLB 展示证据与待测边界）
+- [WebGPU + Three.js 虚拟形象展示独立评估](webgpu-avatar-assessment.md)（维持 WebGL2；WebGPU 后续实验，不是首版前置）

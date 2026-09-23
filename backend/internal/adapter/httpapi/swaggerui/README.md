@@ -1,6 +1,6 @@
 # Swagger UI静态资源
 
-固定版本见 [Design 01](../../../../docs/design/01-技术选型.md)：Swagger UI v5.32.15。
+固定版本见 [Design 01](../../../../../docs/design/01-技术选型.md)：Swagger UI v5.32.15。
 
 - swagger-ui-bundle.js、swagger-ui.css：来自官方 GitHub tag 的 `dist/`。
 - LICENSE：来自同一官方 tag 根目录，随二进制嵌入并可通过 `/docs/LICENSE` 查看。
