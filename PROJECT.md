@@ -13,6 +13,7 @@
 | [技术选型](docs/design/01-技术选型.md) | 技术路线、启用条件；安装版本以 package/lockfile、`go.mod/go.sum` 核实 |
 | [需求索引](docs/prd/README.md) / [设计索引](docs/design/README.md) | 各业务需求、状态、数据与接口设计 |
 | [计划索引](docs/plan/README.md) / [验收索引](docs/acceptance/README.md) | 单切片任务、实际完成状态与验证证据 |
+| [Backlog](BACKLOG.md) / [交接](HANDOVER.md) | 全局执行顺序与待办视图 / 标注日期的接手快照；不替代单切片事实 |
 | [AGENTS.md](AGENTS.md)、[前端细则](frontend/AGENTS.md)、[后端细则](backend/AGENTS.md) | 对应目录的执行规则，与本文保持一致 |
 | `backend/internal/adapter/httpapi` | Huma operation、HTTP DTO 与运行时 OpenAPI 的声明源 |
 | `backend/internal/adapter/postgres` | GORM record、开发 schema 与事务实现 |

@@ -35,6 +35,7 @@ then-server/
 - HTTP 接口：`backend/internal/adapter/httpapi` 的 Huma operation 与 Go 类型 tag；运行中的 `/openapi.json` 是 Swagger/Umi 消费入口。
 - 数据库结构：`backend/internal/adapter/postgres` 的 GORM record 与集中 `AutoMigrate`。
 - 执行状态和证据：对应的 `docs/plan/` 与 `docs/acceptance/`。
+- 全局任务顺序与接手入口：根目录 [`BACKLOG.md`](BACKLOG.md) 与 [`HANDOVER.md`](HANDOVER.md)；实时完成状态仍以单切片 Plan/Acceptance 为准。
 
 UI 开发前读取 `DESIGN.md` 并按其中颜色、字体、间距、组件和响应式定义实现。该文件只作为设计标准使用，其中的过程性文字不替代本 `AGENTS.md`、功能 Design/PRD/Plan、代码规范或测试要求；修改设计标准时必须原文同步两个仓库根目录文件。
 
