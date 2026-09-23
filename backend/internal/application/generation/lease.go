@@ -39,7 +39,7 @@ func (t *Task) AcquireLease(owner string, at time.Time, ttl time.Duration) (Leas
 	if (t.LeaseUntil == nil) != (t.LeaseOwner == "") || t.LeaseAttempt < 0 {
 		return Lease{}, ErrInvalidGenerationLease
 	}
-	if t.LeaseUntil != nil && (t.LeaseUntil.IsZero() || t.FencingToken == 0 || t.LeaseAttempt < 1) {
+	if t.LeaseUntil != nil && (t.LeaseUntil.IsZero() || !validID(t.LeaseOwner) || t.FencingToken == 0 || t.LeaseAttempt < 1) {
 		return Lease{}, ErrInvalidGenerationLease
 	}
 	if t.LeaseUntil != nil && at.Before(*t.LeaseUntil) {
@@ -105,6 +105,25 @@ func (t Task) ValidateLease(lease Lease, at time.Time) error {
 	return t.validateLease(lease, at)
 }
 
+func (t Task) validateActiveLeaseAt(at time.Time) error {
+	if (t.LeaseUntil == nil) != (t.LeaseOwner == "") || t.LeaseAttempt < 0 {
+		return ErrInvalidGenerationLease
+	}
+	if t.LeaseUntil == nil {
+		return ErrGenerationLeaseConflict
+	}
+	if t.LeaseUntil.IsZero() || !validID(t.LeaseOwner) || t.FencingToken == 0 || t.LeaseAttempt < 1 || at.IsZero() {
+		return ErrInvalidGenerationLease
+	}
+	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
+		return ErrInvalidGenerationLease
+	}
+	if !at.Before(*t.LeaseUntil) {
+		return ErrGenerationLeaseExpired
+	}
+	return nil
+}
+
 func (t Task) validateLease(lease Lease, at time.Time) error {
 	if !validID(t.ID) || !validID(lease.TaskID) || lease.TaskID != t.ID || !validID(lease.Owner) || lease.FencingToken == 0 || lease.Attempt < 1 || lease.ExpiresAt.IsZero() {
 		return ErrInvalidGenerationLease
@@ -112,14 +131,8 @@ func (t Task) validateLease(lease Lease, at time.Time) error {
 	if t.LeaseOwner != lease.Owner || t.FencingToken != lease.FencingToken || t.LeaseAttempt != lease.Attempt || t.LeaseUntil == nil || !t.LeaseUntil.Equal(lease.ExpiresAt) {
 		return ErrGenerationLeaseConflict
 	}
-	if at.IsZero() {
-		return ErrInvalidGenerationLease
-	}
-	if at.Before(t.UpdatedAt) {
-		return ErrInvalidGenerationLease
-	}
-	if !at.Before(*t.LeaseUntil) {
-		return ErrGenerationLeaseExpired
+	if err := t.validateActiveLeaseAt(at); err != nil {
+		return err
 	}
 	return nil
 }

@@ -106,6 +106,12 @@ func TestLeaseRejectsMalformedPersistedState(t *testing.T) {
 	cases := []func(*Task){
 		func(task *Task) { task.LeaseOwner = "worker-a" },
 		func(task *Task) { task.LeaseUntil = timePtr(generationTestNow.Add(time.Minute)) },
+		func(task *Task) {
+			task.LeaseOwner = " "
+			task.LeaseUntil = timePtr(generationTestNow.Add(time.Minute))
+			task.FencingToken = 1
+			task.LeaseAttempt = 1
+		},
 		func(task *Task) { task.LeaseAttempt = -1 },
 	}
 	for index, mutate := range cases {
