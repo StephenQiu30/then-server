@@ -41,7 +41,12 @@ type QuotaReservation struct {
 // NewQuotaReservation creates a temporary hold for a task after admission has
 // passed. A zero-cost task has no hold and must not create a fake reservation.
 func NewQuotaReservation(id string, task Task, now time.Time) (QuotaReservation, error) {
-	if !validID(id) || !validID(task.ID) || !validID(task.OwnerID) || !task.Purpose.valid() || now.IsZero() {
+	if !validID(id) || !validID(task.ID) || !validID(task.OwnerID) || !task.Purpose.valid() || now.IsZero() ||
+		task.Status != StatusQueued || task.SubmissionState != SubmissionNotStarted || task.ExternalTaskID != "" ||
+		task.CancelRequestedAt != nil || task.StatusRevision < 1 || task.CreatedAt.IsZero() || !task.validSubmissionFacts() {
+		return QuotaReservation{}, ErrInvalidQuotaReservation
+	}
+	if now.Before(task.CreatedAt) || (!task.UpdatedAt.IsZero() && now.Before(task.UpdatedAt)) {
 		return QuotaReservation{}, ErrInvalidQuotaReservation
 	}
 	if task.Cost.ReservedQuotaUnits < 0 || task.Cost.EstimatedMinorUnits < 0 ||

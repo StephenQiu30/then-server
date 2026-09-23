@@ -89,6 +89,58 @@ func TestQuotaReservationRejectsEmptyHoldInvalidCostAndStaleTransition(t *testin
 	}
 }
 
+func TestQuotaReservationRejectsNonQueuedOrSubmittedTask(t *testing.T) {
+	cases := []struct {
+		name   string
+		at     time.Time
+		mutate func(*Task)
+	}{
+		{
+			name: "terminal task",
+			at:   generationTestNow.Add(time.Minute),
+			mutate: func(task *Task) {
+				task.Status = StatusFailed
+				task.FailureCode = "provider_error"
+				task.StatusRevision++
+				task.UpdatedAt = generationTestNow.Add(time.Minute)
+			},
+		},
+		{
+			name: "submitted task",
+			at:   generationTestNow.Add(2 * time.Minute),
+			mutate: func(task *Task) {
+				task.SubmissionState = SubmissionInFlight
+				task.SubmissionAttempt = 1
+				task.SubmissionStartedAt = timePtr(generationTestNow.Add(time.Minute))
+				task.UpdatedAt = generationTestNow.Add(time.Minute)
+			},
+		},
+		{
+			name: "canceled request",
+			at:   generationTestNow.Add(time.Minute),
+			mutate: func(task *Task) {
+				if err := task.RequestCancel(generationTestNow.Add(time.Minute)); err != nil {
+					panic(err)
+				}
+			},
+		},
+		{
+			name:   "stale timestamp",
+			at:     generationTestNow.Add(-time.Second),
+			mutate: func(task *Task) {},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			task := reservationTask()
+			tc.mutate(&task)
+			if _, err := NewQuotaReservation("reservation-1", task, tc.at); !errors.Is(err, ErrInvalidQuotaReservation) {
+				t.Fatalf("invalid reservation task was accepted: %v", err)
+			}
+		})
+	}
+}
+
 func mustTask(input CreateInput) Task {
 	task, err := NewTask(input, generationTestNow)
 	if err != nil {
