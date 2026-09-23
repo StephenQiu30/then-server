@@ -70,8 +70,8 @@ type failingArchiveRepository struct {
 func (r *failingArchiveRepository) Claim(context.Context, time.Time) (Job, bool, error) {
 	return Job{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a11", OwnerID: "owner", Mode: ModeStructured, Status: StatusPreparing, Attempts: 1}, true, nil
 }
-func (r *failingArchiveRepository) Snapshot(context.Context, string) ([]Dataset, error) {
-	return []Dataset{{Name: "account", Rows: json.RawMessage(`[]`), Count: 0}}, nil
+func (r *failingArchiveRepository) Snapshot(context.Context, string, string) ([]Dataset, []MediaSource, error) {
+	return []Dataset{{Name: "account", Rows: json.RawMessage(`[]`), Count: 0}}, nil, nil
 }
 func (r *failingArchiveRepository) Fail(context.Context, Job, time.Time) error {
 	r.failed = true
@@ -81,6 +81,31 @@ func (r *failingArchiveRepository) Fail(context.Context, Job, time.Time) error {
 type failingArchiveStore struct {
 	ObjectStore
 	deleted bool
+}
+
+type corruptMediaStore struct{ ObjectStore }
+
+func (corruptMediaStore) OpenVersion(context.Context, string, string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader([]byte("altered"))), nil
+}
+
+func TestMediaArchiveOmitsDigestMismatch(t *testing.T) {
+	id := "018f1f74-a2d0-7c6d-9c17-4a0ea2400a11"
+	original := []byte("source!")
+	digest := sha256.Sum256(original)
+	archive, counts, omissions, err := buildArchive(context.Background(), []Dataset{{Name: "media", Rows: json.RawMessage(`[]`)}}, []MediaSource{{ID: id, ObjectKey: "private/source", ObjectVersion: "fixed", ByteSize: int64(len(original)), SHA256: hex.EncodeToString(digest[:])}}, ModeWithMedia, corruptMediaStore{}, time.Now())
+	if err != nil || counts["media_files"] != 0 || counts["media_omitted"] != 1 || len(omissions) == 0 {
+		t.Fatal("corrupt source was not omitted")
+	}
+	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range reader.File {
+		if file.Name == "media/"+id+".jpg" {
+			t.Fatal("corrupt source was shipped")
+		}
+	}
 }
 
 func (s *failingArchiveStore) PutArchive(context.Context, string, io.Reader, int64) (string, error) {

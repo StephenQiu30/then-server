@@ -120,7 +120,7 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 			return newErrorResponse(status, requestID(ctx.Context()))
 		}
 	})
-	config := huma.DefaultConfig("于是 OOTD API", "0.20.0")
+	config := huma.DefaultConfig("于是 OOTD API", "0.21.0")
 	config.OpenAPI.OpenAPI = "3.1.2"
 	config.Info.Description = "“于是”OOTD 产品后端接口。OpenAPI 由 Go operation 与类型字段标签生成。"
 	config.OpenAPIPath = ""

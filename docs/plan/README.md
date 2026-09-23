@@ -17,6 +17,7 @@
 - [账号反馈与穿着统计 API](17-34-账号反馈与穿着统计API执行计划.md)（approved/local development complete；BL-HISTORY-02 后端片）
 - [数据主体导出与删除回执合同](18-01-数据主体导出与删除回执合同执行计划.md)（本地合成数据技术合同 approved/completed；BL-DATA-01，生产门禁仍 pending）
 - [本人结构化数据导出后端](18-02-本人数据导出后端执行计划.md)（本地合成数据后端 completed；BL-DATA-02 的结构化档，媒体档接续 18-03）
+- [本人原图数据导出后端](18-03-本人原图数据导出后端执行计划.md)（本地合成数据后端 completed；BL-DATA-02 的媒体档，Client 展示另验）
 
 - [后端需求与数据设计审核计划](19-01-后端需求与数据设计审核计划.md)（approved/completed）
 - [账号状态与公开资料执行计划](19-02-账号状态与公开资料执行计划.md)（approved/completed）

@@ -268,6 +268,11 @@ func (r *MediaRepository) DeleteMedia(ctx context.Context, ownerID, mediaID stri
 		if err := tx.Create(&request).Error; err != nil {
 			return err
 		}
+		// A previously built ZIP may contain this original. Revoke its read right
+		// in the same transaction that revokes the media's read right.
+		if err := tx.Model(&dataExportRecord{}).Where("owner_id = ? AND mode = ? AND status IN ?", ownerID, "with_media", []string{"preparing", "ready", "partial"}).Updates(map[string]any{"status": "revoked", "revoked_at": at}).Error; err != nil {
+			return err
+		}
 		return tx.Create(&outboxEventRecord{ID: uuid.NewString(), EventType: "media.deletion_requested", AggregateID: mediaID, Payload: []byte(`{"media_id":"` + mediaID + `"}`), CreatedAt: at}).Error
 	})
 	if err != nil {

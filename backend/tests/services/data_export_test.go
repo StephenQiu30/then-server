@@ -6,9 +6,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -19,6 +22,7 @@ import (
 	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	exportapp "github.com/StephenQiu30/then-server/backend/internal/application/dataexport"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -63,7 +67,7 @@ func TestDataExportStructuredPrivateLifecycle(t *testing.T) {
 	if !errors.Is(err, accountapp.ErrAuthentication) {
 		t.Fatal("wrong current password accepted")
 	}
-	_, err = exports.Create(ctx, first.Token, "first-password-2026", "with_media")
+	_, err = exports.Create(ctx, first.Token, "first-password-2026", "unknown")
 	if !errors.Is(err, exportapp.ErrInvalidMode) {
 		t.Fatal("unfinished media mode was accepted")
 	}
@@ -234,4 +238,178 @@ func TestDataExportStructuredPrivateLifecycle(t *testing.T) {
 	if !cleaned {
 		t.Fatal("account export cleanup not claimed")
 	}
+}
+
+func TestDataExportMediaFixedVersionAndDeletion(t *testing.T) {
+	environment := loadServiceEnvironment(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	base, err := gorm.Open(postgres.Open(environment.databaseURL), &gorm.Config{Logger: logger.Discard})
+	serviceOK(t, "open media export database", err)
+	schema := strings.ReplaceAll(serviceID(t), "-", "_")
+	serviceOK(t, "create media export schema", base.WithContext(ctx).Exec("CREATE SCHEMA "+schema).Error)
+	t.Cleanup(func() {
+		cleanup, done := context.WithTimeout(context.Background(), 10*time.Second)
+		defer done()
+		if err := base.WithContext(cleanup).Exec("DROP SCHEMA " + schema + " CASCADE").Error; err != nil {
+			t.Error("media export schema cleanup failed")
+		}
+	})
+	databaseURL, err := url.Parse(environment.databaseURL)
+	serviceOK(t, "parse media export database URL", err)
+	query := databaseURL.Query()
+	query.Set("search_path", schema)
+	databaseURL.RawQuery = query.Encode()
+	database, err := gorm.Open(postgres.Open(databaseURL.String()), &gorm.Config{Logger: logger.Discard})
+	serviceOK(t, "open media export schema", err)
+	serviceOK(t, "migrate media export schema", store.Migrate(ctx, database))
+	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
+	serviceOK(t, "construct media export accounts", err)
+	objects, err := objectstore.Open(ctx, environment.minioEndpoint, environment.minioAccessKey, environment.minioSecretKey, false)
+	serviceOK(t, "open media export object store", err)
+	mediaService, err := mediaapp.NewMediaService(accounts, store.NewMediaRepository(database), objects)
+	serviceOK(t, "construct media export service", err)
+	exports, err := exportapp.New(accounts, store.NewDataExportRepository(database), objects)
+	serviceOK(t, "construct media exports", err)
+	owner, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "media-export-owner@example.test", DisplayName: "Owner", Password: "owner-password-2026"})
+	serviceOK(t, "register media export owner", err)
+	other, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "media-export-other@example.test", DisplayName: "Other", Password: "other-password-2026"})
+	serviceOK(t, "register media export other owner", err)
+	photo := syntheticJPEG(t)
+	digest := fmt.Sprintf("%x", sha256.Sum256(photo))
+	upload, err := mediaService.CreateMediaUpload(ctx, owner.Token, mediaapp.CreateMediaUploadInput{Purpose: mediaapp.MediaPurposeDiaryImage, ContentType: mediaapp.MediaContentTypeJPEG, ByteSize: int64(len(photo)), SHA256: digest})
+	serviceOK(t, "create media export upload", err)
+	t.Cleanup(func() {
+		cleanup, done := context.WithTimeout(context.Background(), 10*time.Second)
+		defer done()
+		if err := objects.DeleteAllVersions(cleanup, objectstore.RawBucket, upload.Media.RawObjectKey); err != nil {
+			t.Error("media export raw source cleanup failed")
+		}
+	})
+	put := func(content []byte) string {
+		request, err := http.NewRequestWithContext(ctx, http.MethodPut, upload.URL, bytes.NewReader(content))
+		serviceOK(t, "build media export PUT", err)
+		request.ContentLength = int64(len(content))
+		for key, value := range upload.Headers {
+			if key != "Content-Length" {
+				request.Header.Set(key, value)
+			}
+		}
+		response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+		serviceOK(t, "upload media export source", err)
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK || response.Header.Get("X-Amz-Version-Id") == "" {
+			t.Fatal("media export source PUT failed")
+		}
+		return response.Header.Get("X-Amz-Version-Id")
+	}
+	version := put(photo)
+	_, err = mediaService.CompleteMediaUpload(ctx, owner.Token, upload.Media.ID, mediaapp.CompleteMediaUploadInput{VersionID: version})
+	serviceOK(t, "pin media export version", err)
+	serviceOK(t, "mark synthetic source ready", database.WithContext(ctx).Exec("UPDATE media_assets SET status = 'ready' WHERE id = ?", upload.Media.ID).Error)
+	changed := bytes.Clone(photo)
+	changed[len(changed)/2] ^= 0xff
+	if overwritten := put(changed); overwritten == version {
+		t.Fatal("source overwrite did not create a new version")
+	}
+	job, err := exports.Create(ctx, owner.Token, "owner-password-2026", exportapp.ModeWithMedia)
+	serviceOK(t, "create media export", err)
+	processed, err := exports.ProcessNext(ctx)
+	serviceOK(t, "process media export", err)
+	if !processed {
+		t.Fatal("media export not processed")
+	}
+	ready, err := exports.Get(ctx, owner.Token, job.ID)
+	serviceOK(t, "get ready media export", err)
+	if ready.Status != exportapp.StatusReady || ready.Counts["media_files"] != 1 || ready.Counts["media_omitted"] != 0 {
+		t.Fatal("media export counts or status wrong")
+	}
+	if _, err := exports.Open(ctx, other.Token, job.ID); !errors.Is(err, exportapp.ErrNotFound) {
+		t.Fatal("other owner read media export")
+	}
+	reader, err := exports.Open(ctx, owner.Token, job.ID)
+	serviceOK(t, "open media export", err)
+	archive, err := io.ReadAll(reader)
+	serviceOK(t, "read media export", err)
+	serviceOK(t, "close media export", reader.Close())
+	zipReader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	serviceOK(t, "parse media export ZIP", err)
+	seen := false
+	for _, file := range zipReader.File {
+		if file.Name == "manifest.json" {
+			entry, err := file.Open()
+			serviceOK(t, "open media manifest", err)
+			content, err := io.ReadAll(entry)
+			serviceOK(t, "read media manifest", err)
+			serviceOK(t, "close media manifest", entry.Close())
+			var manifest struct {
+				Files []struct {
+					Name   string `json:"name"`
+					SHA256 string `json:"sha256"`
+				} `json:"files"`
+			}
+			serviceOK(t, "decode media manifest", json.Unmarshal(content, &manifest))
+			matched := false
+			for _, entry := range manifest.Files {
+				if entry.Name == "media/"+upload.Media.ID+".jpg" && entry.SHA256 == digest {
+					matched = true
+				}
+			}
+			if !matched || bytes.Contains(content, []byte(upload.Media.RawObjectKey)) {
+				t.Fatal("media manifest digest missing or private object key leaked")
+			}
+		}
+		if file.Name != "media/"+upload.Media.ID+".jpg" {
+			continue
+		}
+		entry, err := file.Open()
+		serviceOK(t, "open media entry", err)
+		content, err := io.ReadAll(entry)
+		serviceOK(t, "read media entry", err)
+		serviceOK(t, "close media entry", entry.Close())
+		if !bytes.Equal(content, photo) {
+			t.Fatal("media ZIP did not contain the pinned original")
+		}
+		seen = true
+	}
+	if !seen || bytes.Contains(archive, []byte(upload.Media.RawObjectKey)) {
+		t.Fatal("media ZIP entry missing or private object key leaked")
+	}
+	serviceOK(t, "mark source retention cleanup", database.WithContext(ctx).Exec("UPDATE media_assets SET source_deleted_at = ? WHERE id = ?", time.Now().UTC(), upload.Media.ID).Error)
+	partialJob, err := exports.Create(ctx, owner.Token, "owner-password-2026", exportapp.ModeWithMedia)
+	serviceOK(t, "create partial media export", err)
+	_, err = exports.ProcessNext(ctx)
+	serviceOK(t, "process partial media export", err)
+	partial, err := exports.Get(ctx, owner.Token, partialJob.ID)
+	serviceOK(t, "get partial media export", err)
+	if partial.Status != exportapp.StatusPartial || partial.Counts["media_files"] != 0 || partial.Counts["media_omitted"] != 1 || !containsString(partial.Omissions, "media_source_removed:"+upload.Media.ID) {
+		t.Fatal("removed source was not reported as partial")
+	}
+	partialReader, err := exports.Open(ctx, owner.Token, partialJob.ID)
+	serviceOK(t, "download partial media export", err)
+	partialReader.Close()
+	_, err = mediaService.DeleteMedia(ctx, owner.Token, upload.Media.ID)
+	serviceOK(t, "delete exported media", err)
+	for _, id := range []string{job.ID, partialJob.ID} {
+		if _, err := exports.Open(ctx, owner.Token, id); !errors.Is(err, exportapp.ErrNotReady) {
+			t.Fatal("media deletion did not revoke archived media")
+		}
+		cleaned, err := exports.CleanupNext(ctx)
+		serviceOK(t, "clean revoked media export", err)
+		if !cleaned {
+			t.Fatal("revoked media export not cleaned")
+		}
+	}
+	if _, err := objects.OpenArchive(ctx, ready.ObjectKey, ready.ObjectVersion); err == nil {
+		t.Fatal("deleted media remained in export storage")
+	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

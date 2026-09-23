@@ -176,7 +176,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.20.0" || operations != 110 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.21.0" || operations != 110 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
 	for _, operationID := range []string{"requestEmailVerification", "confirmEmailVerification", "requestPasswordReset", "confirmPasswordReset"} {

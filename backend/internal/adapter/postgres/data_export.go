@@ -22,8 +22,8 @@ func NewDataExportRepository(database *gorm.DB) *DataExportRepository {
 type dataExportRecord struct {
 	ID                string     `gorm:"column:id;type:uuid;primaryKey"`
 	OwnerID           string     `gorm:"column:owner_id;type:uuid;not null;index:data_exports_owner_idx"`
-	Mode              string     `gorm:"column:mode;type:text;not null;check:data_exports_mode_check,mode = 'structured'"`
-	Status            string     `gorm:"column:status;type:text;not null;index:data_exports_status_idx;check:data_exports_status_check,status IN ('preparing','ready','failed','expired','revoked')"`
+	Mode              string     `gorm:"column:mode;type:text;not null;check:data_exports_mode_check,mode IN ('structured','with_media')"`
+	Status            string     `gorm:"column:status;type:text;not null;index:data_exports_status_idx;check:data_exports_status_check,status IN ('preparing','ready','partial','failed','expired','revoked')"`
 	Counts            []byte     `gorm:"column:counts;type:jsonb;not null"`
 	Omissions         []byte     `gorm:"column:omissions;type:jsonb;not null"`
 	ObjectKey         string     `gorm:"column:object_key;type:text;not null;default:''"`
@@ -142,7 +142,11 @@ func (r *DataExportRepository) Complete(ctx context.Context, job exportapp.Job, 
 		if record.Status != exportapp.StatusPreparing || record.Attempts != job.Attempts || !at.Before(record.ExpiresAt) {
 			return nil
 		}
-		if err := tx.Model(&dataExportRecord{}).Where("id = ?", job.ID).Updates(map[string]any{"status": exportapp.StatusReady, "counts": countsJSON, "omissions": omissionsJSON, "object_key": key, "object_version": version, "completed_at": at, "lease_until": nil}).Error; err != nil {
+		status := exportapp.StatusReady
+		if counts["media_omitted"] > 0 {
+			status = exportapp.StatusPartial
+		}
+		if err := tx.Model(&dataExportRecord{}).Where("id = ?", job.ID).Updates(map[string]any{"status": status, "counts": countsJSON, "omissions": omissionsJSON, "object_key": key, "object_version": version, "completed_at": at, "lease_until": nil}).Error; err != nil {
 			return err
 		}
 		accepted = true

@@ -6,7 +6,7 @@ type createDataExportInput struct {
 	Session string `cookie:"then_session" hidden:"true"`
 	Body    struct {
 		Password string `json:"password" format:"password" minLength:"1" maxLength:"72"`
-		Mode     string `json:"mode" enum:"structured" doc:"媒体档位将在后续切片启用"`
+		Mode     string `json:"mode" enum:"structured,with_media"`
 	}
 }
 
@@ -17,8 +17,8 @@ type dataExportInput struct {
 
 type DataExportResponse struct {
 	ID          string         `json:"id" format:"uuid"`
-	Mode        string         `json:"mode" enum:"structured"`
-	Status      string         `json:"status" enum:"preparing,ready,failed,expired,revoked"`
+	Mode        string         `json:"mode" enum:"structured,with_media"`
+	Status      string         `json:"status" enum:"preparing,ready,partial,failed,expired,revoked"`
 	Counts      map[string]int `json:"counts"`
 	Omissions   []string       `json:"omissions"`
 	CreatedAt   time.Time      `json:"created_at" format:"date-time"`
