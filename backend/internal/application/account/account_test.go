@@ -94,6 +94,14 @@ func (r *accountRepositoryStub) DeleteSession(_ context.Context, hash []byte) er
 	return nil
 }
 
+func (r *accountRepositoryStub) ListSessions(context.Context, string, []byte, time.Time, int, int) (SessionPage, error) {
+	return SessionPage{}, nil
+}
+
+func (r *accountRepositoryStub) RevokeSession(context.Context, []byte, string, time.Time) (bool, error) {
+	return false, nil
+}
+
 func (r *accountRepositoryStub) BeginAccountDeletion(_ context.Context, userID string, hash []byte, _, _ time.Time) (AccountDeletionRequest, error) {
 	r.deletedUser = userID
 	r.deletionHash = hash

@@ -219,7 +219,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 						Version string `json:"version"`
 					} `json:"info"`
 				}
-				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.23.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) || !strings.Contains(string(body), `"operationId":"createDiaryEntry"`) || !strings.Contains(string(body), `"operationId":"decidePostModeration"`) || !strings.Contains(string(body), `"operationId":"listCommunityFeed"`) || !strings.Contains(string(body), `"operationId":"requestEmailVerification"`) || !strings.Contains(string(body), `"operationId":"confirmPasswordReset"`) || !strings.Contains(string(body), `"operationId":"createDataExport"`) || !strings.Contains(string(body), `"operationId":"getAccountDeletionReceipt"`) || !strings.Contains(string(body), `"operationId":"getPublicProfileAvatar"`) {
+				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.24.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) || !strings.Contains(string(body), `"operationId":"createDiaryEntry"`) || !strings.Contains(string(body), `"operationId":"decidePostModeration"`) || !strings.Contains(string(body), `"operationId":"listCommunityFeed"`) || !strings.Contains(string(body), `"operationId":"requestEmailVerification"`) || !strings.Contains(string(body), `"operationId":"confirmPasswordReset"`) || !strings.Contains(string(body), `"operationId":"createDataExport"`) || !strings.Contains(string(body), `"operationId":"getAccountDeletionReceipt"`) || !strings.Contains(string(body), `"operationId":"getPublicProfileAvatar"`) || !strings.Contains(string(body), `"operationId":"listCurrentUserSessions"`) || !strings.Contains(string(body), `"operationId":"revokeCurrentUserSession"`) {
 					t.Fatal("binary did not serve a valid JSON representation of its compiled contract")
 				}
 			}
@@ -368,6 +368,33 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 	}
 	accountRequest(t, ctx, client, http.MethodPut, baseURL+"/privacy/self-adult-declaration", `{"policy_version":"self-adult-v1","confirms_self_and_adult":true}`, firstSession, http.StatusOK)
 	exerciseWardrobeHTTPLifecycle(t, ctx, client, baseURL, firstSession)
+	remoteLogin, _ := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusOK)
+	remoteSession := remoteLogin.Cookies()[0]
+	listResponse, listBody := accountRequest(t, ctx, client, http.MethodGet, baseURL+"/users/me/sessions?limit=50", "", remoteSession, http.StatusOK)
+	var sessionPage struct {
+		Items []struct {
+			ID      string `json:"id"`
+			Current bool   `json:"current"`
+		} `json:"items"`
+	}
+	if json.Unmarshal(listBody, &sessionPage) != nil || len(sessionPage.Items) != 2 || listResponse.Header.Get("Cache-Control") != "no-store" || strings.Contains(string(listBody), "token_hash") {
+		t.Fatal("actual API process did not return a private two-session list")
+	}
+	var remoteID string
+	for _, session := range sessionPage.Items {
+		if session.Current {
+			remoteID = session.ID
+		}
+	}
+	if remoteID == "" {
+		t.Fatal("actual API process did not identify the requesting session")
+	}
+	revoked, _ := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/users/me/sessions/"+remoteID, "", firstSession, http.StatusNoContent)
+	if revoked.Header.Get("Cache-Control") != "no-store" || len(revoked.Cookies()) != 0 {
+		t.Fatal("remote revoke modified caller cookie or cache policy")
+	}
+	accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/users/me/sessions/"+remoteID, "", firstSession, http.StatusNotFound)
+	accountRequest(t, ctx, client, http.MethodGet, baseURL+"/users/me", "", remoteSession, http.StatusUnauthorized)
 
 	logout, _ := accountRequest(t, ctx, client, http.MethodDelete, baseURL+"/auth/session", "", firstSession, http.StatusNoContent)
 	assertExpiredSessionCookie(t, logout)
@@ -412,7 +439,7 @@ func exerciseAccountHTTPLifecycle(t *testing.T, ctx context.Context, client *htt
 	if len(failedLogin.Cookies()) != 0 {
 		t.Fatal("invalid credentials unexpectedly changed browser cookies")
 	}
-	for range 8 {
+	for range 7 {
 		accountRequest(t, ctx, client, http.MethodPost, baseURL+"/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusUnauthorized)
 	}
 	limited, body := accountRequest(t, ctx, client, http.MethodPost, baseURL+"/auth/sessions", `{"email":"`+email+`","password":"`+password+`"}`, nil, http.StatusTooManyRequests)

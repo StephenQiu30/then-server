@@ -35,6 +35,8 @@ type AccountService interface {
 	DeleteProfileAvatar(context.Context, string, int) (accountapp.PublicProfile, error)
 	PublicProfileAvatar(context.Context, string) (accountapp.ProfileAvatarReference, error)
 	Logout(context.Context, string) error
+	ListSessions(context.Context, string, int, int) (accountapp.SessionPage, error)
+	RevokeSession(context.Context, string, string) (bool, error)
 	DeleteCurrentUser(context.Context, string) (accountapp.AccountDeletionRequest, error)
 	GetDeletionReceipt(context.Context, string, string) (accountapp.AccountDeletionRequest, error)
 	RevokeDeletionReceipt(context.Context, string, string) error

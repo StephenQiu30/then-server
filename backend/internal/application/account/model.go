@@ -18,6 +18,7 @@ var (
 	ErrHandleConflict          = errors.New("profile handle conflict")
 	ErrInvalidChallenge        = errors.New("invalid account challenge")
 	ErrDeletionReceiptNotFound = errors.New("deletion receipt not found")
+	ErrSessionNotFound         = errors.New("session not found")
 )
 
 type AccountStatus string
@@ -59,6 +60,18 @@ type Session struct {
 	TokenHash []byte
 	ExpiresAt time.Time
 	CreatedAt time.Time
+}
+
+type SessionView struct {
+	ID        string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	Current   bool
+}
+
+type SessionPage struct {
+	Items      []SessionView
+	NextOffset *int
 }
 
 type AuthenticatedUser struct {

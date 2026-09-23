@@ -219,7 +219,74 @@ func TestAccountPersistenceLifecycle(t *testing.T) {
 
 	loggedIn, err := accounts.Login(ctx, accountapp.CreateSessionInput{Email: first.User.Email, Password: "correct-password-one"})
 	serviceOK(t, "login persisted account", err)
-	deletion, err := accounts.DeleteCurrentUser(ctx, loggedIn.Token)
+	remote, err := accounts.Login(ctx, accountapp.CreateSessionInput{Email: first.User.Email, Password: "correct-password-one"})
+	serviceOK(t, "login second device", err)
+	serviceOK(t, "insert expired session fixture", database.WithContext(ctx).Exec(`
+		INSERT INTO user_sessions (id, user_id, token_hash, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?)`, "018f1f74-a2d0-7c6d-9c17-4a0ea2400f10", first.User.ID, make([]byte, 32), time.Now().UTC().Add(-48*time.Hour), time.Now().UTC().Add(-24*time.Hour)).Error)
+	page, err := accounts.ListSessions(ctx, loggedIn.Token, 1, 0)
+	serviceOK(t, "list first session page", err)
+	if len(page.Items) != 1 || page.NextOffset == nil || *page.NextOffset != 1 {
+		t.Fatalf("unexpected first session page: %+v", page)
+	}
+	page, err = accounts.ListSessions(ctx, loggedIn.Token, 50, 1)
+	serviceOK(t, "list remaining sessions", err)
+	if len(page.Items) != 2 || page.NextOffset != nil {
+		t.Fatalf("unexpected remaining session page: %+v", page)
+	}
+	remotePage, err := accounts.ListSessions(ctx, remote.Token, 50, 0)
+	serviceOK(t, "list remote sessions", err)
+	var remoteID string
+	for _, session := range remotePage.Items {
+		if session.Current {
+			remoteID = session.ID
+		}
+	}
+	if remoteID == "" {
+		t.Fatal("remote session was not marked current")
+	}
+	otherPage, err := accounts.ListSessions(ctx, second.Token, 50, 0)
+	serviceOK(t, "list other account sessions", err)
+	if len(otherPage.Items) != 1 {
+		t.Fatal("other account list includes foreign sessions")
+	}
+	if _, err := accounts.RevokeSession(ctx, loggedIn.Token, otherPage.Items[0].ID); !errors.Is(err, accountapp.ErrSessionNotFound) {
+		t.Fatalf("foreign revoke error=%v", err)
+	}
+	if _, err := accounts.CurrentUser(ctx, second.Token); err != nil {
+		t.Fatalf("foreign revoke affected owner: %v", err)
+	}
+	current, err := accounts.RevokeSession(ctx, loggedIn.Token, remoteID)
+	serviceOK(t, "revoke remote session", err)
+	if current {
+		t.Fatal("remote session was reported as caller's current session")
+	}
+	if _, err := accounts.CurrentUser(ctx, remote.Token); !errors.Is(err, accountapp.ErrAuthentication) {
+		t.Fatalf("revoked remote session remained valid: %v", err)
+	}
+	if _, err := accounts.RevokeSession(ctx, loggedIn.Token, remoteID); !errors.Is(err, accountapp.ErrSessionNotFound) {
+		t.Fatalf("repeated revoke error=%v", err)
+	}
+	loggedInPage, err := accounts.ListSessions(ctx, loggedIn.Token, 50, 0)
+	serviceOK(t, "find caller session", err)
+	var currentID string
+	for _, session := range loggedInPage.Items {
+		if session.Current {
+			currentID = session.ID
+		}
+	}
+	if currentID == "" {
+		t.Fatal("caller session was not marked current")
+	}
+	current, err = accounts.RevokeSession(ctx, loggedIn.Token, currentID)
+	serviceOK(t, "revoke current session", err)
+	if !current {
+		t.Fatal("current session revoke was not marked current")
+	}
+	if _, err := accounts.CurrentUser(ctx, loggedIn.Token); !errors.Is(err, accountapp.ErrAuthentication) {
+		t.Fatalf("revoked current session remained valid: %v", err)
+	}
+	deletion, err := accounts.DeleteCurrentUser(ctx, first.Token)
 	if err != nil || deletion.Status != accountapp.AccountDeletionComplete {
 		t.Fatal("delete persisted account failed")
 	}
