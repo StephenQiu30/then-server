@@ -28,15 +28,16 @@ var allowedInternalImports = map[string]map[string]bool{
 }
 
 var allowedApplicationImports = map[string]map[string]bool{
-	"account":     {},
-	"privacy":     {"account": true},
-	"wardrobe":    {"account": true},
-	"outfitplan":  {"account": true, "wardrobe": true},
-	"wearevent":   {"account": true, "outfitplan": true},
-	"diary":       {"account": true},
-	"community":   {"account": true},
-	"media":       {"account": true},
-	"eventworker": {"media": true},
+	"account":        {},
+	"privacy":        {"account": true},
+	"wardrobe":       {"account": true},
+	"outfitplan":     {"account": true, "wardrobe": true},
+	"outfitfeedback": {"account": true},
+	"wearevent":      {"account": true, "outfitplan": true},
+	"diary":          {"account": true},
+	"community":      {"account": true},
+	"media":          {"account": true},
+	"eventworker":    {"media": true},
 }
 
 var forbiddenFrameworkImports = map[string][]string{

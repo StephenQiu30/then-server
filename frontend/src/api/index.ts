@@ -20,6 +20,7 @@ import * as privacy from './privacy'
 import * as profile from './profile'
 import * as communityRelationships from './communityRelationships'
 import * as communityReports from './communityReports'
+import * as wearFeedback from './wearFeedback'
 import * as account from './account'
 import * as communitySafety from './communitySafety'
 import * as wardrobe from './wardrobe'
@@ -43,6 +44,7 @@ export default {
   profile,
   communityRelationships,
   communityReports,
+  wearFeedback,
   account,
   communitySafety,
   wardrobe,

@@ -37,3 +37,4 @@
 - [Web 衣橱数据核验设计](25-Web衣橱数据核验设计.md)（then-server 账号无图衣橱页面）
 - [Web 穿搭计划数据核验设计](26-Web穿搭计划数据核验设计.md)（then-server 账号计划页面）
 - [Web 实际穿着数据核验设计](27-Web实际穿着数据核验设计.md)（then-server 账号实际记录页面）
+- [账号反馈与穿着统计设计](28-账号反馈与穿着统计设计.md)（then-server 后端数据/API；Web Client 后续）
