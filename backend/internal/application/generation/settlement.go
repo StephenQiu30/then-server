@@ -28,7 +28,7 @@ type Settlement struct {
 // and consumes its temporary quota hold. Repeating the same success command is
 // idempotent when the task already records the same asset and consumed hold.
 func PublishOutput(task Task, reservation *QuotaReservation, asset OutputAsset, at time.Time) (Settlement, error) {
-	if !validSettlementTime(task, at) || !validOutputAsset(task, asset) || asset.PublishedAt.After(at) || !reservationMatchesTask(task, reservation) {
+	if !validSettlementTime(task, at) || !validSettlementLease(task, at) || !validOutputAsset(task, asset) || asset.PublishedAt.After(at) || !reservationMatchesTask(task, reservation) {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
 	if task.Status == StatusSucceeded {
@@ -61,7 +61,7 @@ func PublishOutput(task Task, reservation *QuotaReservation, asset OutputAsset, 
 // and releases its temporary hold. Repeating the same terminal command is
 // idempotent when the task already carries the same failure and released hold.
 func FinalizeWithoutOutput(task Task, reservation *QuotaReservation, next Status, failureCode string, at time.Time) (Settlement, error) {
-	if !validSettlementTime(task, at) || !terminalWithoutOutput(next) || !reservationMatchesTask(task, reservation) {
+	if !validSettlementTime(task, at) || !validSettlementLease(task, at) || !terminalWithoutOutput(next) || !reservationMatchesTask(task, reservation) {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
 	if next == StatusFailed && !validToken(failureCode, 96) {
@@ -97,6 +97,16 @@ func FinalizeWithoutOutput(task Task, reservation *QuotaReservation, next Status
 
 func validSettlementTime(task Task, at time.Time) bool {
 	return !at.IsZero() && (task.UpdatedAt.IsZero() || !at.Before(task.UpdatedAt))
+}
+
+func validSettlementLease(task Task, at time.Time) bool {
+	if task.LeaseUntil == nil {
+		return task.LeaseOwner == ""
+	}
+	if task.LeaseOwner == "" || task.FencingToken == 0 || task.LeaseAttempt < 1 || task.LeaseUntil.IsZero() {
+		return false
+	}
+	return at.Before(*task.LeaseUntil)
 }
 
 func terminalWithoutOutput(status Status) bool {
