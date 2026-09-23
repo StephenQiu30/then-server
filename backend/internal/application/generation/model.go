@@ -187,6 +187,7 @@ type Task struct {
 	SubmissionUnknownAt *time.Time
 	CancelRequestedAt   *time.Time
 	ExternalTaskID      string
+	ResultAssetID       string
 	FailureCode         string
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
