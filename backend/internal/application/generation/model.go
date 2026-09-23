@@ -422,9 +422,11 @@ func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
 // by an adapter to the domain state machine. Non-terminal tasks require an
 // active worker lease. A provider-success observation stops at validating;
 // PublishOutput is the only path that can mark a task succeeded after object
-// validation and lineage checks. Repeated observations are idempotent; stale
-// or cross-task observations cannot move a task backwards or attach a result
-// to another task.
+// validation and lineage checks. Provider failure, cancellation and expiry
+// observations must be finalized through FinalizeWithoutOutput so quota and
+// lease cleanup remain part of the same settlement. Repeated observations are
+// idempotent; stale or cross-task observations cannot move a task backwards or
+// attach a result to another task.
 func (t *Task) ApplyProviderState(externalID string, next Status, failureCode string, at time.Time) error {
 	if t == nil || !validToken(externalID, 256) || t.ExternalTaskID == "" || t.ExternalTaskID != externalID {
 		return ErrExternalTaskConflict
@@ -447,10 +449,16 @@ func (t *Task) ApplyProviderState(externalID string, next Status, failureCode st
 		return ErrGenerationOutputRequired
 	}
 	if next == t.Status {
+		if t.Status.terminal() && (t.LeaseOwner != "" || t.LeaseUntil != nil || t.LeaseAttempt < 0) {
+			return ErrInvalidGenerationState
+		}
 		if failureCode != t.FailureCode {
 			return ErrInvalidGenerationState
 		}
 		return nil
+	}
+	if next.terminal() {
+		return ErrInvalidGenerationState
 	}
 	return t.Transition(next, failureCode, at)
 }

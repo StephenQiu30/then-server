@@ -371,15 +371,53 @@ func TestProviderStateRejectsZeroObservationTime(t *testing.T) {
 	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(90*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if err := task.ApplyProviderState("provider-job-1", StatusFailed, "provider_error", generationTestNow.Add(2*time.Minute)); err != nil {
+	settled, err := FinalizeWithoutOutput(task, nil, StatusFailed, "provider_error", generationTestNow.Add(2*time.Minute))
+	if err != nil {
 		t.Fatal(err)
 	}
+	task = settled.Task
 	revision := task.StatusRevision
 	if err := task.ApplyProviderState("provider-job-1", StatusFailed, "provider_error", time.Time{}); !errors.Is(err, ErrInvalidGenerationState) {
 		t.Fatalf("zero-time provider replay error = %v", err)
 	}
 	if task.Status != StatusFailed || task.FailureCode != "provider_error" || task.StatusRevision != revision {
 		t.Fatalf("invalid provider replay mutated terminal task: %+v", task)
+	}
+	if err := task.ApplyProviderState("provider-job-1", StatusFailed, "provider_error", generationTestNow.Add(3*time.Minute)); err != nil {
+		t.Fatalf("terminal provider replay error = %v", err)
+	}
+	if task.StatusRevision != revision {
+		t.Fatalf("terminal provider replay changed task revision: %+v", task)
+	}
+}
+
+func TestProviderTerminalStateRequiresSettlement(t *testing.T) {
+	input := validCreateInput()
+	input.Cost = CostEstimate{Currency: "USD", EstimatedMinorUnits: 25, ReservedQuotaUnits: 1}
+	task := mustTask(input)
+	if _, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), 10*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(90*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	reservation, err := NewQuotaReservation("reservation-1", task, generationTestNow.Add(90*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := task.StatusRevision
+	if err := task.ApplyProviderState("provider-job-1", StatusFailed, "provider_error", generationTestNow.Add(2*time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("provider terminal observation bypassed settlement: %v", err)
+	}
+	if task.Status != StatusRunning || task.StatusRevision != revision || task.LeaseOwner == "" {
+		t.Fatalf("rejected terminal observation mutated task: %+v", task)
+	}
+	settled, err := FinalizeWithoutOutput(task, &reservation, StatusFailed, "provider_error", generationTestNow.Add(3*time.Minute))
+	if err != nil {
+		t.Fatalf("FinalizeWithoutOutput() error = %v", err)
+	}
+	if settled.Task.Status != StatusFailed || settled.Task.LeaseOwner != "" || settled.Reservation.State != ReservationReleased {
+		t.Fatalf("terminal settlement did not release task facts: %+v", settled)
 	}
 }
 

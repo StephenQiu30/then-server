@@ -159,9 +159,11 @@ func TestSyntheticProviderLifecycleUsesOneSubmissionAndSupportsRecovery(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := task.ApplyProviderState(remote.ExternalTaskID, remote.State, "", generationTestNow.Add(4*time.Minute)); err != nil {
-		t.Fatal(err)
+	settled, err := FinalizeWithoutOutput(task, nil, remote.State, "", generationTestNow.Add(4*time.Minute))
+	if err != nil {
+		t.Fatalf("FinalizeWithoutOutput() error = %v", err)
 	}
+	task = settled.Task
 	if task.Status != StatusCanceled {
 		t.Fatalf("synthetic cancellation did not reconcile: %s", task.Status)
 	}
