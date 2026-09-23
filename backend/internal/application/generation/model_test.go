@@ -121,6 +121,115 @@ func TestTaskStateTransitionsAndCancellationAreMonotonic(t *testing.T) {
 	}
 }
 
+func TestValidatingTaskCanBeCanceled(t *testing.T) {
+	task, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusRunning, "", generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusValidating, "", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.RequestCancel(generationTestNow.Add(3 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusCanceled, "", generationTestNow.Add(4*time.Minute)); err != nil {
+		t.Fatalf("validating -> canceled error = %v", err)
+	}
+	if task.Status != StatusCanceled || task.CancelRequestedAt == nil {
+		t.Fatalf("validation cancellation was not retained: %+v", task)
+	}
+}
+
+func TestProviderAcceptanceAndCallbacksAreMonotonic(t *testing.T) {
+	task, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatalf("RecordExternalTaskID() error = %v", err)
+	}
+	revision := task.StatusRevision
+	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatalf("repeated RecordExternalTaskID() error = %v", err)
+	}
+	if task.StatusRevision != revision {
+		t.Fatal("repeated provider acceptance changed the task")
+	}
+	if err := task.ApplyProviderState("provider-job-1", StatusRunning, "", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatalf("running callback error = %v", err)
+	}
+	if err := task.ApplyProviderState("provider-job-1", StatusValidating, "", generationTestNow.Add(3*time.Minute)); err != nil {
+		t.Fatalf("validating callback error = %v", err)
+	}
+	if err := task.ApplyProviderState("provider-job-1", StatusSucceeded, "", generationTestNow.Add(4*time.Minute)); err != nil {
+		t.Fatalf("success callback error = %v", err)
+	}
+	if err := task.ApplyProviderState("provider-job-1", StatusSucceeded, "", generationTestNow.Add(5*time.Minute)); err != nil {
+		t.Fatalf("repeated success callback error = %v", err)
+	}
+	if task.Status != StatusSucceeded || task.ExternalTaskID != "provider-job-1" {
+		t.Fatalf("unexpected reconciled task: %+v", task)
+	}
+	if err := task.ApplyProviderState("provider-job-2", StatusFailed, "provider_error", generationTestNow.Add(6*time.Minute)); !errors.Is(err, ErrExternalTaskConflict) {
+		t.Fatalf("cross-task callback error = %v", err)
+	}
+	if task.Status != StatusSucceeded {
+		t.Fatal("cross-task callback changed terminal task")
+	}
+	if err := task.ApplyProviderState("provider-job-1", StatusRunning, "", generationTestNow.Add(7*time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("late stale callback error = %v", err)
+	}
+}
+
+func TestLateProviderAcceptanceAfterCancellationIsRetainedForCleanup(t *testing.T) {
+	task, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.RequestCancel(generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusCanceled, "", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.RecordExternalTaskID("provider-late-1", generationTestNow.Add(90*time.Second)); err != nil {
+		t.Fatalf("late acceptance was not retained: %v", err)
+	}
+	if task.ExternalTaskID != "provider-late-1" || task.Status != StatusCanceled {
+		t.Fatalf("late acceptance changed cancellation state: %+v", task)
+	}
+	if task.UpdatedAt != generationTestNow.Add(2*time.Minute) {
+		t.Fatalf("late acceptance moved local time backwards: %v", task.UpdatedAt)
+	}
+	if err := task.ApplyProviderState("provider-late-1", StatusSucceeded, "", generationTestNow.Add(4*time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("late success resurrected canceled task: %v", err)
+	}
+}
+
+func TestProviderCallbacksRequireTheRecordedExternalTask(t *testing.T) {
+	task, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.ApplyProviderState("unrecorded", StatusRunning, "", generationTestNow.Add(time.Minute)); !errors.Is(err, ErrExternalTaskConflict) {
+		t.Fatalf("unrecorded callback error = %v", err)
+	}
+	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.RecordExternalTaskID("provider-job-2", generationTestNow.Add(2*time.Minute)); !errors.Is(err, ErrExternalTaskConflict) {
+		t.Fatalf("replacement external ID error = %v", err)
+	}
+	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(-time.Second)); err != nil {
+		// Replaying the same acceptance is idempotent even if the transport
+		// reports an older observation timestamp.
+		t.Fatalf("same external ID replay error = %v", err)
+	}
+}
+
 func TestTaskRejectsInvalidSnapshotsAndConsent(t *testing.T) {
 	cases := []struct {
 		name   string
