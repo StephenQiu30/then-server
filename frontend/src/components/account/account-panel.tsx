@@ -198,6 +198,9 @@ export function AccountPanel() {
       ) : (
         user && (
           <div className="flex flex-col gap-6">
+            <Button asChild variant="outline" className="self-start">
+              <Link href="/wardrobe">查看我的衣橱</Link>
+            </Button>
             <Card>
               <CardHeader>
                 <CardTitle>个人资料</CardTitle>

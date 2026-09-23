@@ -5,6 +5,6 @@
     "types": ["node"],
     "plugins": []
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "../src/api/typings.d.ts"],
   "exclude": []
 }

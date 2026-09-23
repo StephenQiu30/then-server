@@ -2,7 +2,7 @@
 
 “于是”Web 前端。项目使用 Next.js App Router、React、TypeScript、shadcn/ui + Radix Primitives、Tailwind CSS、TanStack Query、Axios、ESLint 与 Prettier。不使用 Vite 或 React Router。
 
-前后端工程总规范见 [PROJECT.md](../PROJECT.md)。2026-09-22 已按 [17-27](../docs/plan/17-27-Web设计体系与工程规范同步执行计划.md) 初始化 radix-nova / Lucide / RSC 和统一语义 token。账户的注册、登录、资料管理与删除页面按 [17-13](../docs/plan/17-13-Web账户管理执行计划.md) 实现；首页、404 与错误重试共用基础页面结构。
+前后端工程总规范见 [PROJECT.md](../PROJECT.md)。2026-09-22 已按 [17-27](../docs/plan/17-27-Web设计体系与工程规范同步执行计划.md) 初始化 radix-nova / Lucide / RSC 和统一语义 token。账户页面按 [17-13](../docs/plan/17-13-Web账户管理执行计划.md) 实现；无图衣橱核验页按 [17-31](../docs/plan/17-31-Web衣橱数据核验执行计划.md) 实现。首页、404 与错误重试共用基础页面结构。
 
 目录实施见 [17-28](../docs/plan/17-28-Frontend目录结构规范化.md)。路由入口保持直接，QueryProvider 独立于展示组件；生成 API 与唯一 Axios 入口保留。`npm test` 自动发现架构和单元测试；`npm run typecheck` 分别检查应用与测试。内部 assets 不参与源码扫描。
 
@@ -41,17 +41,20 @@ frontend/
 │   ├── components/
 │   │   ├── layout/          PageShell
 │   │   ├── account/         账户表单和资料页
+│   │   ├── wardrobe/        本人衣橱表单和列表
 │   │   └── ui/              按需接入的 shadcn 组件
 │   ├── providers/
 │   │   └── query-provider.tsx
 │   ├── hooks/account/       账户查询与操作
+│   ├── hooks/wardrobe/      衣橱查询与操作
 │   └── lib/
 │       ├── api/request.ts   唯一 Axios 请求适配器
 │       ├── account/         账户校验和错误文案
+│       ├── wardrobe/        衣橱表单映射和错误文案
 │       └── utils.ts         cn()
 ├── tests/
 │   ├── architecture/dependencies.test.ts
-│   ├── unit/                请求与账户纯逻辑测试
+│   ├── unit/                请求、账户与衣橱纯逻辑测试
 │   └── tsconfig.json        独立测试类型检查
 ├── assets/                  内部素材说明与本地忽略的输入
 ├── components.json          shadcn 配置
@@ -74,7 +77,7 @@ npm run build
 npm audit --omit=dev
 ```
 
-当前目录交付账户页面的本地开发验证；公开注册仍需账号、TLS、隐私与运维发布门禁。
+当前目录交付账户和无图衣橱页面的本地开发验证；公开注册仍需账号、TLS、隐私与运维发布门禁。衣橱页不提供离线 Look 或推荐。
 
 ## 维护基础组件
 
