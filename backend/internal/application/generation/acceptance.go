@@ -135,6 +135,7 @@ func cloneTask(task Task) Task {
 	task.SubmissionStartedAt = cloneTime(task.SubmissionStartedAt)
 	task.SubmissionUnknownAt = cloneTime(task.SubmissionUnknownAt)
 	task.CancelRequestedAt = cloneTime(task.CancelRequestedAt)
+	task.LeaseUntil = cloneTime(task.LeaseUntil)
 	return task
 }
 
