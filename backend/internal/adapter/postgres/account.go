@@ -33,6 +33,9 @@ type userRecord struct {
 	Profile         *userProfileRecord           `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 	Credentials     []credentialRecord           `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 	Sessions        []sessionRecord              `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	SyncPosition    *syncPositionRecord          `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	SyncChanges     []syncChangeRecord           `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	WardrobeDeletes []wardrobeItemDeletionRecord `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 	MailChallenges  []mailChallengeRecord        `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 	Declarations    []selfAdultDeclarationRecord `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 	Consents        []consentRecord              `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
@@ -107,6 +110,9 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, user accountapp.U
 		if err := gorm.G[credentialRecord](tx).Create(ctx, &credentialRecord{
 			UserID: user.ID, Email: user.Email, PasswordHash: passwordHash,
 		}); err != nil {
+			return err
+		}
+		if err := tx.Create(&syncPositionRecord{OwnerID: user.ID, Seeded: true}).Error; err != nil {
 			return err
 		}
 		return gorm.G[sessionRecord](tx).Create(ctx, &sessionRecord{

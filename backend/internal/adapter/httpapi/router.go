@@ -25,27 +25,31 @@ type Router struct {
 var configureHumaErrors sync.Once
 
 func NewRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, wardrobe *WardrobeHandler, outfits *OutfitPlanHandler, wear *WearEventHandler, timeout time.Duration, log *slog.Logger, mediaHandlers ...*MediaHandler) (*Router, error) {
-	return newRouter(ctx, docsEnabled, probe, accounts, privacy, wardrobe, outfits, wear, nil, nil, nil, nil, timeout, log, mediaHandlers...)
+	return newRouter(ctx, docsEnabled, probe, accounts, privacy, wardrobe, outfits, wear, nil, nil, nil, nil, nil, timeout, log, mediaHandlers...)
 }
 
 func NewRouterWithDiary(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, wardrobe *WardrobeHandler, outfits *OutfitPlanHandler, wear *WearEventHandler, diary *DiaryHandler, timeout time.Duration, log *slog.Logger, mediaHandlers ...*MediaHandler) (*Router, error) {
-	return newRouter(ctx, docsEnabled, probe, accounts, privacy, wardrobe, outfits, wear, diary, nil, nil, nil, timeout, log, mediaHandlers...)
+	return newRouter(ctx, docsEnabled, probe, accounts, privacy, wardrobe, outfits, wear, diary, nil, nil, nil, nil, timeout, log, mediaHandlers...)
 }
 
 func NewRouterWithCommunity(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, wardrobe *WardrobeHandler, outfits *OutfitPlanHandler, wear *WearEventHandler, diary *DiaryHandler, community *CommunityHandler, timeout time.Duration, log *slog.Logger, mediaHandlers ...*MediaHandler) (*Router, error) {
-	return newRouter(ctx, docsEnabled, probe, accounts, privacy, wardrobe, outfits, wear, diary, community, nil, nil, timeout, log, mediaHandlers...)
+	return newRouter(ctx, docsEnabled, probe, accounts, privacy, wardrobe, outfits, wear, diary, community, nil, nil, nil, timeout, log, mediaHandlers...)
 }
 
 func NewRouterWithFeedback(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, wardrobe *WardrobeHandler, outfits *OutfitPlanHandler, wear *WearEventHandler, diary *DiaryHandler, community *CommunityHandler, feedback *FeedbackHandler, timeout time.Duration, log *slog.Logger, mediaHandlers ...*MediaHandler) (*Router, error) {
-	return newRouter(ctx, docsEnabled, probe, accounts, privacy, wardrobe, outfits, wear, diary, community, feedback, nil, timeout, log, mediaHandlers...)
+	return newRouter(ctx, docsEnabled, probe, accounts, privacy, wardrobe, outfits, wear, diary, community, feedback, nil, nil, timeout, log, mediaHandlers...)
 }
 
 func NewRouterWithExport(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, wardrobe *WardrobeHandler, outfits *OutfitPlanHandler, wear *WearEventHandler, diary *DiaryHandler, community *CommunityHandler, feedback *FeedbackHandler, dataExport *DataExportHandler, timeout time.Duration, log *slog.Logger, mediaHandlers ...*MediaHandler) (*Router, error) {
-	return newRouter(ctx, docsEnabled, probe, accounts, privacy, wardrobe, outfits, wear, diary, community, feedback, dataExport, timeout, log, mediaHandlers...)
+	return newRouter(ctx, docsEnabled, probe, accounts, privacy, wardrobe, outfits, wear, diary, community, feedback, dataExport, nil, timeout, log, mediaHandlers...)
 }
 
-func newRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, wardrobe *WardrobeHandler, outfits *OutfitPlanHandler, wear *WearEventHandler, diary *DiaryHandler, community *CommunityHandler, feedback *FeedbackHandler, dataExport *DataExportHandler, timeout time.Duration, log *slog.Logger, mediaHandlers ...*MediaHandler) (*Router, error) {
-	if probe == nil || log == nil || timeout <= 0 || timeout > 5*time.Second || (accounts != nil && (accounts.service == nil || accounts.limiter == nil)) || (privacy != nil && privacy.service == nil) || (wardrobe != nil && wardrobe.service == nil) || (outfits != nil && outfits.service == nil) || (wear != nil && wear.service == nil) || (diary != nil && diary.service == nil) || (community != nil && (community.service == nil || community.objects == nil)) || (feedback != nil && feedback.service == nil) || (dataExport != nil && (dataExport.service == nil || dataExport.limiter == nil)) {
+func NewRouterWithSync(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, wardrobe *WardrobeHandler, outfits *OutfitPlanHandler, wear *WearEventHandler, diary *DiaryHandler, community *CommunityHandler, feedback *FeedbackHandler, dataExport *DataExportHandler, syncHandler *SyncHandler, timeout time.Duration, log *slog.Logger, mediaHandlers ...*MediaHandler) (*Router, error) {
+	return newRouter(ctx, docsEnabled, probe, accounts, privacy, wardrobe, outfits, wear, diary, community, feedback, dataExport, syncHandler, timeout, log, mediaHandlers...)
+}
+
+func newRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, wardrobe *WardrobeHandler, outfits *OutfitPlanHandler, wear *WearEventHandler, diary *DiaryHandler, community *CommunityHandler, feedback *FeedbackHandler, dataExport *DataExportHandler, syncHandler *SyncHandler, timeout time.Duration, log *slog.Logger, mediaHandlers ...*MediaHandler) (*Router, error) {
+	if probe == nil || log == nil || timeout <= 0 || timeout > 5*time.Second || (accounts != nil && (accounts.service == nil || accounts.limiter == nil)) || (privacy != nil && privacy.service == nil) || (wardrobe != nil && wardrobe.service == nil) || (outfits != nil && outfits.service == nil) || (wear != nil && wear.service == nil) || (diary != nil && diary.service == nil) || (community != nil && (community.service == nil || community.objects == nil)) || (feedback != nil && feedback.service == nil) || (dataExport != nil && (dataExport.service == nil || dataExport.limiter == nil)) || (syncHandler != nil && syncHandler.service == nil) {
 		return nil, errors.New("invalid router dependencies")
 	}
 	engine, err := newEngine(log)
@@ -57,7 +61,7 @@ func newRouter(ctx context.Context, docsEnabled bool, probe DependencyProbe, acc
 	if len(mediaHandlers) > 0 {
 		media = mediaHandlers[0]
 	}
-	api := registerAPI(engine, router, probe, accounts, privacy, wardrobe, outfits, wear, diary, community, feedback, dataExport, media, timeout)
+	api := registerAPI(engine, router, probe, accounts, privacy, wardrobe, outfits, wear, diary, community, feedback, dataExport, syncHandler, media, timeout)
 	yamlDocument, jsonDocument, err := serializeOpenAPI(ctx, api.OpenAPI())
 	if err != nil {
 		return nil, err
@@ -111,7 +115,7 @@ func newEngine(log *slog.Logger) (*gin.Engine, error) {
 	return engine, nil
 }
 
-func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, wardrobe *WardrobeHandler, outfits *OutfitPlanHandler, wear *WearEventHandler, diary *DiaryHandler, community *CommunityHandler, feedback *FeedbackHandler, dataExport *DataExportHandler, media *MediaHandler, timeout time.Duration) huma.API {
+func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, accounts *AccountHandler, privacy *PrivacyHandler, wardrobe *WardrobeHandler, outfits *OutfitPlanHandler, wear *WearEventHandler, diary *DiaryHandler, community *CommunityHandler, feedback *FeedbackHandler, dataExport *DataExportHandler, syncHandler *SyncHandler, media *MediaHandler, timeout time.Duration) huma.API {
 	configureHumaErrors.Do(func() {
 		huma.NewError = func(status int, _ string, _ ...error) huma.StatusError {
 			return newErrorResponse(status, "")
@@ -120,7 +124,7 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 			return newErrorResponse(status, requestID(ctx.Context()))
 		}
 	})
-	config := huma.DefaultConfig("于是 OOTD API", "0.24.0")
+	config := huma.DefaultConfig("于是 OOTD API", "0.25.0")
 	config.OpenAPI.OpenAPI = "3.1.2"
 	config.Info.Description = "“于是”OOTD 产品后端接口。OpenAPI 由 Go operation 与类型字段标签生成。"
 	config.OpenAPIPath = ""
@@ -145,6 +149,7 @@ func registerAPI(engine *gin.Engine, router *Router, probe DependencyProbe, acco
 	registerCommunityOperations(api, community)
 	registerMediaOperations(api, media)
 	registerDataExportOperations(api, dataExport)
+	registerSyncOperations(api, syncHandler)
 	normalizeGeneratedOpenAPI(api.OpenAPI())
 	return api
 }

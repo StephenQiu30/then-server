@@ -92,6 +92,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"getWearFeedback":                 true,
 		"saveWearFeedback":                true,
 		"deleteWearFeedback":              true,
+		"listSyncChanges":                 true,
 		"getWearStatistics":               true,
 		"createDiaryEntry":                true,
 		"listDiaryEntries":                true,
@@ -190,7 +191,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.24.0" || operations != 117 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.25.0" || operations != 118 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
 	for _, operationID := range []string{"listCurrentUserSessions", "revokeCurrentUserSession"} {

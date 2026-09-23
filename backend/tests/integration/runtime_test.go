@@ -219,10 +219,18 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 						Version string `json:"version"`
 					} `json:"info"`
 				}
-				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.24.0" || !strings.Contains(string(body), `"operationId":"createWearEvent"`) || !strings.Contains(string(body), `"operationId":"createDiaryEntry"`) || !strings.Contains(string(body), `"operationId":"decidePostModeration"`) || !strings.Contains(string(body), `"operationId":"listCommunityFeed"`) || !strings.Contains(string(body), `"operationId":"requestEmailVerification"`) || !strings.Contains(string(body), `"operationId":"confirmPasswordReset"`) || !strings.Contains(string(body), `"operationId":"createDataExport"`) || !strings.Contains(string(body), `"operationId":"getAccountDeletionReceipt"`) || !strings.Contains(string(body), `"operationId":"getPublicProfileAvatar"`) || !strings.Contains(string(body), `"operationId":"listCurrentUserSessions"`) || !strings.Contains(string(body), `"operationId":"revokeCurrentUserSession"`) {
+				if json.Unmarshal(body, &contract) != nil || contract.OpenAPI != "3.1.2" || contract.Info.Version != "0.25.0" || !strings.Contains(string(body), `"operationId":"listSyncChanges"`) || !strings.Contains(string(body), `"operationId":"createWearEvent"`) || !strings.Contains(string(body), `"operationId":"createDiaryEntry"`) || !strings.Contains(string(body), `"operationId":"decidePostModeration"`) || !strings.Contains(string(body), `"operationId":"listCommunityFeed"`) || !strings.Contains(string(body), `"operationId":"requestEmailVerification"`) || !strings.Contains(string(body), `"operationId":"confirmPasswordReset"`) || !strings.Contains(string(body), `"operationId":"createDataExport"`) || !strings.Contains(string(body), `"operationId":"getAccountDeletionReceipt"`) || !strings.Contains(string(body), `"operationId":"getPublicProfileAvatar"`) || !strings.Contains(string(body), `"operationId":"listCurrentUserSessions"`) || !strings.Contains(string(body), `"operationId":"revokeCurrentUserSession"`) {
 					t.Fatal("binary did not serve a valid JSON representation of its compiled contract")
 				}
 			}
+		}
+		syncResponse, err := client.Get("http://" + address + "/sync/changes")
+		if err != nil {
+			t.Fatal(err)
+		}
+		syncResponse.Body.Close()
+		if syncResponse.StatusCode != http.StatusUnauthorized || syncResponse.Header.Get("Cache-Control") != "no-store" {
+			t.Fatalf("built process exposed anonymous sync: status=%d", syncResponse.StatusCode)
 		}
 		exerciseAccountHTTPLifecycle(t, ctx, client, "http://"+address, admin)
 		docker, err := testcontainers.NewDockerClient()
