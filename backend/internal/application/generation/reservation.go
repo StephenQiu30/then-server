@@ -1,0 +1,99 @@
+package generation
+
+import (
+	"errors"
+	"time"
+)
+
+var (
+	ErrInvalidQuotaReservation = errors.New("invalid quota reservation")
+	ErrQuotaReservationClosed  = errors.New("quota reservation is already finalized")
+)
+
+// ReservationState describes the temporary user-quota hold associated with a
+// generation task. Provider billing is recorded separately; this state only
+// answers whether the product hold was released or consumed.
+type ReservationState string
+
+const (
+	ReservationReserved ReservationState = "reserved"
+	ReservationReleased ReservationState = "released"
+	ReservationConsumed ReservationState = "consumed"
+)
+
+// QuotaReservation is the provider-independent quota fact created in the
+// same transaction as its task. It intentionally contains no provider or
+// database types; a repository will persist and transition it atomically.
+type QuotaReservation struct {
+	ID                  string
+	TaskID              string
+	OwnerID             string
+	Purpose             Purpose
+	Currency            string
+	ReservedQuotaUnits  int
+	EstimatedMinorUnits int64
+	State               ReservationState
+	StateRevision       int
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+// NewQuotaReservation creates a temporary hold for a task after admission has
+// passed. A zero-cost task has no hold and must not create a fake reservation.
+func NewQuotaReservation(id string, task Task, now time.Time) (QuotaReservation, error) {
+	if !validID(id) || !validID(task.ID) || !validID(task.OwnerID) || !task.Purpose.valid() || now.IsZero() {
+		return QuotaReservation{}, ErrInvalidQuotaReservation
+	}
+	if task.Cost.ReservedQuotaUnits < 0 || task.Cost.EstimatedMinorUnits < 0 ||
+		(task.Cost.EstimatedMinorUnits > 0 && !validToken(task.Cost.Currency, 16)) ||
+		(task.Cost.EstimatedMinorUnits == 0 && task.Cost.Currency != "" && !validToken(task.Cost.Currency, 16)) ||
+		(task.Cost.ReservedQuotaUnits == 0 && task.Cost.EstimatedMinorUnits == 0) {
+		return QuotaReservation{}, ErrInvalidQuotaReservation
+	}
+	now = now.UTC()
+	return QuotaReservation{
+		ID:                  id,
+		TaskID:              task.ID,
+		OwnerID:             task.OwnerID,
+		Purpose:             task.Purpose,
+		Currency:            task.Cost.Currency,
+		ReservedQuotaUnits:  task.Cost.ReservedQuotaUnits,
+		EstimatedMinorUnits: task.Cost.EstimatedMinorUnits,
+		State:               ReservationReserved,
+		StateRevision:       1,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}, nil
+}
+
+// Release returns the temporary hold after a task cannot produce a usable
+// result. Repeating the same terminal command is idempotent.
+func (r *QuotaReservation) Release(at time.Time) error {
+	return r.finalize(ReservationReleased, at)
+}
+
+// Consume settles the product hold after the task produces a usable result.
+// Provider billing and any later reconciliation remain separate facts.
+func (r *QuotaReservation) Consume(at time.Time) error {
+	return r.finalize(ReservationConsumed, at)
+}
+
+func (r *QuotaReservation) finalize(next ReservationState, at time.Time) error {
+	if r == nil || at.IsZero() {
+		return ErrInvalidQuotaReservation
+	}
+	if r.State == next {
+		return nil
+	}
+	if r.State != ReservationReserved {
+		return ErrQuotaReservationClosed
+	}
+	if !r.UpdatedAt.IsZero() && at.Before(r.UpdatedAt) {
+		return ErrInvalidQuotaReservation
+	}
+	at = at.UTC()
+	r.State = next
+	r.StateRevision++
+	r.UpdatedAt = at
+	return nil
+}
