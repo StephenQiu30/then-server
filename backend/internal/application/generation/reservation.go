@@ -53,7 +53,7 @@ func (r QuotaReservation) validFacts() bool {
 	case ReservationReserved:
 		return r.StateRevision == 1
 	case ReservationReleased, ReservationConsumed:
-		return r.StateRevision >= 2
+		return r.StateRevision == 2
 	default:
 		return false
 	}
