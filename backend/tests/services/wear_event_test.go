@@ -110,6 +110,15 @@ func TestWearEventPersistenceLifecycle(t *testing.T) {
 	if currentShirt.Availability != wardrobeapp.WardrobeLaundry || currentShirt.Revision != shirt.Revision+1 {
 		t.Fatal("wear event laundry selection was not committed atomically")
 	}
+	archivedShirt, err := wardrobe.ArchiveWardrobeItem(ctx, owner.Token, currentShirt.ID, currentShirt.Revision)
+	serviceOK(t, "archive current laundry item", err)
+	blockedDate := time.Now().In(location).AddDate(0, 0, -1).Format("2006-01-02")
+	blockedInput := weareventapp.WearEventInput{LocalDate: blockedDate, TimeZone: "Asia/Shanghai", Completeness: weareventapp.WearEventPartial, Items: []outfitplanapp.OutfitSelection{{ItemID: archivedShirt.ID, Revision: archivedShirt.Revision}}, ConfirmedUnavailableIDs: []string{archivedShirt.ID}, SourceKind: weareventapp.WearEventUnplanned}
+	if _, err := wear.CreateWearEvent(ctx, owner.Token, "018f1f74-a2d0-7c6d-9c17-4a0ea2400f05", blockedInput); !errors.Is(err, weareventapp.ErrWearEventConflict) {
+		t.Fatalf("archived wardrobe item did not return a conflict: %v", err)
+	}
+	currentShirt, err = wardrobe.RestoreWardrobeItem(ctx, owner.Token, archivedShirt.ID, archivedShirt.Revision)
+	serviceOK(t, "restore current laundry item", err)
 
 	secondID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400f04"
 	secondInput := weareventapp.WearEventInput{LocalDate: today, TimeZone: "Asia/Shanghai", Completeness: weareventapp.WearEventPartial, Items: []outfitplanapp.OutfitSelection{{ItemID: currentShirt.ID, Revision: currentShirt.Revision}}, ConfirmedUnavailableIDs: []string{currentShirt.ID}, SourceKind: weareventapp.WearEventUnplanned}

@@ -67,10 +67,12 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `GET /wardrobe/items`
 - `GET /wardrobe/items/{item_id}`
 - `GET /wardrobe/items/{item_id}/deletion-impact`
+- `POST /wardrobe/items/{item_id}/archive`
+- `POST /wardrobe/items/{item_id}/restore`
 - `PUT /wardrobe/items/{item_id}`
 - `DELETE /wardrobe/items/{item_id}`
 
-当前运行时 OpenAPI 文档版本为 0.25.0，共 118 个 operation，覆盖账号邮件、衣橱、计划、实际事件、反馈统计、私人日记、服务端增量读取与社区互动治理，并保持业务路径无版本前缀。本人资源更新必须提交 `expected_revision`；公开帖子只包含批准版本的公开字段，来源日记、媒体 ID、owner、对象 key、对象 version 和同意记录不进入公开响应，HttpOnly 会话 Cookie 不进入生成客户端参数。
+当前运行时 OpenAPI 文档版本为 0.26.0，共 120 个 operation，覆盖账号邮件、衣橱归档/恢复与状态筛选、计划、实际事件、反馈统计、私人日记、服务端增量读取与社区互动治理，并保持业务路径无版本前缀。本人资源更新必须提交 `expected_revision`；公开帖子只包含批准版本的公开字段，来源日记、媒体 ID、owner、对象 key、对象 version 和同意记录不进入公开响应，HttpOnly 会话 Cookie 不进入生成客户端参数。
 
 ## 账号穿搭计划 API
 

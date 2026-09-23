@@ -87,17 +87,17 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 		t.Fatal("cross-owner wardrobe lookup did not return the uniform not-found result")
 	}
 
-	firstPage, err := wardrobe.ListWardrobeItems(ctx, first.Token, 2, nil)
+	firstPage, err := wardrobe.ListWardrobeItems(ctx, first.Token, 2, nil, wardrobeapp.WardrobeListFilter{Lifecycle: wardrobeapp.WardrobeActive})
 	serviceOK(t, "list first wardrobe page", err)
 	if len(firstPage.Items) != 2 || firstPage.NextAfterID == nil {
 		t.Fatal("first wardrobe page did not return a bounded continuation")
 	}
-	secondPage, err := wardrobe.ListWardrobeItems(ctx, first.Token, 2, firstPage.NextAfterID)
+	secondPage, err := wardrobe.ListWardrobeItems(ctx, first.Token, 2, firstPage.NextAfterID, wardrobeapp.WardrobeListFilter{Lifecycle: wardrobeapp.WardrobeActive})
 	serviceOK(t, "list second wardrobe page", err)
 	if len(secondPage.Items) != 1 || secondPage.NextAfterID != nil || secondPage.Items[0].ID == firstPage.Items[0].ID || secondPage.Items[0].ID == firstPage.Items[1].ID {
 		t.Fatal("wardrobe pagination duplicated or omitted an item")
 	}
-	if _, err := wardrobe.ListWardrobeItems(ctx, second.Token, 2, firstPage.NextAfterID); !errors.Is(err, wardrobeapp.ErrWardrobeNotFound) {
+	if _, err := wardrobe.ListWardrobeItems(ctx, second.Token, 2, firstPage.NextAfterID, wardrobeapp.WardrobeListFilter{Lifecycle: wardrobeapp.WardrobeActive}); !errors.Is(err, wardrobeapp.ErrWardrobeNotFound) {
 		t.Fatal("cross-owner wardrobe cursor leaked a different result")
 	}
 
@@ -113,6 +113,36 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 	if reloaded.Attributes.WalkingUse == nil || *reloaded.Attributes.WalkingUse != wardrobeapp.WardrobeUseSuitable || reloaded.Attributes.RainUse != nil {
 		t.Fatal("wardrobe attributes did not survive a fresh repository read")
 	}
+	archived, err := wardrobe.ArchiveWardrobeItem(ctx, first.Token, private.ID, updated.Revision)
+	serviceOK(t, "archive current wardrobe item", err)
+	if archived.ArchivedAt == nil || archived.Availability != wardrobeapp.WardrobeWearable || archived.Revision != updated.Revision+1 {
+		t.Fatal("archive did not preserve availability or advance revision")
+	}
+	assertSyncLatest(t, database, first.User.ID, "wardrobe_item", private.ID, "upsert", &archived.Revision)
+	activeAfterArchive, err := wardrobe.ListWardrobeItems(ctx, first.Token, 10, nil, wardrobeapp.WardrobeListFilter{Lifecycle: wardrobeapp.WardrobeActive})
+	serviceOK(t, "list active wardrobe after archive", err)
+	for _, item := range activeAfterArchive.Items {
+		if item.ID == private.ID {
+			t.Fatal("default active wardrobe list included an archived item")
+		}
+	}
+	archivedPage, err := wardrobe.ListWardrobeItems(ctx, first.Token, 10, nil, wardrobeapp.WardrobeListFilter{Lifecycle: wardrobeapp.WardrobeArchived, Availability: wardrobeTestValue(wardrobeapp.WardrobeWearable)})
+	serviceOK(t, "filter archived wearable wardrobe items", err)
+	if len(archivedPage.Items) != 1 || archivedPage.Items[0].ID != private.ID {
+		t.Fatal("archived availability filter did not return the expected item")
+	}
+	if _, err := wardrobe.ListWardrobeItems(ctx, first.Token, 10, &archivedPage.Items[0].ID, wardrobeapp.WardrobeListFilter{Lifecycle: wardrobeapp.WardrobeActive}); !errors.Is(err, wardrobeapp.ErrWardrobeNotFound) {
+		t.Fatal("cursor from a different lifecycle filter was accepted")
+	}
+	restored, err := wardrobe.RestoreWardrobeItem(ctx, first.Token, private.ID, archived.Revision)
+	serviceOK(t, "restore archived wardrobe item", err)
+	if restored.ArchivedAt != nil || restored.Availability != archived.Availability || restored.Revision != archived.Revision+1 {
+		t.Fatal("restore did not preserve the archived item's availability")
+	}
+	assertSyncLatest(t, database, first.User.ID, "wardrobe_item", private.ID, "upsert", &restored.Revision)
+	if _, err := wardrobe.ArchiveWardrobeItem(ctx, first.Token, private.ID, updated.Revision); !errors.Is(err, wardrobeapp.ErrWardrobeConflict) {
+		t.Fatal("stale archive revision was accepted")
+	}
 	if _, err := wardrobe.UpdateWardrobeItem(ctx, first.Token, private.ID, private.Revision, wardrobeapp.UpdateWardrobeItemInput{Name: "Stale", Category: wardrobeapp.WardrobeShoes, Availability: wardrobeapp.WardrobeLaundry}); !errors.Is(err, wardrobeapp.ErrWardrobeConflict) {
 		t.Fatal("stale wardrobe update was accepted")
 	}
@@ -121,7 +151,7 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 	if err := wardrobe.DeleteWardrobeItem(ctx, first.Token, private.ID, private.Revision, wardrobeapp.WardrobeHistoryRedactSnapshots, impact.ExpectedImpact); !errors.Is(err, wardrobeapp.ErrWardrobeConflict) {
 		t.Fatal("stale wardrobe delete was accepted")
 	}
-	serviceOK(t, "delete current wardrobe revision", wardrobe.DeleteWardrobeItem(ctx, first.Token, private.ID, updated.Revision, wardrobeapp.WardrobeHistoryRedactSnapshots, impact.ExpectedImpact))
+	serviceOK(t, "delete current wardrobe revision", wardrobe.DeleteWardrobeItem(ctx, first.Token, private.ID, restored.Revision, wardrobeapp.WardrobeHistoryRedactSnapshots, impact.ExpectedImpact))
 	if _, err := wardrobe.GetWardrobeItem(ctx, first.Token, private.ID); !errors.Is(err, wardrobeapp.ErrWardrobeNotFound) {
 		t.Fatal("deleted wardrobe item remained readable")
 	}
