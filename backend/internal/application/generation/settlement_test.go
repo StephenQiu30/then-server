@@ -39,6 +39,8 @@ func TestPublishOutputIsIdempotentForSameSettledAsset(t *testing.T) {
 		t.Fatal(err)
 	}
 	task.ResultAssetID = asset.ID
+	task.LeaseOwner = ""
+	task.LeaseUntil = nil
 	if err := task.Transition(StatusSucceeded, "", generationTestNow.Add(4*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -169,6 +171,38 @@ func TestSettlementRejectsExpiredActiveLease(t *testing.T) {
 	}
 	if _, err := FinalizeWithoutOutput(task, nil, StatusFailed, "provider_error", generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
 		t.Fatalf("expired failure settlement error = %v", err)
+	}
+}
+
+func TestPublishOutputRequiresAnActiveLease(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if err := task.Transition(StatusRunning, "", generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusValidating, "", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	asset, err := NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(4*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("released validating task accepted output settlement: %v", err)
+	}
+
+	task = mustTask(validCreateInput())
+	if _, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), 10*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusValidating, "", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	asset, err = NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(4*time.Minute)); err != nil {
+		t.Fatalf("active lease rejected output settlement: %v", err)
 	}
 }
 
