@@ -93,6 +93,6 @@ func serializeOpenAPI(ctx context.Context, spec *huma.OpenAPI) ([]byte, []byte, 
 func GeneratedOpenAPI(ctx context.Context) ([]byte, []byte, error) {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
-	api := registerAPI(engine, &Router{}, nil, nil, nil, nil, nil, nil, &DiaryHandler{}, nil, &FeedbackHandler{}, nil, time.Second)
+	api := registerAPI(engine, &Router{}, nil, nil, nil, nil, nil, nil, &DiaryHandler{}, nil, &FeedbackHandler{}, &DataExportHandler{}, nil, time.Second)
 	return serializeOpenAPI(ctx, api.OpenAPI())
 }

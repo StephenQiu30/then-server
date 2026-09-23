@@ -129,6 +129,25 @@ func (s *AccountService) CurrentUser(ctx context.Context, token string) (User, e
 	return s.repository.FindUserBySession(ctx, hash, s.now().UTC())
 }
 
+// Reauthenticate verifies the current session and password without issuing another session.
+func (s *AccountService) Reauthenticate(ctx context.Context, token, password string) (User, error) {
+	user, err := s.CurrentUser(ctx, token)
+	if err != nil {
+		return User{}, err
+	}
+	if len(password) == 0 || len([]byte(password)) > 72 {
+		return User{}, ErrAuthentication
+	}
+	credential, err := s.repository.FindCredentialByEmail(ctx, user.Email)
+	if err != nil {
+		return User{}, err
+	}
+	if credential.User.ID != user.ID || bcrypt.CompareHashAndPassword([]byte(credential.PasswordHash), []byte(password)) != nil {
+		return User{}, ErrAuthentication
+	}
+	return user, nil
+}
+
 func (s *AccountService) UpdateCurrentUser(ctx context.Context, token string, input UpdateCurrentUserInput) (User, error) {
 	user, err := s.CurrentUser(ctx, token)
 	if err != nil {

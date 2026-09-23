@@ -3,6 +3,7 @@ package account
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
@@ -97,6 +98,31 @@ func newAccountServiceForTest(t *testing.T, repository *accountRepositoryStub) *
 		random:            bytes.NewReader(bytes.Repeat([]byte{0x2a}, tokenBytes)),
 		passwordCost:      bcrypt.MinCost,
 		dummyPasswordHash: dummyPasswordHash,
+	}
+}
+
+func TestReauthenticateRequiresCurrentSessionPassword(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("current-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := User{ID: "owner", Email: "owner@example.test", Status: AccountActive}
+	repository := &accountRepositoryStub{sessionUser: user, credential: Credential{User: user, PasswordHash: string(hash)}}
+	service := newAccountServiceForTest(t, repository)
+	token := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x11}, tokenBytes))
+	if _, err := service.Reauthenticate(context.Background(), token, "wrong-password"); !errors.Is(err, ErrAuthentication) {
+		t.Fatal("wrong password accepted")
+	}
+	if _, err := service.Reauthenticate(context.Background(), "invalid", "current-password"); !errors.Is(err, ErrAuthentication) {
+		t.Fatal("invalid session accepted")
+	}
+	result, err := service.Reauthenticate(context.Background(), token, "current-password")
+	if err != nil || result.ID != user.ID || repository.createdSession.ID != "" {
+		t.Fatal("reauthentication must not create a session")
+	}
+	repository.credential.User.ID = "other"
+	if _, err := service.Reauthenticate(context.Background(), token, "current-password"); !errors.Is(err, ErrAuthentication) {
+		t.Fatal("credential from another account accepted")
 	}
 }
 
