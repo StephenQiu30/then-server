@@ -457,14 +457,14 @@ func TestProviderTerminalStateRequiresSettlement(t *testing.T) {
 	input := validCreateInput()
 	input.Cost = CostEstimate{Currency: "USD", EstimatedMinorUnits: 25, ReservedQuotaUnits: 1}
 	task := mustTask(input)
+	reservation, err := NewQuotaReservation("reservation-1", task, generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), 10*time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(90*time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	reservation, err := NewQuotaReservation("reservation-1", task, generationTestNow.Add(90*time.Second))
-	if err != nil {
 		t.Fatal(err)
 	}
 	revision := task.StatusRevision

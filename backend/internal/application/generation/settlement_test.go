@@ -10,9 +10,15 @@ import (
 func TestPublishOutputSettlesTaskAndReservationWithoutMutatingInputs(t *testing.T) {
 	input := validCreateInput()
 	input.Cost = CostEstimate{Currency: "USD", EstimatedMinorUnits: 25, ReservedQuotaUnits: 1}
-	task := validatingTask(t, input)
-	reservation, err := NewQuotaReservation("reservation-1", task, generationTestNow.Add(3*time.Minute))
+	task := mustTask(input)
+	reservation, err := NewQuotaReservation("reservation-1", task, generationTestNow.Add(time.Minute))
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), 10*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusValidating, "", generationTestNow.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	asset, err := NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(3*time.Minute))
@@ -60,17 +66,23 @@ func TestPublishOutputIsIdempotentForSameSettledAsset(t *testing.T) {
 func TestPublishOutputRequiresMatchingReservationAndLineage(t *testing.T) {
 	input := validCreateInput()
 	input.Cost = CostEstimate{Currency: "USD", EstimatedMinorUnits: 25, ReservedQuotaUnits: 1}
-	task := validatingTask(t, input)
+	task := mustTask(input)
+	reservation, err := NewQuotaReservation("reservation-1", task, generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), 10*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusValidating, "", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
 	asset, err := NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(3*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(4*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
 		t.Fatalf("missing reservation error = %v", err)
-	}
-	reservation, err := NewQuotaReservation("reservation-1", task, generationTestNow.Add(3*time.Minute))
-	if err != nil {
-		t.Fatal(err)
 	}
 	asset.Lineage.LookRevision++
 	if _, err := PublishOutput(task, &reservation, asset, generationTestNow.Add(4*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
