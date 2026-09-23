@@ -60,6 +60,9 @@ func (t *Task) AcquireLease(owner string, at time.Time, ttl time.Duration) (Leas
 			return Lease{}, err
 		}
 	} else {
+		if !t.canAdvanceStatusRevision() {
+			return Lease{}, ErrInvalidGenerationState
+		}
 		t.StatusRevision++
 		t.UpdatedAt = at
 	}
@@ -85,6 +88,9 @@ func (t *Task) RenewLease(lease Lease, at time.Time, ttl time.Duration) (Lease, 
 	if !expiresAt.After(*t.LeaseUntil) {
 		return Lease{}, ErrInvalidGenerationLease
 	}
+	if !t.canAdvanceStatusRevision() {
+		return Lease{}, ErrInvalidGenerationLease
+	}
 	t.LeaseUntil = timePtr(expiresAt)
 	t.StatusRevision++
 	t.UpdatedAt = at.UTC()
@@ -96,6 +102,9 @@ func (t *Task) RenewLease(lease Lease, at time.Time, ttl time.Duration) (Lease, 
 func (t *Task) ReleaseLease(lease Lease, at time.Time) error {
 	if err := t.validateLease(lease, at); err != nil {
 		return err
+	}
+	if !t.canAdvanceStatusRevision() {
+		return ErrInvalidGenerationLease
 	}
 	t.LeaseOwner = ""
 	t.LeaseUntil = nil

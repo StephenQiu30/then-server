@@ -260,6 +260,10 @@ func (t Task) validTaskFacts() bool {
 	return t.validTaskCoreFacts() && t.validLeaseFacts()
 }
 
+func (t Task) canAdvanceStatusRevision() bool {
+	return t.StatusRevision < maxInt()
+}
+
 func (t Task) validSubmissionFacts() bool {
 	if t.SubmissionAttempt < 0 || (t.SubmissionStartedAt != nil && t.SubmissionStartedAt.IsZero()) || (t.SubmissionUnknownAt != nil && t.SubmissionUnknownAt.IsZero()) {
 		return false
@@ -332,6 +336,9 @@ func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
 	if t.SubmissionAttempt == int(^uint(0)>>1) {
 		return Submission{}, ErrInvalidGenerationState
 	}
+	if !t.canAdvanceStatusRevision() {
+		return Submission{}, ErrInvalidGenerationState
+	}
 	at = at.UTC()
 	t.SubmissionState = SubmissionInFlight
 	t.SubmissionAttempt++
@@ -355,6 +362,9 @@ func (t *Task) MarkSubmissionUnknown(at time.Time) error {
 	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
 		return ErrInvalidGenerationState
 	}
+	if !t.canAdvanceStatusRevision() {
+		return ErrInvalidGenerationState
+	}
 	at = at.UTC()
 	t.SubmissionState = SubmissionUnknown
 	t.SubmissionUnknownAt = timePtr(at)
@@ -375,6 +385,9 @@ func (t *Task) ReconcileSubmissionNotAccepted(at time.Time) error {
 		return err
 	}
 	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
+		return ErrInvalidGenerationState
+	}
+	if !t.canAdvanceStatusRevision() {
 		return ErrInvalidGenerationState
 	}
 	at = at.UTC()
@@ -452,6 +465,9 @@ func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
 		return ErrInvalidGenerationState
 	}
+	if !t.canAdvanceStatusRevision() {
+		return ErrInvalidGenerationState
+	}
 	at = at.UTC()
 	t.Status = next
 	t.StatusRevision++
@@ -488,6 +504,9 @@ func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
 	case SubmissionAccepted:
 		return ErrInvalidGenerationState
 	default:
+		return ErrInvalidGenerationState
+	}
+	if !t.canAdvanceStatusRevision() {
 		return ErrInvalidGenerationState
 	}
 	at = at.UTC()
@@ -569,6 +588,9 @@ func (t *Task) RequestCancel(at time.Time) error {
 	}
 	at = at.UTC()
 	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
+		return ErrInvalidGenerationState
+	}
+	if !t.canAdvanceStatusRevision() {
 		return ErrInvalidGenerationState
 	}
 	t.CancelRequestedAt = &at
@@ -763,6 +785,8 @@ func hashBytes(value []byte) string {
 }
 
 func validID(value string) bool { return validToken(value, 128) }
+
+func maxInt() int { return int(^uint(0) >> 1) }
 
 func validFailureState(status Status, failureCode string) bool {
 	switch status {

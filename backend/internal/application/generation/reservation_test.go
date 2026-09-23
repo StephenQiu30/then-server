@@ -199,6 +199,21 @@ func TestQuotaReservationRejectsMalformedPersistedFacts(t *testing.T) {
 	}
 }
 
+func TestQuotaReservationRejectsStateRevisionOverflowBeforeMutation(t *testing.T) {
+	reservation, err := NewQuotaReservation("reservation-1", reservationTask(), generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservation.StateRevision = maxInt()
+	before := reservation
+	if err := reservation.Release(generationTestNow.Add(2 * time.Minute)); !errors.Is(err, ErrInvalidQuotaReservation) {
+		t.Fatalf("overflowing reservation release error = %v", err)
+	}
+	if reservation.State != before.State || reservation.StateRevision != before.StateRevision || !reservation.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatalf("overflowing reservation release mutated reservation: %+v", reservation)
+	}
+}
+
 func mustTask(input CreateInput) Task {
 	task, err := NewTask(input, generationTestNow)
 	if err != nil {
