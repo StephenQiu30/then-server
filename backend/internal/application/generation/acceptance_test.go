@@ -163,3 +163,38 @@ func TestNewOutboxEventRejectsSubmittedOrCanceledTask(t *testing.T) {
 		t.Fatalf("invalid outbox event did not retain stable error: %v", err)
 	}
 }
+
+func TestOutboxEventRejectsMalformedPersistedFacts(t *testing.T) {
+	task, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := NewOutboxEvent("outbox-1", task, generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !event.validFacts() {
+		t.Fatal("new outbox event was not valid")
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*OutboxEvent)
+	}{
+		{name: "missing id", mutate: func(event *OutboxEvent) { event.ID = "" }},
+		{name: "wrong event type", mutate: func(event *OutboxEvent) { event.EventType = "generation.other" }},
+		{name: "missing aggregate", mutate: func(event *OutboxEvent) { event.AggregateID = "" }},
+		{name: "invalid aggregate revision", mutate: func(event *OutboxEvent) { event.AggregateRevision = 0 }},
+		{name: "invalid purpose", mutate: func(event *OutboxEvent) { event.Purpose = Purpose("video") }},
+		{name: "missing creation time", mutate: func(event *OutboxEvent) { event.CreatedAt = time.Time{} }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := event
+			test.mutate(&candidate)
+			if candidate.validFacts() {
+				t.Fatalf("malformed outbox event was accepted: %+v", candidate)
+			}
+		})
+	}
+}
