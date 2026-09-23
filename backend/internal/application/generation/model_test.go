@@ -365,6 +365,24 @@ func TestProviderAcceptanceAndCallbacksAreMonotonic(t *testing.T) {
 	}
 }
 
+func TestProviderStateRejectsZeroObservationTime(t *testing.T) {
+	task := mustTask(validCreateInput())
+	acquireTestLease(t, &task, generationTestNow.Add(time.Minute), 10*time.Minute)
+	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(90*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.ApplyProviderState("provider-job-1", StatusFailed, "provider_error", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	revision := task.StatusRevision
+	if err := task.ApplyProviderState("provider-job-1", StatusFailed, "provider_error", time.Time{}); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("zero-time provider replay error = %v", err)
+	}
+	if task.Status != StatusFailed || task.FailureCode != "provider_error" || task.StatusRevision != revision {
+		t.Fatalf("invalid provider replay mutated terminal task: %+v", task)
+	}
+}
+
 func TestLateProviderAcceptanceAfterCancellationIsRetainedForCleanup(t *testing.T) {
 	task, err := NewTask(validCreateInput(), generationTestNow)
 	if err != nil {

@@ -429,6 +429,9 @@ func (t *Task) ApplyProviderState(externalID string, next Status, failureCode st
 	if t == nil || !validToken(externalID, 256) || t.ExternalTaskID == "" || t.ExternalTaskID != externalID {
 		return ErrExternalTaskConflict
 	}
+	if at.IsZero() {
+		return ErrInvalidGenerationState
+	}
 	if !validFailureState(t.Status, t.FailureCode) || !validFailureState(next, failureCode) {
 		return ErrInvalidGenerationState
 	}
