@@ -10,6 +10,8 @@
 
 用户已于 2026-09-23 授权按 Backlog 开始实现；付费调用与生产发布仍以相应实际输入和门禁为准。现有前后端目录/组件整理按 17-26～29 的独立计划继续；不重做已完成的账户、衣橱、日记和社区后端。
 
+当前执行顺序按用户最新指示调整为先完成 `then-server/backend` 的可执行切片；Web 页面与 App 实现暂缓。此顺序不改变首版离线 Look 与衣橱推荐/记录的产品范围，也不将后续云能力视作已启用。
+
 ### Q0 启用范围与开工基线（2026-09-23）
 
 - `BL-READY-01` 已完成：用户选定下一版启用离线完整 Look、真实衣橱推荐与记录。云图片、云模型、私人日记和社区延至后续版本；其 App 入口不作为首版可点击功能，已有后端 API 不代表 App 功能已启用。离线 Look 依 11-05/Acceptance 11 与系统 ACC-017 验收；日常闭环依 12/13/16 计划与对应 Acceptance 验收。此范围决定不将后续能力标为已实现或已发布。
@@ -57,6 +59,7 @@
 | [17-23 账号实际穿着 API](17-23-账号实际穿着API执行计划.md) | approved / completed（后端开发范围） | 5 个实际事件 operation、not-worn/restore、服务端快照、完整创建命令幂等、重复确认、待洗/计划事务和覆盖两类历史的删除影响；本机与远程三项 CI 全绿 | App Client/主动同步、反馈和第二设备恢复不在本片 |
 | [17-34 账号反馈与穿着统计 API](17-34-账号反馈与穿着统计API执行计划.md) | approved / local development complete | 账号反馈 GET/PUT/DELETE、实际穿着统计、命令重试/revision/owner/级联；隔离 PG18、运行 HTTP、完整 Go race 与生成客户端验证通过 | Web 页面接续 17-35；App 主动同步、云推荐证据、远端 CI 与公开发布未验 |
 | [17-36 账号邮件验证与找回后端](17-36-账号邮件验证与找回后端执行计划.md) | 契约 approved_with_release_gates / 后端本地实施 completed | 网易 163 TLS SMTP 适配、单次挑战、四个账号 operation 与状态/限流；隔离 PG/Redis、邮件替身和运行时验证通过 | 真实送达、App/Web 链接入口、部署/数据地域与公开注册另验；当前只推进 backend |
+| [18-01 数据主体导出与删除回执合同](18-01-数据主体导出与删除回执合同执行计划.md) | draft / pending | 当前 38 表、账号删号回执与未上传/未实现范围的服务端盘点已完成 | 法务/隐私/产品字段及媒体范围、身份再验证、保留与注销后访问合同待批准；无导出 API |
 | [17-14 仓库与 CI](17-14-客户端服务端仓库拆分与CI执行计划.md)、[17-15 OpenAPI/GORM](17-15-OpenAPI文档门户与Umi生成执行计划.md) | approved / completed | 独立仓库/CI、运行时契约与 AutoMigrate | Web SDK 正式接入不在本片 |
 | [17-13 frontend](17-13-Web账户管理执行计划.md) | 基础工程 completed；账户页面 draft / pending | Next.js 16 App Router、Radix UI、Axios/Umi 生成请求层与同源 rewrites 已完成 | 页面稿与状态矩阵批准后实现账户旅程 |
 | [17-28 Frontend 目录规范化](17-28-Frontend目录结构规范化.md) | approved / completed（本地） | Provider 独立、测试目录简化、应用/测试类型检查分离、源码依赖检查已执行 | 远端验证见对应提交的 Actions；页面视觉与业务范围保持 17-27 基线 |
