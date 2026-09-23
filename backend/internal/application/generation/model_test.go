@@ -253,10 +253,22 @@ func TestProviderAcceptanceAndCallbacksAreMonotonic(t *testing.T) {
 	if err := task.ApplyProviderState("provider-job-1", StatusValidating, "", generationTestNow.Add(3*time.Minute)); err != nil {
 		t.Fatalf("validating callback error = %v", err)
 	}
-	if err := task.ApplyProviderState("provider-job-1", StatusSucceeded, "", generationTestNow.Add(4*time.Minute)); err != nil {
-		t.Fatalf("success callback error = %v", err)
+	if err := task.ApplyProviderState("provider-job-1", StatusSucceeded, "", generationTestNow.Add(4*time.Minute)); !errors.Is(err, ErrGenerationOutputRequired) {
+		t.Fatalf("success callback without output error = %v", err)
 	}
-	if err := task.ApplyProviderState("provider-job-1", StatusSucceeded, "", generationTestNow.Add(5*time.Minute)); err != nil {
+	if task.Status != StatusValidating {
+		t.Fatalf("success callback changed task before output validation: %+v", task)
+	}
+	asset, err := NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(4*time.Minute))
+	if err != nil {
+		t.Fatalf("NewOutputAsset() error = %v", err)
+	}
+	settled, err := PublishOutput(task, nil, asset, generationTestNow.Add(5*time.Minute))
+	if err != nil {
+		t.Fatalf("PublishOutput() error = %v", err)
+	}
+	task = settled.Task
+	if err := task.ApplyProviderState("provider-job-1", StatusSucceeded, "", generationTestNow.Add(6*time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
 		t.Fatalf("repeated success callback error = %v", err)
 	}
 	if task.Status != StatusSucceeded || task.ExternalTaskID != "provider-job-1" {
