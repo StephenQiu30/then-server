@@ -242,6 +242,9 @@ func (r *AccountRepository) BeginAccountDeletion(ctx context.Context, userID str
 		if user.Status != string(accountapp.AccountActive) {
 			return accountapp.ErrAuthentication
 		}
+		if err := tx.Model(&dataExportRecord{}).Where("owner_id = ? AND status NOT IN ?", userID, []string{"revoked", "expired"}).Updates(map[string]any{"status": "revoked", "revoked_at": at}).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&postRecord{}).Where("source_diary_owner_id = ?", userID).Updates(map[string]any{"source_diary_owner_id": nil, "source_diary_id": nil}).Error; err != nil {
 			return err
 		}

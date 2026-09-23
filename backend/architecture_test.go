@@ -38,6 +38,7 @@ var allowedApplicationImports = map[string]map[string]bool{
 	"community":      {"account": true},
 	"media":          {"account": true},
 	"eventworker":    {"media": true},
+	"dataexport":     {"account": true},
 }
 
 var forbiddenFrameworkImports = map[string][]string{

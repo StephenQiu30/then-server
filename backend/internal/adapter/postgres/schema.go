@@ -47,5 +47,6 @@ func Migrate(ctx context.Context, database *gorm.DB) error {
 		&moderationActionRecord{},
 		&moderationAppealRecord{},
 		&notificationRecord{},
+		&dataExportRecord{},
 	)
 }

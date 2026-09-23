@@ -123,6 +123,25 @@ func (s *Store) PutDerived(ctx context.Context, objectKey string, reader io.Read
 	return result.VersionID, nil
 }
 
+func (s *Store) PutArchive(ctx context.Context, objectKey string, reader io.Reader, size int64) (string, error) {
+	if s == nil || s.client == nil || objectKey == "" || reader == nil || size <= 0 {
+		return "", errors.New("archive invalid")
+	}
+	result, err := s.client.PutObject(ctx, DerivedBucket, objectKey, reader, size, minio.PutObjectOptions{ContentType: "application/zip"})
+	if err != nil || result.VersionID == "" {
+		return "", errors.New("archive write failed")
+	}
+	return result.VersionID, nil
+}
+
+func (s *Store) OpenArchive(ctx context.Context, objectKey, versionID string) (io.ReadCloser, error) {
+	return s.OpenDerivedVersion(ctx, objectKey, versionID)
+}
+
+func (s *Store) DeleteArchive(ctx context.Context, objectKey string) error {
+	return s.DeleteAllVersions(ctx, DerivedBucket, objectKey)
+}
+
 func (s *Store) DeleteAllVersions(ctx context.Context, bucket, objectKey string) error {
 	if s == nil || s.client == nil || (bucket != RawBucket && bucket != DerivedBucket) || objectKey == "" {
 		return errors.New("object deletion invalid")

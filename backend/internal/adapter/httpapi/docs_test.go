@@ -53,7 +53,7 @@ func TestDocumentationRoutesAndContractOwnership(t *testing.T) {
 						if err := json.Unmarshal(w.Body.Bytes(), &contract); err != nil {
 							t.Fatalf("generated JSON contract is invalid: %v", err)
 						}
-						if contract.OpenAPI != "3.1.2" || len(contract.Paths) != 79 {
+						if contract.OpenAPI != "3.1.2" || len(contract.Paths) != 82 {
 							t.Fatalf("generated JSON contract lost API content: version=%q paths=%d", contract.OpenAPI, len(contract.Paths))
 						}
 					}

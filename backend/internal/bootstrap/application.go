@@ -16,6 +16,7 @@ import (
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
+	exportapp "github.com/StephenQiu30/then-server/backend/internal/application/dataexport"
 	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
 	eventworkerapp "github.com/StephenQiu30/then-server/backend/internal/application/eventworker"
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
@@ -149,7 +150,14 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 	}
 	var mediaHandler *httpapi.MediaHandler
 	var communityHandler *httpapi.CommunityHandler
+	var exportHandler *httpapi.DataExportHandler
+	var exports *exportapp.Service
 	if objects != nil {
+		exports, err = exportapp.New(accounts, postgres.NewDataExportRepository(pool.ORM()), objects)
+		if err != nil {
+			return err
+		}
+		exportHandler = httpapi.NewDataExportHandler(exports, limiter)
 		media, serviceErr := mediaapp.NewMediaService(accounts, postgres.NewMediaRepository(pool.ORM()), objects)
 		if serviceErr != nil {
 			return serviceErr
@@ -162,7 +170,17 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		communityHandler = httpapi.NewCommunityHandler(community, objects, cfg.SessionSecure)
 		probes = append(probes, objects)
 	}
-	router, err := httpapi.NewRouterWithFeedback(startup, cfg.DocsEnabled, probes, httpapi.NewAccountHandlerWithMail(accounts, accountMail, cfg.SessionSecure, limiter), httpapi.NewPrivacyHandler(privacy, cfg.SessionSecure), httpapi.NewWardrobeHandler(wardrobe, cfg.SessionSecure), httpapi.NewOutfitPlanHandler(outfits, cfg.SessionSecure), httpapi.NewWearEventHandler(wearEvents, cfg.SessionSecure), httpapi.NewDiaryHandler(diaries, cfg.SessionSecure), communityHandler, httpapi.NewFeedbackHandler(feedback, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler)
+	router, err := httpapi.NewRouterWithExport(
+		startup, cfg.DocsEnabled, probes,
+		httpapi.NewAccountHandlerWithMail(accounts, accountMail, cfg.SessionSecure, limiter),
+		httpapi.NewPrivacyHandler(privacy, cfg.SessionSecure),
+		httpapi.NewWardrobeHandler(wardrobe, cfg.SessionSecure),
+		httpapi.NewOutfitPlanHandler(outfits, cfg.SessionSecure),
+		httpapi.NewWearEventHandler(wearEvents, cfg.SessionSecure),
+		httpapi.NewDiaryHandler(diaries, cfg.SessionSecure),
+		communityHandler, httpapi.NewFeedbackHandler(feedback, cfg.SessionSecure),
+		exportHandler, cfg.HealthTimeout, log, mediaHandler,
+	)
 	if err != nil {
 		return err
 	}
@@ -171,15 +189,26 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		return errors.New("HTTP listen failed")
 	}
 	log.Info("api_started", "address", listener.Addr().String(), "role", cfg.Role)
+	var background []func(context.Context) error
 	if accountMail != nil {
-		work, cancelMail := context.WithCancel(ctx)
-		defer cancelMail()
-		results := make(chan error, 2)
-		go func() { results <- accountMail.Run(work) }()
+		background = append(background, accountMail.Run)
+	}
+	if exports != nil {
+		background = append(background, func(ctx context.Context) error { return exports.Run(ctx, log) })
+	}
+	if len(background) > 0 {
+		work, cancelWork := context.WithCancel(ctx)
+		defer cancelWork()
+		results := make(chan error, len(background)+1)
+		for _, run := range background {
+			go func() { results <- run(work) }()
+		}
 		go func() { results <- httpserver.Serve(work, listener, router, cfg.ShutdownTimeout, router.Drain) }()
 		err = <-results
-		cancelMail()
-		<-results
+		cancelWork()
+		for range len(background) {
+			<-results
+		}
 		return err
 	}
 	if err = httpserver.Serve(ctx, listener, router, cfg.ShutdownTimeout, router.Drain); err != nil {

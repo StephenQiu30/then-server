@@ -11,7 +11,7 @@ type requestIDContextKey struct{}
 
 type ErrorResponse struct {
 	status              int
-	Code                string                       `json:"code" enum:"BAD_REQUEST,EMAIL_CONFLICT,CONFLICT,PAYLOAD_TOO_LARGE,AUTHENTICATION_FAILED,FORBIDDEN,RATE_LIMITED,NOT_READY,NOT_FOUND,METHOD_NOT_ALLOWED,INTERNAL_ERROR" example:"AUTHENTICATION_FAILED"`
+	Code                string                       `json:"code" enum:"BAD_REQUEST,EMAIL_CONFLICT,CONFLICT,EXPORT_NOT_READY,PAYLOAD_TOO_LARGE,AUTHENTICATION_FAILED,FORBIDDEN,RATE_LIMITED,NOT_READY,NOT_FOUND,METHOD_NOT_ALLOWED,INTERNAL_ERROR" example:"AUTHENTICATION_FAILED"`
 	Message             string                       `json:"message" minLength:"1" maxLength:"160" example:"Sign-in information is invalid."`
 	RequestID           string                       `json:"request_id" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$" example:"TESTREQUESTIDENTIFIER00000003"`
 	Retryable           bool                         `json:"retryable" example:"false"`
