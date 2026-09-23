@@ -494,6 +494,9 @@ func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
 		}
 		return nil
 	}
+	if at.Before(t.CreatedAt) {
+		return ErrInvalidGenerationState
+	}
 	if !t.Status.terminal() {
 		if err := t.validateActiveLeaseAt(at); err != nil {
 			return err

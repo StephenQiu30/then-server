@@ -617,6 +617,23 @@ func TestLateProviderAcceptanceAfterCancellationIsRetainedForCleanup(t *testing.
 	}
 }
 
+func TestLateAcceptanceBeforeTaskCreationIsRejected(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if err := task.RequestCancel(generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusCanceled, "", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	before := task
+	if err := task.RecordExternalTaskID("provider-too-early", generationTestNow.Add(-time.Second)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("pre-creation acceptance error = %v", err)
+	}
+	if task.ExternalTaskID != before.ExternalTaskID || task.StatusRevision != before.StatusRevision || !task.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatalf("rejected pre-creation acceptance mutated task: %+v", task)
+	}
+}
+
 func TestProviderCallbacksRequireTheRecordedExternalTask(t *testing.T) {
 	task, err := NewTask(validCreateInput(), generationTestNow)
 	if err != nil {

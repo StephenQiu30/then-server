@@ -61,6 +61,11 @@ func TestPublishOutputIsIdempotentForSameSettledAsset(t *testing.T) {
 	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(5*time.Minute)); !errors.Is(err, ErrGenerationSettlementConflict) {
 		t.Fatalf("different success asset error = %v", err)
 	}
+	asset = *settled.Asset
+	asset.PublishedAt = task.UpdatedAt.Add(time.Second)
+	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(6*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("success replay accepted output published after terminal task: %v", err)
+	}
 }
 
 func TestPublishOutputRequiresMatchingReservationAndLineage(t *testing.T) {
