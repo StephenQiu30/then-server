@@ -210,6 +210,25 @@ func TestTaskStateTransitionsAndCancellationAreMonotonic(t *testing.T) {
 	}
 }
 
+func TestTaskCannotSucceedWithoutValidatedOutputReference(t *testing.T) {
+	task, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusRunning, "", generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusValidating, "", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusSucceeded, "", generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrGenerationOutputRequired) {
+		t.Fatalf("direct success transition error = %v", err)
+	}
+	if task.Status != StatusValidating || task.ResultAssetID != "" {
+		t.Fatalf("direct success transition changed task: %+v", task)
+	}
+}
+
 func TestValidatingTaskCanBeCanceled(t *testing.T) {
 	task, err := NewTask(validCreateInput(), generationTestNow)
 	if err != nil {
