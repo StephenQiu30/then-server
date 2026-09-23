@@ -14,9 +14,25 @@ type PublicProfileResponse struct {
 	Handle      string    `json:"handle" pattern:"^[a-z0-9_]{3,30}$" example:"then_style"`
 	DisplayName string    `json:"display_name" minLength:"1" maxLength:"80" example:"于是用户"`
 	Bio         *string   `json:"bio,omitempty" minLength:"1" maxLength:"300" example:"记录日常穿搭与轻量生活。"`
+	AvatarURL   *string   `json:"avatar_url" doc:"当前有头像时指向同源净化图；无头像为 null"`
 	Revision    int       `json:"revision" minimum:"1" example:"1"`
 	CreatedAt   time.Time `json:"created_at" format:"date-time" example:"2026-09-16T08:00:00Z"`
 	UpdatedAt   time.Time `json:"updated_at" format:"date-time" example:"2026-09-16T08:00:00Z"`
+}
+
+type PutProfileAvatarRequest struct {
+	MediaID          string `json:"media_id" format:"uuid"`
+	ExpectedRevision int    `json:"expected_revision" minimum:"1"`
+}
+
+type putProfileAvatarInput struct {
+	Session string `cookie:"then_session" hidden:"true"`
+	Body    PutProfileAvatarRequest
+}
+
+type deleteProfileAvatarInput struct {
+	Session          string `cookie:"then_session" hidden:"true"`
+	ExpectedRevision int    `query:"expected_revision" minimum:"1"`
 }
 
 type currentProfileInput struct {

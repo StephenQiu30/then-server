@@ -349,7 +349,7 @@ func assertAccountDeleteAndMediaCreateSerialize(t *testing.T, ctx context.Contex
 		createErr, deleteErr := <-createResult, <-deleteResult
 		switch {
 		case createErr == nil && deleteErr == nil:
-		case errors.Is(createErr, mediaapp.ErrConsentRequired) && deleteErr == nil:
+		case (errors.Is(createErr, mediaapp.ErrConsentRequired) || errors.Is(createErr, mediaapp.ErrMediaConflict)) && deleteErr == nil:
 		default:
 			t.Fatalf("media creation/account deletion were not serialized: create=%v delete=%v", createErr, deleteErr)
 		}

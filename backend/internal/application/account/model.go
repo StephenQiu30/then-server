@@ -110,9 +110,15 @@ type PublicProfile struct {
 	Handle      string
 	DisplayName string
 	Bio         *string
+	HasAvatar   bool
 	Revision    int
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type ProfileAvatarReference struct {
+	ObjectKey       string
+	ObjectVersionID string
 }
 
 type PutProfileInput struct {

@@ -9,6 +9,7 @@ const (
 	MediaPurposeAvatarSourcePreparation       = "avatar_source_preparation"
 	MediaPurposeDiaryImage                    = "diary_image"
 	MediaPurposeCommunityPublish              = "community_publish"
+	MediaPurposeProfileAvatar                 = "profile_avatar"
 	MediaCategoryPersonPhoto                  = "person_photo"
 	MediaCategoryOrdinaryImage                = "ordinary_image"
 	MediaProcessorThen                        = "then"

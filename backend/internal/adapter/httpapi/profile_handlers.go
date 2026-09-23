@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
@@ -49,6 +50,58 @@ func (h *AccountHandler) publicProfile(ctx context.Context, input *publicProfile
 	return &publicProfileOutput{RequestID: requestID(ctx), Body: newPublicProfileResponse(profile)}, nil
 }
 
+func (h *AccountHandler) putProfileAvatar(ctx context.Context, input *putProfileAvatarInput) (*publicProfileOutput, error) {
+	if h == nil || h.service == nil || h.avatarObjects == nil {
+		return nil, newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
+	}
+	if input.Session == "" {
+		return nil, newErrorResponse(http.StatusUnauthorized, requestID(ctx))
+	}
+	profile, err := h.service.PutProfileAvatar(ctx, input.Session, input.Body.MediaID, input.Body.ExpectedRevision)
+	if err != nil {
+		return nil, h.profileError(ctx, err)
+	}
+	return &publicProfileOutput{RequestID: requestID(ctx), Body: newPublicProfileResponse(profile)}, nil
+}
+
+func (h *AccountHandler) deleteProfileAvatar(ctx context.Context, input *deleteProfileAvatarInput) (*publicProfileOutput, error) {
+	if h == nil || h.service == nil || h.avatarObjects == nil {
+		return nil, newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
+	}
+	if input.Session == "" {
+		return nil, newErrorResponse(http.StatusUnauthorized, requestID(ctx))
+	}
+	profile, err := h.service.DeleteProfileAvatar(ctx, input.Session, input.ExpectedRevision)
+	if err != nil {
+		return nil, h.profileError(ctx, err)
+	}
+	return &publicProfileOutput{RequestID: requestID(ctx), Body: newPublicProfileResponse(profile)}, nil
+}
+
+func (h *AccountHandler) publicProfileAvatar(ctx context.Context, input *publicProfileInput) (*imageOutput, error) {
+	if h == nil || h.service == nil || h.avatarObjects == nil {
+		return nil, newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
+	}
+	reference, err := h.service.PublicProfileAvatar(ctx, input.Handle)
+	if err != nil {
+		return nil, profileError(ctx, err)
+	}
+	reader, err := h.avatarObjects.OpenDerivedVersion(ctx, reference.ObjectKey, reference.ObjectVersionID)
+	if err != nil {
+		return nil, newErrorResponse(http.StatusNotFound, requestID(ctx))
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(io.LimitReader(reader, 12*1024*1024+1))
+	if err != nil || len(data) == 0 || len(data) > 12*1024*1024 {
+		return nil, newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
+	}
+	current, err := h.service.PublicProfileAvatar(ctx, input.Handle)
+	if err != nil || current != reference {
+		return nil, newErrorResponse(http.StatusNotFound, requestID(ctx))
+	}
+	return &imageOutput{RequestID: requestID(ctx), ContentType: "image/jpeg", Body: data}, nil
+}
+
 func (h *AccountHandler) profileError(ctx context.Context, err error) error {
 	if errors.Is(err, accountapp.ErrAuthentication) {
 		return authenticatedSessionError(ctx, h.secureCookie)
@@ -76,8 +129,13 @@ func profileError(ctx context.Context, err error) error {
 }
 
 func newPublicProfileResponse(profile accountapp.PublicProfile) PublicProfileResponse {
+	var avatarURL *string
+	if profile.HasAvatar {
+		url := "/profiles/" + profile.Handle + "/avatar"
+		avatarURL = &url
+	}
 	return PublicProfileResponse{
-		Handle: profile.Handle, DisplayName: profile.DisplayName, Bio: profile.Bio,
+		Handle: profile.Handle, DisplayName: profile.DisplayName, Bio: profile.Bio, AvatarURL: avatarURL,
 		Revision: profile.Revision, CreatedAt: profile.CreatedAt, UpdatedAt: profile.UpdatedAt,
 	}
 }

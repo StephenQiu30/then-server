@@ -77,6 +77,18 @@ func (r *accountRepositoryStub) PutProfile(_ context.Context, _ string, input Pu
 	return r.profile, r.profileError
 }
 
+func (r *accountRepositoryStub) PutProfileAvatar(context.Context, string, string, int, time.Time) (PublicProfile, error) {
+	return r.profile, r.profileError
+}
+
+func (r *accountRepositoryStub) DeleteProfileAvatar(context.Context, string, int, time.Time) (PublicProfile, error) {
+	return r.profile, r.profileError
+}
+
+func (r *accountRepositoryStub) FindProfileAvatar(context.Context, string) (ProfileAvatarReference, error) {
+	return ProfileAvatarReference{}, r.profileError
+}
+
 func (r *accountRepositoryStub) DeleteSession(_ context.Context, hash []byte) error {
 	r.deletedSession = hash
 	return nil
