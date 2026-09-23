@@ -28,7 +28,7 @@ type Settlement struct {
 // and consumes its temporary quota hold. Repeating the same success command is
 // idempotent when the task already records the same asset and consumed hold.
 func PublishOutput(task Task, reservation *QuotaReservation, asset OutputAsset, at time.Time) (Settlement, error) {
-	if !validSettlementTime(task, at) || !validSettlementLease(task, at) || !validOutputAsset(task, asset) || asset.PublishedAt.After(at) || !reservationMatchesTask(task, reservation) {
+	if !validSettlementTime(task, at) || !validSettlementLease(task, at) || !validFailureState(task.Status, task.FailureCode) || !validOutputAsset(task, asset) || asset.PublishedAt.After(at) || !reservationMatchesTask(task, reservation) {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
 	if task.Status == StatusSucceeded {

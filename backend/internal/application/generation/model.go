@@ -348,20 +348,19 @@ func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 	if t == nil || !t.Status.CanTransitionTo(next) || at.IsZero() {
 		return ErrInvalidGenerationState
 	}
+	if !validFailureState(t.Status, t.FailureCode) || !validFailureState(next, failureCode) {
+		return ErrInvalidGenerationState
+	}
 	if next == StatusSucceeded && t.CancelRequestedAt != nil {
 		return ErrInvalidGenerationState
 	}
-	if next == StatusSucceeded && t.ResultAssetID == "" {
+	if next == StatusSucceeded && !validID(t.ResultAssetID) {
 		return ErrGenerationOutputRequired
 	}
-	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
+	if next != StatusSucceeded && t.ResultAssetID != "" {
 		return ErrInvalidGenerationState
 	}
-	if next == StatusFailed {
-		if !validToken(failureCode, 96) {
-			return ErrInvalidGenerationState
-		}
-	} else if failureCode != "" {
+	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
 		return ErrInvalidGenerationState
 	}
 	at = at.UTC()
@@ -429,6 +428,9 @@ func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
 func (t *Task) ApplyProviderState(externalID string, next Status, failureCode string, at time.Time) error {
 	if t == nil || !validToken(externalID, 256) || t.ExternalTaskID == "" || t.ExternalTaskID != externalID {
 		return ErrExternalTaskConflict
+	}
+	if !validFailureState(t.Status, t.FailureCode) || !validFailureState(next, failureCode) {
+		return ErrInvalidGenerationState
 	}
 	if !t.Status.terminal() {
 		if err := t.validateActiveLeaseAt(at); err != nil {
@@ -645,6 +647,17 @@ func hashBytes(value []byte) string {
 }
 
 func validID(value string) bool { return validToken(value, 128) }
+
+func validFailureState(status Status, failureCode string) bool {
+	switch status {
+	case StatusFailed:
+		return validToken(failureCode, 96)
+	case StatusQueued, StatusRunning, StatusValidating, StatusSucceeded, StatusCanceled, StatusExpired:
+		return failureCode == ""
+	default:
+		return false
+	}
+}
 
 func validToken(value string, maxBytes int) bool {
 	if value == "" || value != strings.TrimSpace(value) || len(value) > maxBytes || !utf8.ValidString(value) {

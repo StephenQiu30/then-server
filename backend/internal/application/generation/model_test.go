@@ -502,3 +502,23 @@ func TestTransitionRequiresFailureCodeOnlyForFailedState(t *testing.T) {
 		t.Fatalf("invalid provider failure mutated task: %+v", task)
 	}
 }
+
+func TestTransitionRequiresValidOutputReferenceAndRejectsOutputOnFailure(t *testing.T) {
+	task := validatingTask(t, validCreateInput())
+	task.ResultAssetID = " "
+	if err := task.Transition(StatusSucceeded, "", generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrGenerationOutputRequired) {
+		t.Fatalf("invalid output reference error = %v", err)
+	}
+	if task.Status != StatusValidating || task.StatusRevision != 3 {
+		t.Fatalf("invalid output reference mutated task: %+v", task)
+	}
+
+	task = validatingTask(t, validCreateInput())
+	task.ResultAssetID = "asset-image-1"
+	if err := task.Transition(StatusFailed, "provider_error", generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("failed transition retained an output reference: %v", err)
+	}
+	if task.Status != StatusValidating || task.ResultAssetID != "asset-image-1" || task.StatusRevision != 3 {
+		t.Fatalf("invalid failure transition mutated task: %+v", task)
+	}
+}
