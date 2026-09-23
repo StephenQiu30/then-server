@@ -16,6 +16,7 @@ var (
 	ErrProfileNotFound     = errors.New("profile not found")
 	ErrProfileConflict     = errors.New("profile revision conflict")
 	ErrHandleConflict      = errors.New("profile handle conflict")
+	ErrInvalidChallenge    = errors.New("invalid account challenge")
 )
 
 type AccountStatus string
@@ -35,14 +36,15 @@ const (
 )
 
 type User struct {
-	ID          string
-	Email       string
-	DisplayName string
-	Status      AccountStatus
-	Role        AccountRole
-	Revision    int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID            string
+	Email         string
+	EmailVerified bool
+	DisplayName   string
+	Status        AccountStatus
+	Role          AccountRole
+	Revision      int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type Credential struct {

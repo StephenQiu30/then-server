@@ -51,6 +51,8 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"getCurrentUser":                  true,
 		"updateCurrentUser":               true,
 		"deleteCurrentUser":               true,
+		"requestEmailVerification":        true,
+		"confirmEmailVerification":        true,
 		"getSelfAdultDeclaration":         true,
 		"confirmSelfAdultDeclaration":     true,
 		"withdrawSelfAdultDeclaration":    true,
@@ -174,8 +176,13 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.18.0" || operations != 102 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.19.0" || operations != 106 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
+	}
+	for _, operationID := range []string{"requestEmailVerification", "confirmEmailVerification", "requestPasswordReset", "confirmPasswordReset"} {
+		if !identifiers[operationID] {
+			t.Fatalf("generated contract is missing account mail operation %s", operationID)
+		}
 	}
 	for _, operationID := range []string{"getCurrentProfile", "putCurrentProfile", "getPublicProfile", "createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent", "createDiaryEntry", "listDiaryEntries", "getDiaryEntry", "updateDiaryEntry", "getDiaryEntryDeletionImpact", "deleteDiaryEntry", "getCalendarMonth", "createPost", "listOwnPosts", "getOwnPost", "updatePost", "submitPost", "withdrawPost", "deletePost", "getPublicPost", "getPublicPostImage", "listPostModerationCandidates", "getPostModerationCandidate", "getPostModerationImage", "decidePostModeration", "removePublishedPost", "createPostReport", "listOwnReports", "listCommunityReports", "resolveCommunityReport", "listModerationActions", "listAdminUsers", "suspendUser", "restoreUser"} {
 		if !identifiers[operationID] {

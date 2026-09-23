@@ -22,27 +22,29 @@ func NewAccountRepository(database *gorm.DB) *AccountRepository {
 }
 
 type userRecord struct {
-	ID            string                       `gorm:"column:id;type:uuid;primaryKey"`
-	DisplayName   string                       `gorm:"column:display_name;type:text;not null;check:users_display_name_check,display_name = btrim(display_name) AND char_length(display_name) BETWEEN 1 AND 80"`
-	Status        string                       `gorm:"column:status;type:text;not null;default:'active';check:users_status_check,status IN ('active','suspended','deleting')"`
-	Role          string                       `gorm:"column:role;type:text;not null;default:'user';check:users_role_check,role IN ('user','moderator','admin')"`
-	Revision      int                          `gorm:"column:revision;not null;default:1;check:users_revision_check,revision >= 1"`
-	CreatedAt     time.Time                    `gorm:"column:created_at;type:timestamptz;not null"`
-	UpdatedAt     time.Time                    `gorm:"column:updated_at;type:timestamptz;not null;check:users_timestamps_check,updated_at >= created_at"`
-	Profile       *userProfileRecord           `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	Credentials   []credentialRecord           `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	Sessions      []sessionRecord              `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	Declarations  []selfAdultDeclarationRecord `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	Consents      []consentRecord              `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	Media         []mediaAssetRecord           `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	Deletions     []deletionRequestRecord      `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	Wardrobe      []wardrobeItemRecord         `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	OutfitPlans   []outfitPlanRecord           `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	OutfitDeletes []outfitPlanDeletionRecord   `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	WearEvents    []wearEventRecord            `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	WearDeletes   []wearEventDeletionRecord    `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	DiaryEntries  []diaryEntryRecord           `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
-	DiaryDeletes  []diaryEntryDeletionRecord   `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	ID              string                       `gorm:"column:id;type:uuid;primaryKey"`
+	DisplayName     string                       `gorm:"column:display_name;type:text;not null;check:users_display_name_check,display_name = btrim(display_name) AND char_length(display_name) BETWEEN 1 AND 80"`
+	Status          string                       `gorm:"column:status;type:text;not null;default:'active';check:users_status_check,status IN ('active','suspended','deleting')"`
+	Role            string                       `gorm:"column:role;type:text;not null;default:'user';check:users_role_check,role IN ('user','moderator','admin')"`
+	EmailVerifiedAt *time.Time                   `gorm:"column:email_verified_at;type:timestamptz"`
+	Revision        int                          `gorm:"column:revision;not null;default:1;check:users_revision_check,revision >= 1"`
+	CreatedAt       time.Time                    `gorm:"column:created_at;type:timestamptz;not null"`
+	UpdatedAt       time.Time                    `gorm:"column:updated_at;type:timestamptz;not null;check:users_timestamps_check,updated_at >= created_at"`
+	Profile         *userProfileRecord           `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Credentials     []credentialRecord           `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Sessions        []sessionRecord              `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	MailChallenges  []mailChallengeRecord        `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Declarations    []selfAdultDeclarationRecord `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Consents        []consentRecord              `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Media           []mediaAssetRecord           `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Deletions       []deletionRequestRecord      `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	Wardrobe        []wardrobeItemRecord         `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	OutfitPlans     []outfitPlanRecord           `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	OutfitDeletes   []outfitPlanDeletionRecord   `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	WearEvents      []wearEventRecord            `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	WearDeletes     []wearEventDeletionRecord    `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	DiaryEntries    []diaryEntryRecord           `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
+	DiaryDeletes    []diaryEntryDeletionRecord   `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:CASCADE"`
 }
 
 func (userRecord) TableName() string { return "users" }
@@ -78,15 +80,16 @@ type accountDeletionRequestRecord struct {
 func (accountDeletionRequestRecord) TableName() string { return "account_deletion_requests" }
 
 type accountRow struct {
-	ID           string    `gorm:"column:id"`
-	Email        string    `gorm:"column:email"`
-	DisplayName  string    `gorm:"column:display_name"`
-	Status       string    `gorm:"column:status"`
-	Role         string    `gorm:"column:role"`
-	Revision     int       `gorm:"column:revision"`
-	PasswordHash string    `gorm:"column:password_hash"`
-	CreatedAt    time.Time `gorm:"column:created_at"`
-	UpdatedAt    time.Time `gorm:"column:updated_at"`
+	ID              string     `gorm:"column:id"`
+	Email           string     `gorm:"column:email"`
+	DisplayName     string     `gorm:"column:display_name"`
+	Status          string     `gorm:"column:status"`
+	Role            string     `gorm:"column:role"`
+	EmailVerifiedAt *time.Time `gorm:"column:email_verified_at"`
+	Revision        int        `gorm:"column:revision"`
+	PasswordHash    string     `gorm:"column:password_hash"`
+	CreatedAt       time.Time  `gorm:"column:created_at"`
+	UpdatedAt       time.Time  `gorm:"column:updated_at"`
 }
 
 func (r *AccountRepository) CreateAccount(ctx context.Context, user accountapp.User, passwordHash string, session accountapp.Session) (accountapp.User, error) {
@@ -115,7 +118,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, user accountapp.U
 
 func (r *AccountRepository) FindCredentialByEmail(ctx context.Context, email string) (accountapp.Credential, error) {
 	rows, err := gorm.G[accountRow](r.database).Raw(`
-		SELECT u.id, c.email, u.display_name, u.status, u.role, u.revision,
+		SELECT u.id, c.email, u.display_name, u.status, u.role, u.email_verified_at, u.revision,
 		       c.password_hash, u.created_at, u.updated_at
 		FROM users AS u
 		JOIN user_credentials AS c ON c.user_id = u.id
@@ -140,7 +143,7 @@ func (r *AccountRepository) CreateSession(ctx context.Context, session accountap
 
 func (r *AccountRepository) FindUserBySession(ctx context.Context, tokenHash []byte, now time.Time) (accountapp.User, error) {
 	rows, err := gorm.G[accountRow](r.database).Raw(`
-		SELECT u.id, c.email, u.display_name, u.status, u.role, u.revision,
+		SELECT u.id, c.email, u.display_name, u.status, u.role, u.email_verified_at, u.revision,
 		       '' AS password_hash, u.created_at, u.updated_at
 		FROM user_sessions AS s
 		JOIN users AS u ON u.id = s.user_id
@@ -170,12 +173,25 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, userID string, expec
 			return accountapp.ErrAccountConflict
 		}
 		if email != nil {
+			var credential credentialRecord
+			if err := tx.Where("user_id = ?", userID).Take(&credential).Error; err != nil {
+				return err
+			}
 			rows, err := gorm.G[credentialRecord](tx).Where("user_id = ?", userID).Update(ctx, "email", *email)
 			if err != nil {
 				return err
 			}
 			if rows != 1 {
 				return accountapp.ErrAuthentication
+			}
+			if credential.Email != *email {
+				if err := tx.Model(&userRecord{}).Where("id = ?", userID).Update("email_verified_at", nil).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&mailChallengeRecord{}).Where("user_id = ? AND consumed_at IS NULL AND revoked_at IS NULL", userID).
+					Updates(map[string]any{"revoked_at": updatedAt, "lease_until": nil, "updated_at": updatedAt}).Error; err != nil {
+					return err
+				}
 			}
 		}
 		updates := map[string]any{"updated_at": updatedAt, "revision": current.Revision + 1}
@@ -327,7 +343,7 @@ func accountDeletionFromRecord(record accountDeletionRequestRecord) accountapp.A
 
 func findAccount(ctx context.Context, database *gorm.DB, userID string) (accountapp.User, error) {
 	rows, err := gorm.G[accountRow](database).Raw(`
-		SELECT u.id, c.email, u.display_name, u.status, u.role, u.revision,
+		SELECT u.id, c.email, u.display_name, u.status, u.role, u.email_verified_at, u.revision,
 		       '' AS password_hash, u.created_at, u.updated_at
 		FROM users AS u
 		JOIN user_credentials AS c ON c.user_id = u.id
@@ -348,7 +364,7 @@ func credentialFromRow(row accountRow) accountapp.Credential {
 
 func userFromRow(row accountRow) accountapp.User {
 	return accountapp.User{
-		ID: row.ID, Email: row.Email, DisplayName: row.DisplayName,
+		ID: row.ID, Email: row.Email, EmailVerified: row.EmailVerifiedAt != nil, DisplayName: row.DisplayName,
 		Status: accountapp.AccountStatus(row.Status), Role: accountapp.AccountRole(row.Role), Revision: row.Revision,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
@@ -360,7 +376,7 @@ func mapDatabaseError(err error) error {
 	}
 	for _, domainError := range []error{
 		accountapp.ErrAuthentication, accountapp.ErrAccountConflict, accountapp.ErrProfileNotFound,
-		accountapp.ErrProfileConflict, accountapp.ErrHandleConflict,
+		accountapp.ErrProfileConflict, accountapp.ErrHandleConflict, accountapp.ErrInvalidChallenge,
 	} {
 		if errors.Is(err, domainError) {
 			return domainError

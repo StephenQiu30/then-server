@@ -1,9 +1,51 @@
 package config
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
+
+func TestAccountMailConfigurationIsCompleteAndSecretFree(t *testing.T) {
+	base := map[string]string{
+		"DATABASE_URL":           "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable",
+		"ACCOUNT_MAIL_FROM":      "sender@163.com",
+		"ACCOUNT_MAIL_AUTH_CODE": "synthetic-authorization-code",
+		"ACCOUNT_MAIL_KEY":       base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("k", 32))),
+		"ACCOUNT_MAIL_LINK_BASE": "https://then.example/account/mail",
+	}
+	for _, step := range []struct {
+		name, key, value string
+		valid            bool
+	}{
+		{"complete", "", "", true},
+		{"missing authorization", "ACCOUNT_MAIL_AUTH_CODE", "", false},
+		{"short key", "ACCOUNT_MAIL_KEY", "short-secret", false},
+		{"plaintext link", "ACCOUNT_MAIL_LINK_BASE", "http://then.example/account/mail", false},
+		{"wrong provider", "ACCOUNT_MAIL_SMTP_ADDR", "smtp.example.com:465", false},
+		{"plaintext SMTP port", "ACCOUNT_MAIL_SMTP_ADDR", "smtp.163.com:25", false},
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			environment := make(map[string]string, len(base)+1)
+			for key, value := range base {
+				environment[key] = value
+			}
+			if step.key != "" {
+				environment[step.key] = step.value
+			}
+			configuration, err := Load(func(key string) (string, bool) { value, exists := environment[key]; return value, exists })
+			if (err == nil) != step.valid {
+				t.Fatal("mail configuration validity differed from contract")
+			}
+			if err != nil && strings.Contains(err.Error(), "synthetic-authorization-code") {
+				t.Fatal("mail configuration error exposed the authorization code")
+			}
+			if step.valid && (!configuration.MailEnabled || len(configuration.MailKey) != 32) {
+				t.Fatal("complete mail configuration did not enable delivery")
+			}
+		})
+	}
+}
 
 func TestConfigurationBoundaries(t *testing.T) {
 	const url = "postgres://fixture:synthetic-secret@127.0.0.1:5432/fixture?sslmode=disable"

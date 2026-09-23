@@ -36,6 +36,7 @@ func registerAccountOperations(api huma.API, handler *AccountHandler) {
 		Errors: []int{http.StatusUnauthorized, http.StatusInternalServerError},
 	}), handler.deleteCurrent)
 	registerProfileOperations(api, handler)
+	registerAccountMailOperations(api, handler)
 }
 
 func authenticatedOperation(operation huma.Operation) huma.Operation {

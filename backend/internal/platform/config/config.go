@@ -2,8 +2,10 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net"
+	mailaddr "net/mail"
 	"net/url"
 	"strconv"
 	"strings"
@@ -15,6 +17,12 @@ type Config struct {
 	HTTPAddr                string
 	DocsEnabled             bool
 	SessionSecure           bool
+	MailEnabled             bool
+	MailSMTPAddr            string
+	MailFrom                string
+	MailAuthCode            string
+	MailKey                 []byte
+	MailLinkBase            string
 	DatabaseURL             string
 	RedisURL                string
 	MediaDevelopmentEnabled bool
@@ -45,6 +53,10 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		HTTPAddr:         get("HTTP_ADDR", "127.0.0.1:8080"),
 		DatabaseURL:      get("DATABASE_URL", ""),
 		RedisURL:         get("REDIS_URL", "redis://127.0.0.1:6379/0"),
+		MailSMTPAddr:     get("ACCOUNT_MAIL_SMTP_ADDR", "smtp.163.com:465"),
+		MailFrom:         get("ACCOUNT_MAIL_FROM", ""),
+		MailAuthCode:     get("ACCOUNT_MAIL_AUTH_CODE", ""),
+		MailLinkBase:     get("ACCOUNT_MAIL_LINK_BASE", ""),
 		MinIOEndpoint:    get("MINIO_ENDPOINT", "127.0.0.1:9000"),
 		MinIOAccessKey:   get("MINIO_ACCESS_KEY", ""),
 		MinIOSecretKey:   get("MINIO_SECRET_KEY", ""),
@@ -108,6 +120,19 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	}
 	if !c.SessionSecure && !net.ParseIP(host).IsLoopback() {
 		return Config{}, fmt.Errorf("SESSION_COOKIE_SECURE: required for non-loopback HTTP_ADDR")
+	}
+	mailKey := get("ACCOUNT_MAIL_KEY", "")
+	if c.MailFrom != "" || c.MailAuthCode != "" || mailKey != "" || c.MailLinkBase != "" {
+		c.MailEnabled = true
+		address, addressErr := mailaddr.ParseAddress(c.MailFrom)
+		key, keyErr := base64.RawURLEncoding.DecodeString(mailKey)
+		mailHost, mailPort, hostErr := net.SplitHostPort(c.MailSMTPAddr)
+		link, linkErr := url.Parse(c.MailLinkBase)
+		portNumber, portErr := strconv.Atoi(mailPort)
+		if addressErr != nil || address.Address != c.MailFrom || c.MailAuthCode == "" || len(c.MailAuthCode) > 256 || strings.ContainsAny(c.MailAuthCode, "\r\n") || keyErr != nil || len(key) < 32 || hostErr != nil || (mailHost != "smtp.163.com" && !isLoopbackHost(mailHost)) || portErr != nil || portNumber < 1 || portNumber > 65535 || (mailHost == "smtp.163.com" && mailPort != "465") || linkErr != nil || link.Scheme != "https" || link.Host == "" || link.User != nil || link.Fragment != "" {
+			return Config{}, fmt.Errorf("ACCOUNT_MAIL_*: complete TLS SMTP account, auth code, key and HTTPS link are required")
+		}
+		c.MailKey = key
 	}
 	if c.DocsEnabled && !net.ParseIP(host).IsLoopback() {
 		return Config{}, fmt.Errorf("API_DOCS_ENABLED: documentation requires a loopback HTTP_ADDR")

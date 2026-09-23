@@ -34,14 +34,15 @@ func (UpdateCurrentUserRequest) Schema(registry huma.Registry) *huma.Schema {
 }
 
 type UserResponse struct {
-	ID          string    `json:"id" format:"uuid" example:"018f1f74-a2d0-7c6d-9c17-4a0ea2400a11"`
-	Email       string    `json:"email" format:"email" maxLength:"254" example:"developer@example.test"`
-	DisplayName string    `json:"display_name" minLength:"1" maxLength:"80" example:"开发用户"`
-	Status      string    `json:"status" enum:"active,suspended,deleting" example:"active"`
-	Role        string    `json:"role" enum:"user,moderator,admin" example:"user"`
-	Revision    int       `json:"revision" minimum:"1" example:"1"`
-	CreatedAt   time.Time `json:"created_at" format:"date-time" example:"2026-09-14T08:00:00Z"`
-	UpdatedAt   time.Time `json:"updated_at" format:"date-time" example:"2026-09-14T08:00:00Z"`
+	ID            string    `json:"id" format:"uuid" example:"018f1f74-a2d0-7c6d-9c17-4a0ea2400a11"`
+	Email         string    `json:"email" format:"email" maxLength:"254" example:"developer@example.test"`
+	EmailVerified bool      `json:"email_verified" doc:"当前登录邮箱已完成验证"`
+	DisplayName   string    `json:"display_name" minLength:"1" maxLength:"80" example:"开发用户"`
+	Status        string    `json:"status" enum:"active,suspended,deleting" example:"active"`
+	Role          string    `json:"role" enum:"user,moderator,admin" example:"user"`
+	Revision      int       `json:"revision" minimum:"1" example:"1"`
+	CreatedAt     time.Time `json:"created_at" format:"date-time" example:"2026-09-14T08:00:00Z"`
+	UpdatedAt     time.Time `json:"updated_at" format:"date-time" example:"2026-09-14T08:00:00Z"`
 }
 
 type AuthenticatedUserResponse struct {
@@ -90,3 +91,31 @@ type accountDeletionOutput struct {
 }
 
 type registerAccountInput struct{ Body RegisterAccountRequest }
+
+type requestPasswordResetInput struct {
+	Body struct {
+		Email string `json:"email" format:"email" minLength:"3" maxLength:"254"`
+	}
+}
+
+type confirmMailChallengeInput struct {
+	Session string `cookie:"then_session" hidden:"true"`
+	Body    struct {
+		Token string `json:"token" minLength:"80" maxLength:"80"`
+	}
+}
+
+type confirmPasswordResetInput struct {
+	Body struct {
+		Token       string `json:"token" minLength:"80" maxLength:"80"`
+		NewPassword string `json:"new_password" format:"password" doc:"12–72 个 UTF-8 字节"`
+	}
+}
+
+type acceptedAccountOutput struct {
+	RequestID string `header:"X-Request-ID" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$"`
+}
+
+type emptyAccountOutput struct {
+	RequestID string `header:"X-Request-ID" minLength:"26" maxLength:"64" pattern:"^[A-Za-z0-9]+$"`
+}
