@@ -66,8 +66,14 @@ func (p AdmissionPolicy) Check(cost CostEstimate, usage AdmissionUsage) error {
 	if usage.ActiveTasks >= p.MaxConcurrentTasks {
 		return ErrGenerationConcurrency
 	}
+	if usage.ReservedQuotaUnits > p.MaxQuotaUnits {
+		return ErrGenerationQuotaExceeded
+	}
 	if cost.ReservedQuotaUnits > p.MaxQuotaUnits-usage.ReservedQuotaUnits {
 		return ErrGenerationQuotaExceeded
+	}
+	if usage.ReservedMinorUnits > p.MaxBudgetMinorUnits {
+		return ErrGenerationBudgetExceeded
 	}
 	if cost.EstimatedMinorUnits > p.MaxBudgetMinorUnits-usage.ReservedMinorUnits {
 		return ErrGenerationBudgetExceeded

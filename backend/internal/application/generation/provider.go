@@ -20,6 +20,7 @@ type Submission struct {
 	Parameters  []byte
 	Inputs      InputSnapshot
 	Idempotency string
+	Attempt     int
 }
 
 // Receipt is the minimal fact returned when a provider accepts a task.

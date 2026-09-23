@@ -22,6 +22,8 @@ var (
 	ErrInvalidGenerationState   = errors.New("invalid generation state")
 	ErrGenerationNotCancellable = errors.New("generation job is not cancellable")
 	ErrGenerationNotSubmittable = errors.New("generation job is not submittable")
+	ErrSubmissionInProgress     = errors.New("generation submission is already in progress")
+	ErrSubmissionOutcomeUnknown = errors.New("generation submission outcome is unknown")
 	ErrExternalTaskConflict     = errors.New("external generation task conflict")
 )
 
@@ -66,6 +68,19 @@ const (
 func (s Status) terminal() bool {
 	return s == StatusSucceeded || s == StatusFailed || s == StatusCanceled || s == StatusExpired
 }
+
+// SubmissionState records the provider submission boundary separately from
+// the user-visible task state. In particular, unknown means that transport
+// failed after the request may have been accepted and must be reconciled
+// before another billable submit is allowed.
+type SubmissionState string
+
+const (
+	SubmissionNotStarted SubmissionState = "not_started"
+	SubmissionInFlight   SubmissionState = "in_flight"
+	SubmissionUnknown    SubmissionState = "unknown"
+	SubmissionAccepted   SubmissionState = "accepted"
+)
 
 // CanTransitionTo describes the only legal task state transitions.
 func (s Status) CanTransitionTo(next Status) bool {
@@ -162,24 +177,37 @@ type Task struct {
 	Cost         CostEstimate
 	// IdempotencyKeyHash is scoped to owner and purpose so it is safe to pass
 	// as a provider idempotency token without cross-account collisions.
-	IdempotencyKeyHash string
-	DedupeKey          string
-	Status             Status
-	StatusRevision     int
-	CancelRequestedAt  *time.Time
-	ExternalTaskID     string
-	FailureCode        string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	IdempotencyKeyHash  string
+	DedupeKey           string
+	Status              Status
+	StatusRevision      int
+	SubmissionState     SubmissionState
+	SubmissionAttempt   int
+	SubmissionStartedAt *time.Time
+	SubmissionUnknownAt *time.Time
+	CancelRequestedAt   *time.Time
+	ExternalTaskID      string
+	FailureCode         string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // PrepareSubmission creates the provider-neutral payload for a first submit.
-// Only an uncanceled queued task may produce one; a task with an external ID
-// must be reconciled instead of being submitted again.
+// Workers should call BeginSubmission before sending it. A task with an
+// external ID or a non-idle submission state must be reconciled instead of
+// being submitted again.
 func (t Task) PrepareSubmission() (Submission, error) {
-	if t.Status != StatusQueued || t.CancelRequestedAt != nil || t.ExternalTaskID != "" {
+	if !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted {
 		return Submission{}, ErrGenerationNotSubmittable
 	}
+	return t.submission(), nil
+}
+
+func submissionStatusAllowed(status Status) bool {
+	return status == StatusQueued || status == StatusRunning
+}
+
+func (t Task) submission() Submission {
 	return Submission{
 		TaskID:      t.ID,
 		Purpose:     t.Purpose,
@@ -188,7 +216,75 @@ func (t Task) PrepareSubmission() (Submission, error) {
 		Parameters:  append([]byte(nil), t.Parameters...),
 		Inputs:      cloneSnapshot(t.Inputs),
 		Idempotency: t.IdempotencyKeyHash,
-	}, nil
+		Attempt:     t.SubmissionAttempt,
+	}
+}
+
+// BeginSubmission atomically marks the first provider submission as in flight
+// and returns its immutable payload. The caller must persist this mutation
+// before making a network request. If the request outcome is lost, the task
+// can then be marked unknown and cannot be submitted again until reconciliation.
+func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
+	if t == nil || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" {
+		return Submission{}, ErrGenerationNotSubmittable
+	}
+	if at.IsZero() || (!t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt)) {
+		return Submission{}, ErrInvalidGenerationState
+	}
+	switch t.SubmissionState {
+	case SubmissionInFlight:
+		return Submission{}, ErrSubmissionInProgress
+	case SubmissionUnknown:
+		return Submission{}, ErrSubmissionOutcomeUnknown
+	case SubmissionAccepted:
+		return Submission{}, ErrGenerationNotSubmittable
+	case SubmissionNotStarted:
+	default:
+		return Submission{}, ErrInvalidGenerationState
+	}
+	at = at.UTC()
+	t.SubmissionState = SubmissionInFlight
+	t.SubmissionAttempt++
+	t.SubmissionStartedAt = timePtr(at)
+	t.StatusRevision++
+	t.UpdatedAt = at
+	return t.submission(), nil
+}
+
+// MarkSubmissionUnknown records a transport outcome that cannot prove
+// whether the provider accepted the request. It deliberately leaves the task
+// queued while blocking blind resubmission until an explicit reconciliation.
+func (t *Task) MarkSubmissionUnknown(at time.Time) error {
+	if t == nil || t.SubmissionState != SubmissionInFlight || at.IsZero() {
+		return ErrInvalidGenerationState
+	}
+	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
+		return ErrInvalidGenerationState
+	}
+	at = at.UTC()
+	t.SubmissionState = SubmissionUnknown
+	t.SubmissionUnknownAt = timePtr(at)
+	t.StatusRevision++
+	t.UpdatedAt = at
+	return nil
+}
+
+// ReconcileSubmissionNotAccepted clears an unknown submission only after a
+// provider lookup or an operator decision proves that no external task was
+// accepted. A new attempt then uses the same idempotency identity.
+func (t *Task) ReconcileSubmissionNotAccepted(at time.Time) error {
+	if t == nil || t.SubmissionState != SubmissionUnknown || at.IsZero() {
+		return ErrInvalidGenerationState
+	}
+	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
+		return ErrInvalidGenerationState
+	}
+	at = at.UTC()
+	t.SubmissionState = SubmissionNotStarted
+	t.SubmissionUnknownAt = nil
+	t.StatusRevision++
+	t.UpdatedAt = at
+	return nil
 }
 
 // NewTask validates and freezes a generation request in queued state. The
@@ -222,6 +318,7 @@ func NewTask(input CreateInput, now time.Time) (Task, error) {
 		DedupeKey:          dedupeKey,
 		Status:             StatusQueued,
 		StatusRevision:     1,
+		SubmissionState:    SubmissionNotStarted,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}, nil
@@ -264,8 +361,20 @@ func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
 		}
 		return nil
 	}
+	switch t.SubmissionState {
+	case SubmissionNotStarted, SubmissionInFlight, SubmissionUnknown:
+	case SubmissionAccepted:
+		return ErrInvalidGenerationState
+	default:
+		return ErrInvalidGenerationState
+	}
 	at = at.UTC()
 	t.ExternalTaskID = externalID
+	t.SubmissionState = SubmissionAccepted
+	t.SubmissionUnknownAt = nil
+	if t.SubmissionAttempt == 0 {
+		t.SubmissionAttempt = 1
+	}
 	t.StatusRevision++
 	// The provider may have accepted the request before a response was
 	// delivered. Keep the local clock monotonic while retaining that late
@@ -473,6 +582,11 @@ func canonicalSnapshot(snapshot InputSnapshot) InputSnapshot {
 func cloneSnapshot(snapshot InputSnapshot) InputSnapshot {
 	snapshot.References = append([]InputReference(nil), snapshot.References...)
 	return snapshot
+}
+
+func timePtr(value time.Time) *time.Time {
+	copy := value
+	return &copy
 }
 
 func hashText(value string) string { return hashBytes([]byte(value)) }
