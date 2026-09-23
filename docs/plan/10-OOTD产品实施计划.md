@@ -52,6 +52,7 @@
 | [17-19 本人照片私有上传与删除](17-19-本人照片私有上传与删除闭环执行计划.md) | approved / completed（合成数据开发范围） | 8 个 API、MinIO 固定版本、Outbox/Inbox 检查删除（当时使用 RabbitMQ，当前由 17-26 切换 Kafka）、三运行角色、合成数据纵向验收与远程 CI 完成 | 真实照片、生产地域、TLS/KMS/备份和 Provider 仍关闭 |
 | [17-20 结构化衣橱账户 API](17-20-结构化衣橱账户API执行计划.md) | approved / completed（后端开发范围） | 5 个账号级无图 CRUD operation、owner 隔离、幂等创建、revision 冲突、稳定分页、账号级联与远程 CI 通过 | App 主动同步、墓碑/合并、衣物图片与第二设备恢复不在本片 |
 | [17-21 衣橱确认属性 API](17-21-衣橱确认属性API执行计划.md) | approved / completed（后端开发范围） | 五个衣橱 operation 已扩展四项 nullable 确认属性；本机 unit/race、真实 PostgreSQL、实际二进制与远程 CI 通过 | App Client/主动同步、墓碑与多设备恢复不在本片 |
+| [17-31 Web 衣橱数据核验](17-31-Web衣橱数据核验执行计划.md)、[17-32 Web 穿搭计划数据核验](17-32-Web穿搭计划数据核验执行计划.md) | approved / local development complete | 实际 PG/Redis/Go/Next 验证账户衣橱与手工计划；计划不自动生成实际穿着，A/B 隔离、revision 与删除影响通过 | 公开账号门禁、App 离线 Look/推荐/记录和实际穿着 Web 页面未由此抵扣 |
 | [17-22 账号穿搭计划 API](17-22-账号穿搭计划API执行计划.md) | approved / completed（后端开发范围） | 6 个计划 operation、服务端衣物快照、revision/tombstone、两种衣物删除影响策略与远程 CI 通过 | App Client/主动同步、实际穿着、反馈和第二设备恢复不在本片 |
 | [17-23 账号实际穿着 API](17-23-账号实际穿着API执行计划.md) | approved / completed（后端开发范围） | 5 个实际事件 operation、not-worn/restore、服务端快照、完整创建命令幂等、重复确认、待洗/计划事务和覆盖两类历史的删除影响；本机与远程三项 CI 全绿 | App Client/主动同步、反馈和第二设备恢复不在本片 |
 | [17-14 仓库与 CI](17-14-客户端服务端仓库拆分与CI执行计划.md)、[17-15 OpenAPI/GORM](17-15-OpenAPI文档门户与Umi生成执行计划.md) | approved / completed | 独立仓库/CI、运行时契约与 AutoMigrate | Web SDK 正式接入不在本片 |

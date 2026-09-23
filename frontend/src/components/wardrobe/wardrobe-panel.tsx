@@ -229,9 +229,14 @@ export function WardrobePanel() {
           记录真实拥有的衣物。这里使用账户数据核验；离线 Look 与推荐仍按 App
           计划交付。
         </p>
-        <Button asChild variant="outline">
-          <Link href="/account">账户资料</Link>
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button asChild variant="outline">
+            <Link href="/plans">查看穿搭计划</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/account">账户资料</Link>
+          </Button>
+        </div>
       </header>
       {currentUser.isPending ||
       (currentUser.isError && accountStatus(currentUser.error) === 401) ? (

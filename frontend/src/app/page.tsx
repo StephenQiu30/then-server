@@ -23,6 +23,9 @@ export default function HomePage() {
           <Button asChild variant="outline">
             <Link href="/wardrobe">查看衣橱</Link>
           </Button>
+          <Button asChild variant="outline">
+            <Link href="/plans">查看穿搭计划</Link>
+          </Button>
           <Button asChild variant="ghost">
             <a href="#about">
               了解于是
@@ -43,7 +46,8 @@ export default function HomePage() {
           整理真实拥有的衣物，记录喜欢的搭配，回顾每一天的穿着。于是希望让下一次选择，多一点依据。
         </p>
         <p className="max-w-2xl text-muted-foreground">
-          账户与无图衣橱页面可用于本地验证。离线 Look 与推荐仍在准备中。
+          账户、无图衣橱与计划页面可用于本地验证。离线
+          Look、推荐与实际穿着页面仍在准备中。
         </p>
       </section>
     </PageShell>
