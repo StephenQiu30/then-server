@@ -171,3 +171,24 @@ func TestSettlementRejectsExpiredActiveLease(t *testing.T) {
 		t.Fatalf("expired failure settlement error = %v", err)
 	}
 }
+
+func TestSettlementRejectsMalformedPersistedLease(t *testing.T) {
+	task := validatingTask(t, validCreateInput())
+	task.LeaseOwner = " "
+	task.LeaseAttempt = 1
+	task.LeaseUntil = timePtr(generationTestNow.Add(10 * time.Minute))
+	task.FencingToken = 1
+	asset, err := NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(4*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("malformed active lease error = %v", err)
+	}
+
+	task = validatingTask(t, validCreateInput())
+	task.LeaseAttempt = -1
+	if _, err := FinalizeWithoutOutput(task, nil, StatusCanceled, "", generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("malformed released lease error = %v", err)
+	}
+}
