@@ -199,7 +199,7 @@ flowchart TD
 - [x] `14-01-SPEC-01` 明确图/模型各自用途、版本、任务、费用和删除合同（仅文档）。
 - [ ] `14-01-GATE-01` 核实具体账号、POC预算、素材/产物权利、终端服务许可、地域/留存/删除和参数。依赖：READY-03/04；验收：有实际准入记录，缺项的模式不调用；价格以Design20及调用前核实结果为准。
 - [ ] `14-01-POC-01` 先代表→至少12组授权输入；固定类别/组合与评分，所有失败/丢弃/费用登记；默认最多2次计费尝试/样本并有总预算。依赖：GATE；验收：TRYON-ACC-011及模型独立质量结论，API成功不代替衣物保真。
-- [ ] `14-01-DATA-01` 实现image/model任务、Look版本/输入快照、同意、owner、额度/成本、幂等/去重、血缘和Outbox；Provider 无关领域合同已开始并覆盖按用途输入校验、owner/purpose 作用域幂等/去重分类、首次提交防重、外部受理/状态对账及双账号合成 Provider 替身，Huma/GORM 单一事实源与真实 PG/HTTP 仍待 GATE/POC。依赖：11-05领域合同和POC真实参数；验收：真实PG/HTTP跨账号/版本/配额事务，CLOUD-ACC-003/008/012。
+- [ ] `14-01-DATA-01` 实现image/model任务、Look版本/输入快照、同意、owner、额度/成本、幂等/去重、血缘和Outbox；Provider 无关领域合同已开始并覆盖按用途输入校验、owner/purpose 作用域幂等/去重分类、fail-closed 预算/配额预检、首次提交防重、外部受理/状态对账及双账号合成 Provider 替身，Huma/GORM 单一事实源与真实 PG/HTTP 仍待 GATE/POC。依赖：11-05领域合同和POC真实参数；验收：真实PG/HTTP跨账号/版本/配额事务，CLOUD-ACC-003/008/012。
 - [ ] `14-01-WORKER-01` 实现submit/query/fetch、租约/fencing、有限退避、不确定受理对账、校验后私有MinIO发布。依赖：DATA；验收：受理响应丢失不盲重发，worker/队列重启不丢任务，CLOUD-ACC-004/006/007/012。
 - [ ] `14-01-DELETE-01` 取消、撤回、源→图→GLB、缓存/Provider副本与账号删除；清理依据存活至完成。依赖：WORKER和已有19-06；验收：访问先关、迟到只清理、单删模型可留图；CLOUD-ACC-005/009/012、PRIVACY-ACC-011。
 - [ ] `14-01-IOS-01` 冻结人物/衣物→用途/费用确认→真实任务恢复→核对保存图→显式模型→缓存复用与新版本隔离。依赖：DATA/WORKER/DELETE、17-30 TEST级共用Client、11-05实际Look/renderer；验收：TRYON-ACC-011/012，图失败留草稿、模型失败留图。
