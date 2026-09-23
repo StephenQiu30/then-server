@@ -33,6 +33,9 @@ func (t *Task) AcquireLease(owner string, at time.Time, ttl time.Duration) (Leas
 	if !activeStatus(t.Status) {
 		return Lease{}, ErrInvalidGenerationState
 	}
+	if !t.validSubmissionFacts() {
+		return Lease{}, ErrInvalidGenerationState
+	}
 	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
 		return Lease{}, ErrInvalidGenerationLease
 	}

@@ -96,6 +96,68 @@ func TestSubmissionGuardRequiresExplicitReconciliation(t *testing.T) {
 	}
 }
 
+func TestSubmissionGuardsRejectMalformedPersistedFacts(t *testing.T) {
+	startedAt := generationTestNow.Add(time.Minute)
+	unknownAt := generationTestNow.Add(2 * time.Minute)
+	cases := []struct {
+		name   string
+		mutate func(*Task)
+		action func(*Task) error
+		want   error
+	}{
+		{
+			name: "in flight without start time",
+			mutate: func(task *Task) {
+				task.SubmissionState = SubmissionInFlight
+				task.SubmissionAttempt = 1
+			},
+			action: func(task *Task) error { return task.MarkSubmissionUnknown(unknownAt) },
+			want:   ErrInvalidGenerationState,
+		},
+		{
+			name: "unknown without unknown time",
+			mutate: func(task *Task) {
+				task.SubmissionState = SubmissionUnknown
+				task.SubmissionAttempt = 1
+				task.SubmissionStartedAt = timePtr(startedAt)
+			},
+			action: func(task *Task) error { return task.ReconcileSubmissionNotAccepted(unknownAt) },
+			want:   ErrInvalidGenerationState,
+		},
+		{
+			name: "accepted with unresolved timestamp",
+			mutate: func(task *Task) {
+				task.SubmissionState = SubmissionAccepted
+				task.SubmissionAttempt = 1
+				task.ExternalTaskID = "provider-job-1"
+				task.SubmissionUnknownAt = timePtr(unknownAt)
+			},
+			action: func(task *Task) error { return task.RecordExternalTaskID("provider-job-1", unknownAt) },
+			want:   ErrInvalidGenerationState,
+		},
+		{
+			name: "retry with inconsistent attempt",
+			mutate: func(task *Task) {
+				task.SubmissionAttempt = 1
+			},
+			action: func(task *Task) error {
+				_, err := task.PrepareSubmission()
+				return err
+			},
+			want: ErrGenerationNotSubmittable,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			task := mustTask(validCreateInput())
+			tc.mutate(&task)
+			if err := tc.action(&task); !errors.Is(err, tc.want) {
+				t.Fatalf("malformed submission facts error = %v", err)
+			}
+		})
+	}
+}
+
 func TestWorkerStateWritesRequireAnActiveLease(t *testing.T) {
 	task := mustTask(validCreateInput())
 	if _, err := task.BeginSubmission(generationTestNow.Add(time.Minute)); !errors.Is(err, ErrGenerationLeaseConflict) {

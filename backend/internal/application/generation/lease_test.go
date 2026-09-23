@@ -125,6 +125,14 @@ func TestLeaseRejectsUnknownPersistedStatus(t *testing.T) {
 	}
 }
 
+func TestLeaseRejectsMalformedSubmissionFacts(t *testing.T) {
+	task := mustTask(validCreateInput())
+	task.SubmissionAttempt = 1
+	if _, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), time.Minute); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("malformed submission facts acquired a lease: %v", err)
+	}
+}
+
 func TestLeaseRejectsMalformedPersistedState(t *testing.T) {
 	cases := []func(*Task){
 		func(task *Task) { task.LeaseOwner = "worker-a" },

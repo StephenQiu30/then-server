@@ -39,6 +39,9 @@ func NewOutboxEvent(id string, task Task, now time.Time) (OutboxEvent, error) {
 		task.ExternalTaskID != "" || task.CancelRequestedAt != nil || task.StatusRevision < 1 || now.IsZero() {
 		return OutboxEvent{}, ErrInvalidGenerationOutbox
 	}
+	if !task.validSubmissionFacts() {
+		return OutboxEvent{}, ErrInvalidGenerationOutbox
+	}
 	if !task.UpdatedAt.IsZero() && now.Before(task.UpdatedAt) {
 		return OutboxEvent{}, ErrInvalidGenerationOutbox
 	}
