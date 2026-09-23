@@ -21,8 +21,10 @@ import (
 
 const (
 	ModeStructured    = "structured"
+	ModeWithMedia     = "with_media"
 	StatusPreparing   = "preparing"
 	StatusReady       = "ready"
+	StatusPartial     = "partial"
 	StatusFailed      = "failed"
 	StatusExpired     = "expired"
 	StatusRevoked     = "revoked"
@@ -63,12 +65,22 @@ type Dataset struct {
 	Fields []string
 }
 
+// MediaSource is an owner-bound, fixed-version source selected with the data snapshot.
+type MediaSource struct {
+	ID            string
+	ObjectKey     string
+	ObjectVersion string
+	ByteSize      int64
+	SHA256        string
+	SourceRemoved bool
+}
+
 type Repository interface {
 	Create(context.Context, Job) error
 	Get(context.Context, string, string) (Job, error)
 	Revoke(context.Context, string, string, time.Time) error
 	Claim(context.Context, time.Time) (Job, bool, error)
-	Snapshot(context.Context, string) ([]Dataset, error)
+	Snapshot(context.Context, string, string) ([]Dataset, []MediaSource, error)
 	Complete(context.Context, Job, map[string]int, []string, string, string, time.Time) (bool, error)
 	Fail(context.Context, Job, time.Time) error
 	ClaimCleanup(context.Context, time.Time) (Job, bool, error)
@@ -80,6 +92,7 @@ type ObjectStore interface {
 	PutArchive(context.Context, string, io.Reader, int64) (string, error)
 	OpenArchive(context.Context, string, string) (io.ReadCloser, error)
 	DeleteArchive(context.Context, string) error
+	OpenVersion(context.Context, string, string) (io.ReadCloser, error)
 }
 
 type Accounts interface {
@@ -102,7 +115,7 @@ func New(accounts Accounts, repository Repository, objects ObjectStore) (*Servic
 }
 
 func (s *Service) Create(ctx context.Context, token, password, mode string) (Job, error) {
-	if mode != ModeStructured {
+	if mode != ModeStructured && mode != ModeWithMedia {
 		return Job{}, ErrInvalidMode
 	}
 	user, err := s.accounts.Reauthenticate(ctx, token, password)
@@ -137,7 +150,7 @@ func (s *Service) Open(ctx context.Context, token, id string) (io.ReadCloser, er
 	if err != nil {
 		return nil, err
 	}
-	if job.Status != StatusReady || job.ObjectKey == "" || job.ObjectVersion == "" {
+	if (job.Status != StatusReady && job.Status != StatusPartial) || job.ObjectKey == "" || job.ObjectVersion == "" {
 		return nil, ErrNotReady
 	}
 	reader, err := s.objects.OpenArchive(ctx, job.ObjectKey, job.ObjectVersion)
@@ -162,11 +175,11 @@ func (s *Service) ProcessNext(ctx context.Context) (bool, error) {
 	}
 	work, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	datasets, err := s.repository.Snapshot(work, job.OwnerID)
+	datasets, media, err := s.repository.Snapshot(work, job.OwnerID, job.Mode)
 	if err != nil {
 		return true, s.repository.Fail(ctx, job, s.now().UTC())
 	}
-	archive, counts, omissions, err := BuildArchive(datasets, s.now().UTC())
+	archive, counts, omissions, err := buildArchive(work, datasets, media, job.Mode, s.objects, s.now().UTC())
 	if err != nil {
 		return true, s.repository.Fail(ctx, job, s.now().UTC())
 	}
@@ -245,6 +258,10 @@ type manifestFile struct {
 }
 
 func BuildArchive(datasets []Dataset, at time.Time) ([]byte, map[string]int, []string, error) {
+	return buildArchive(context.Background(), datasets, nil, ModeStructured, nil, at)
+}
+
+func buildArchive(ctx context.Context, datasets []Dataset, media []MediaSource, mode string, objects ObjectStore, at time.Time) ([]byte, map[string]int, []string, error) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
 	counts := make(map[string]int, len(datasets))
@@ -278,7 +295,67 @@ func BuildArchive(datasets []Dataset, at time.Time) ([]byte, map[string]int, []s
 		files = append(files, manifestFile{Name: name, Count: dataset.Count, SHA256: hex.EncodeToString(digest[:]), Fields: dataset.Fields})
 		counts[dataset.Name] = dataset.Count
 	}
-	omissions := []string{"device_only_data", "cloud_generation_not_enabled", "media_requires_with_media", "credentials_sessions_and_mail_challenges_excluded", "internal_moderation_and_queue_records_excluded", "third_party_private_content_excluded"}
+	omissions := []string{"device_only_data", "cloud_generation_not_enabled", "credentials_sessions_and_mail_challenges_excluded", "internal_moderation_and_queue_records_excluded", "third_party_private_content_excluded"}
+	if mode == ModeStructured {
+		omissions = append(omissions, "media_requires_with_media")
+	} else {
+		if objects == nil {
+			writer.Close()
+			return nil, nil, nil, ErrUnavailable
+		}
+		omissions = append(omissions, "clothing_images_not_enabled")
+		sort.Slice(media, func(i, j int) bool { return media[i].ID < media[j].ID })
+		counts["media_files"] = 0
+		counts["media_omitted"] = 0
+		for _, source := range media {
+			if _, err := uuid.Parse(source.ID); err != nil || source.ByteSize < 1 || source.ByteSize > 12<<20 || len(source.SHA256) != 64 || source.ObjectKey == "" {
+				writer.Close()
+				return nil, nil, nil, ErrInvalidDataset
+			}
+			if source.SourceRemoved || source.ObjectVersion == "" {
+				omissions = append(omissions, "media_source_removed:"+source.ID)
+				counts["media_omitted"]++
+				continue
+			}
+			if int64(buffer.Len())+source.ByteSize > maxArchiveBytes {
+				writer.Close()
+				return nil, nil, nil, ErrTooLarge
+			}
+			reader, err := objects.OpenVersion(ctx, source.ObjectKey, source.ObjectVersion)
+			if err != nil {
+				omissions = append(omissions, "media_source_unavailable:"+source.ID)
+				counts["media_omitted"]++
+				continue
+			}
+			content, readErr := io.ReadAll(io.LimitReader(reader, source.ByteSize+1))
+			closeErr := reader.Close()
+			if readErr != nil || closeErr != nil || int64(len(content)) != source.ByteSize {
+				omissions = append(omissions, "media_source_unavailable:"+source.ID)
+				counts["media_omitted"]++
+				continue
+			}
+			digest := sha256.Sum256(content)
+			if hex.EncodeToString(digest[:]) != source.SHA256 {
+				omissions = append(omissions, "media_source_digest_mismatch:"+source.ID)
+				counts["media_omitted"]++
+				continue
+			}
+			name := "media/" + source.ID + ".jpg"
+			entry, err := writer.Create(name)
+			if err != nil {
+				return nil, nil, nil, ErrUnavailable
+			}
+			if _, err := entry.Write(content); err != nil {
+				return nil, nil, nil, ErrUnavailable
+			}
+			if buffer.Len() > maxArchiveBytes {
+				writer.Close()
+				return nil, nil, nil, ErrTooLarge
+			}
+			files = append(files, manifestFile{Name: name, Count: 1, SHA256: source.SHA256})
+			counts["media_files"]++
+		}
+	}
 	manifest, err := json.Marshal(struct {
 		SchemaVersion int               `json:"schema_version"`
 		ExportedAt    time.Time         `json:"exported_at"`

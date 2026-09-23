@@ -46,8 +46,9 @@ var exportQueries = []struct {
 	{"exports", "e.id::text AS sort_key, e.id, e.mode, e.status, e.created_at, e.completed_at, e.expires_at, e.revoked_at", "data_exports e", "e.owner_id = ?"},
 }
 
-func (r *DataExportRepository) Snapshot(ctx context.Context, ownerID string) ([]exportapp.Dataset, error) {
+func (r *DataExportRepository) Snapshot(ctx context.Context, ownerID, mode string) ([]exportapp.Dataset, []exportapp.MediaSource, error) {
 	var datasets []exportapp.Dataset
+	var media []exportapp.MediaSource
 	var totalBytes int
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user userRecord
@@ -80,10 +81,22 @@ func (r *DataExportRepository) Snapshot(ctx context.Context, ownerID string) ([]
 			}
 			datasets = append(datasets, exportapp.Dataset{Name: query.name, Rows: json.RawMessage(payload), Count: len(rows), Fields: fields[1:]})
 		}
+		if mode == exportapp.ModeWithMedia {
+			var records []mediaAssetRecord
+			if err := tx.Select("id", "raw_object_key", "object_version_id", "byte_size", "sha256", "source_deleted_at").Where("owner_id = ? AND status = 'ready' AND purpose IN ?", ownerID, []string{"avatar_source_preparation", "diary_image", "community_publish"}).Order("id ASC").Limit(10001).Find(&records).Error; err != nil {
+				return err
+			}
+			if len(records) > 10000 {
+				return exportapp.ErrTooLarge
+			}
+			for _, record := range records {
+				media = append(media, exportapp.MediaSource{ID: record.ID, ObjectKey: record.RawObjectKey, ObjectVersion: record.ObjectVersionID, ByteSize: record.ByteSize, SHA256: record.SHA256, SourceRemoved: record.SourceDeletedAt != nil})
+			}
+		}
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
-		return nil, exportapp.ErrUnavailable
+		return nil, nil, exportapp.ErrUnavailable
 	}
-	return datasets, nil
+	return datasets, media, nil
 }

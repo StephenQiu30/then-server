@@ -12,7 +12,7 @@ func registerDataExportOperations(api huma.API, handler *DataExportHandler) {
 	}
 	huma.Register(api, authenticatedOperation(huma.Operation{
 		OperationID: "createDataExport", Method: http.MethodPost, Path: "/exports", Tags: []string{"Data export"},
-		Summary: "请求本人结构化数据导出", DefaultStatus: http.StatusAccepted, MaxBodyBytes: 4096,
+		Summary: "请求本人结构化或原图数据导出", DefaultStatus: http.StatusAccepted, MaxBodyBytes: 4096,
 		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 	}), handler.create)
 	huma.Register(api, authenticatedOperation(huma.Operation{
