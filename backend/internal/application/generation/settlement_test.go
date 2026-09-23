@@ -234,6 +234,8 @@ func TestSettlementRejectsActiveLeaseOnTerminalTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	task.ResultAssetID = asset.ID
+	task.LeaseOwner = ""
+	task.LeaseUntil = nil
 	if err := task.Transition(StatusSucceeded, "", generationTestNow.Add(4*time.Minute)); err != nil {
 		t.Fatal(err)
 	}

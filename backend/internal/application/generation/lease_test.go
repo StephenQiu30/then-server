@@ -102,6 +102,29 @@ func TestTerminalTaskCannotAcquireLease(t *testing.T) {
 	}
 }
 
+func TestTransitionCannotLeaveAnActiveLeaseOnTerminalTask(t *testing.T) {
+	task := mustTask(validCreateInput())
+	lease, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), 10*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := task.StatusRevision
+	if err := task.Transition(StatusFailed, "provider_error", generationTestNow.Add(2*time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("active lease allowed direct terminal transition: %v", err)
+	}
+	if task.Status != StatusRunning || task.StatusRevision != revision || task.LeaseOwner != lease.Owner || task.LeaseUntil == nil {
+		t.Fatalf("rejected terminal transition mutated task: %+v", task)
+	}
+}
+
+func TestLeaseRejectsUnknownPersistedStatus(t *testing.T) {
+	task := mustTask(validCreateInput())
+	task.Status = Status("provider_unknown")
+	if _, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), time.Minute); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("unknown status acquired a lease: %v", err)
+	}
+}
+
 func TestLeaseRejectsMalformedPersistedState(t *testing.T) {
 	cases := []func(*Task){
 		func(task *Task) { task.LeaseOwner = "worker-a" },
