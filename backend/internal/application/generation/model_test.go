@@ -475,3 +475,30 @@ func TestTaskRejectsInvalidSnapshotsAndConsent(t *testing.T) {
 		})
 	}
 }
+
+func TestTransitionRequiresFailureCodeOnlyForFailedState(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if err := task.Transition(StatusRunning, "provider_error", generationTestNow.Add(time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("non-failed transition accepted a failure code: %v", err)
+	}
+	if task.Status != StatusQueued || task.StatusRevision != 1 {
+		t.Fatalf("invalid transition mutated task: %+v", task)
+	}
+	if err := task.Transition(StatusFailed, "", generationTestNow.Add(time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("failed transition accepted an empty failure code: %v", err)
+	}
+	if task.Status != StatusQueued || task.StatusRevision != 1 {
+		t.Fatalf("invalid failed transition mutated task: %+v", task)
+	}
+
+	acquireTestLease(t, &task, generationTestNow.Add(time.Minute), 10*time.Minute)
+	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(90*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.ApplyProviderState("provider-job-1", StatusFailed, "", generationTestNow.Add(2*time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("provider failure without a code was accepted: %v", err)
+	}
+	if task.Status != StatusRunning || task.FailureCode != "" {
+		t.Fatalf("invalid provider failure mutated task: %+v", task)
+	}
+}
