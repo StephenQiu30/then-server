@@ -73,6 +73,15 @@ func TestIdentityIsStableAcrossParameterObjectOrder(t *testing.T) {
 	if firstID == thirdID || secondDedupe != thirdDedupe {
 		t.Fatal("idempotency and content identities are not independent")
 	}
+	otherOwner := second
+	otherOwner.OwnerID = "owner-2"
+	otherID, otherDedupe, err := Identity(otherOwner)
+	if err != nil {
+		t.Fatalf("Identity(other owner) error = %v", err)
+	}
+	if otherID == secondID || otherDedupe == secondDedupe {
+		t.Fatal("owner scope was omitted from generation identity")
+	}
 }
 
 func TestModelRequiresConfirmedImageSnapshot(t *testing.T) {
