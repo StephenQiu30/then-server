@@ -15,7 +15,7 @@
 - [私人日记与月历客户端](19-07-私人日记与月历客户端执行计划.md)（approved/pending）
 - [社区发现发布与治理客户端](19-08-社区发现发布与治理客户端执行计划.md)（approved_with_gates/pending）
 - [账号反馈与穿着统计 API](17-34-账号反馈与穿着统计API执行计划.md)（approved/local development complete；BL-HISTORY-02 后端片）
-- [数据主体导出与删除回执合同](18-01-数据主体导出与删除回执合同执行计划.md)（draft/pending；BL-DATA-01 后端盘点已完成，范围与安全合同待批准）
+- [数据主体导出与删除回执合同](18-01-数据主体导出与删除回执合同执行计划.md)（本地合成数据技术合同 approved/completed；BL-DATA-01，生产门禁仍 pending）
 
 - [后端需求与数据设计审核计划](19-01-后端需求与数据设计审核计划.md)（approved/completed）
 - [账号状态与公开资料执行计划](19-02-账号状态与公开资料执行计划.md)（approved/completed）
