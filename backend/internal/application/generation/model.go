@@ -21,6 +21,7 @@ var (
 	ErrInvalidGenerationInput   = errors.New("invalid generation input")
 	ErrInvalidGenerationState   = errors.New("invalid generation state")
 	ErrGenerationNotCancellable = errors.New("generation job is not cancellable")
+	ErrGenerationNotSubmittable = errors.New("generation job is not submittable")
 	ErrExternalTaskConflict     = errors.New("external generation task conflict")
 )
 
@@ -148,17 +149,19 @@ type CreateInput struct {
 // Task is the immutable-input, mutable-state generation fact. It is suitable
 // for a future repository record but deliberately has no GORM or HTTP tags.
 type Task struct {
-	ID                 string
-	OwnerID            string
-	LookID             string
-	LookRevision       int
-	Purpose            Purpose
-	Provider           string
-	Model              string
-	Parameters         []byte
-	Inputs             InputSnapshot
-	Consent            ConsentReceipt
-	Cost               CostEstimate
+	ID           string
+	OwnerID      string
+	LookID       string
+	LookRevision int
+	Purpose      Purpose
+	Provider     string
+	Model        string
+	Parameters   []byte
+	Inputs       InputSnapshot
+	Consent      ConsentReceipt
+	Cost         CostEstimate
+	// IdempotencyKeyHash is scoped to owner and purpose so it is safe to pass
+	// as a provider idempotency token without cross-account collisions.
 	IdempotencyKeyHash string
 	DedupeKey          string
 	Status             Status
@@ -168,6 +171,24 @@ type Task struct {
 	FailureCode        string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+// PrepareSubmission creates the provider-neutral payload for a first submit.
+// Only an uncanceled queued task may produce one; a task with an external ID
+// must be reconciled instead of being submitted again.
+func (t Task) PrepareSubmission() (Submission, error) {
+	if t.Status != StatusQueued || t.CancelRequestedAt != nil || t.ExternalTaskID != "" {
+		return Submission{}, ErrGenerationNotSubmittable
+	}
+	return Submission{
+		TaskID:      t.ID,
+		Purpose:     t.Purpose,
+		Provider:    t.Provider,
+		Model:       t.Model,
+		Parameters:  append([]byte(nil), t.Parameters...),
+		Inputs:      cloneSnapshot(t.Inputs),
+		Idempotency: t.IdempotencyKeyHash,
+	}, nil
 }
 
 // NewTask validates and freezes a generation request in queued state. The
@@ -324,8 +345,8 @@ func dedupeEligible(status Status) bool {
 	}
 }
 
-// Identity returns the stable hashes used for idempotency and content
-// deduplication. The raw idempotency key is never retained.
+// Identity returns owner/purpose-scoped idempotency and content deduplication
+// hashes. The raw idempotency key is never retained.
 func Identity(input CreateInput) (idempotencyKeyHash, dedupeKey string, err error) {
 	_, idempotencyKeyHash, dedupeKey, err = identity(input)
 	return idempotencyKeyHash, dedupeKey, err
@@ -348,7 +369,7 @@ func identity(input CreateInput) ([]byte, string, string, error) {
 	if !validSnapshot(input.Purpose, input.LookID, input.LookRevision, input.Inputs) || !validConsent(input.Purpose, input.Consent) {
 		return nil, "", "", ErrInvalidGenerationInput
 	}
-	keyHash := hashText(strings.TrimSpace(input.IdempotencyKey))
+	keyHash := hashIdempotency(input.OwnerID, input.Purpose, input.IdempotencyKey)
 	dedupePayload := struct {
 		OwnerID      string
 		LookID       string
@@ -364,6 +385,10 @@ func identity(input CreateInput) ([]byte, string, string, error) {
 		return nil, "", "", ErrInvalidGenerationInput
 	}
 	return parameters, keyHash, hashBytes(encoded), nil
+}
+
+func hashIdempotency(ownerID string, purpose Purpose, key string) string {
+	return hashBytes([]byte(ownerID + "\x00" + string(purpose) + "\x00" + strings.TrimSpace(key)))
 }
 
 func validSnapshot(purpose Purpose, lookID string, lookRevision int, snapshot InputSnapshot) bool {
