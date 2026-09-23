@@ -35,3 +35,4 @@
 - [Three.js 人物、换装与灵动交互研究](threejs-avatar-research.md)（Tripo 云服务、TripoSR 与 img2threejs 对比；静态 GLB 展示证据与待测边界）
 - [WebGPU + Three.js 虚拟形象展示独立评估](webgpu-avatar-assessment.md)（维持 WebGL2；WebGPU 后续实验，不是首版前置）
 - [Web 衣橱数据核验设计](25-Web衣橱数据核验设计.md)（then-server 账号无图衣橱页面）
+- [Web 穿搭计划数据核验设计](26-Web穿搭计划数据核验设计.md)（then-server 账号计划页面）
