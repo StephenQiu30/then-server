@@ -177,6 +177,13 @@ func TestQuotaReservationRejectsMalformedPersistedFacts(t *testing.T) {
 			},
 		},
 		{
+			name: "finalized state has future revision",
+			mutate: func(reservation *QuotaReservation) {
+				reservation.State = ReservationReleased
+				reservation.StateRevision = 3
+			},
+		},
+		{
 			name: "empty hold",
 			mutate: func(reservation *QuotaReservation) {
 				reservation.ReservedQuotaUnits = 0
