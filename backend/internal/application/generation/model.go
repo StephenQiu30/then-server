@@ -227,12 +227,16 @@ func (t Task) submission() Submission {
 }
 
 // BeginSubmission atomically marks the first provider submission as in flight
-// and returns its immutable payload. The caller must persist this mutation
-// before making a network request. If the request outcome is lost, the task
-// can then be marked unknown and cannot be submitted again until reconciliation.
+// and returns its immutable payload. The caller must hold an active lease and
+// persist this mutation with its fencing token before making a network
+// request. If the request outcome is lost, the task can then be marked unknown
+// and cannot be submitted again until reconciliation.
 func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
 	if t == nil || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" {
 		return Submission{}, ErrGenerationNotSubmittable
+	}
+	if err := t.validateActiveLeaseAt(at); err != nil {
+		return Submission{}, err
 	}
 	if at.IsZero() || (!t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt)) {
 		return Submission{}, ErrInvalidGenerationState
@@ -258,11 +262,15 @@ func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
 }
 
 // MarkSubmissionUnknown records a transport outcome that cannot prove
-// whether the provider accepted the request. It deliberately leaves the task
-// queued while blocking blind resubmission until an explicit reconciliation.
+// whether the provider accepted the request. The worker must still hold an
+// active lease. It deliberately leaves the task queued while blocking blind
+// resubmission until an explicit reconciliation.
 func (t *Task) MarkSubmissionUnknown(at time.Time) error {
 	if t == nil || t.SubmissionState != SubmissionInFlight || at.IsZero() {
 		return ErrInvalidGenerationState
+	}
+	if err := t.validateActiveLeaseAt(at); err != nil {
+		return err
 	}
 	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
 		return ErrInvalidGenerationState
@@ -277,10 +285,14 @@ func (t *Task) MarkSubmissionUnknown(at time.Time) error {
 
 // ReconcileSubmissionNotAccepted clears an unknown submission only after a
 // provider lookup or an operator decision proves that no external task was
-// accepted. A new attempt then uses the same idempotency identity.
+// accepted. The worker must hold an active lease; a new attempt then uses the
+// same idempotency identity.
 func (t *Task) ReconcileSubmissionNotAccepted(at time.Time) error {
 	if t == nil || t.SubmissionState != SubmissionUnknown || at.IsZero() {
 		return ErrInvalidGenerationState
+	}
+	if err := t.validateActiveLeaseAt(at); err != nil {
+		return err
 	}
 	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
 		return ErrInvalidGenerationState
@@ -360,9 +372,10 @@ func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 }
 
 // RecordExternalTaskID attaches the provider's task identity without changing
-// the user-visible state. A late acceptance is still recorded after a local
-// cancellation or expiry so cleanup can find the provider task; a different
-// provider identity is never allowed to overwrite the first one.
+// the user-visible state. Non-terminal tasks require an active worker lease.
+// A late acceptance is still recorded after a local cancellation or expiry so
+// cleanup can find the provider task; a different provider identity is never
+// allowed to overwrite the first one.
 func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
 	if t == nil || !validToken(externalID, 256) || at.IsZero() {
 		return ErrInvalidGenerationState
@@ -372,6 +385,11 @@ func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
 			return ErrExternalTaskConflict
 		}
 		return nil
+	}
+	if !t.Status.terminal() {
+		if err := t.validateActiveLeaseAt(at); err != nil {
+			return err
+		}
 	}
 	switch t.SubmissionState {
 	case SubmissionNotStarted, SubmissionInFlight, SubmissionUnknown:
@@ -398,14 +416,20 @@ func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
 }
 
 // ApplyProviderState reconciles an observation that has already been mapped
-// by an adapter to the domain state machine. A provider-success observation
-// stops at validating; PublishOutput is the only path that can mark a task
-// succeeded after object validation and lineage checks. Repeated observations
-// are idempotent; stale or cross-task observations cannot move a task backwards
-// or attach a result to another task.
+// by an adapter to the domain state machine. Non-terminal tasks require an
+// active worker lease. A provider-success observation stops at validating;
+// PublishOutput is the only path that can mark a task succeeded after object
+// validation and lineage checks. Repeated observations are idempotent; stale
+// or cross-task observations cannot move a task backwards or attach a result
+// to another task.
 func (t *Task) ApplyProviderState(externalID string, next Status, failureCode string, at time.Time) error {
 	if t == nil || !validToken(externalID, 256) || t.ExternalTaskID == "" || t.ExternalTaskID != externalID {
 		return ErrExternalTaskConflict
+	}
+	if !t.Status.terminal() {
+		if err := t.validateActiveLeaseAt(at); err != nil {
+			return err
+		}
 	}
 	if next == StatusSucceeded {
 		if t.Status.terminal() {

@@ -32,6 +32,15 @@ func validCreateInput() CreateInput {
 	}
 }
 
+func acquireTestLease(t *testing.T, task *Task, at time.Time, ttl time.Duration) Lease {
+	t.Helper()
+	lease, err := task.AcquireLease("worker-a", at, ttl)
+	if err != nil {
+		t.Fatalf("AcquireLease() error = %v", err)
+	}
+	return lease
+}
+
 func TestNewTaskCanonicalizesParametersAndCopiesInputs(t *testing.T) {
 	input := validCreateInput()
 	task, err := NewTask(input, generationTestNow)
@@ -55,6 +64,7 @@ func TestSubmissionGuardRequiresExplicitReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_ = acquireTestLease(t, &task, generationTestNow.Add(time.Minute), 10*time.Minute)
 	first, err := task.BeginSubmission(generationTestNow.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("BeginSubmission() error = %v", err)
@@ -86,14 +96,37 @@ func TestSubmissionGuardRequiresExplicitReconciliation(t *testing.T) {
 	}
 }
 
+func TestWorkerStateWritesRequireAnActiveLease(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if _, err := task.BeginSubmission(generationTestNow.Add(time.Minute)); !errors.Is(err, ErrGenerationLeaseConflict) {
+		t.Fatalf("submission without lease error = %v", err)
+	}
+	_ = acquireTestLease(t, &task, generationTestNow.Add(time.Minute), time.Minute)
+	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrGenerationLeaseExpired) {
+		t.Fatalf("expired provider acceptance error = %v", err)
+	}
+
+	// A fresh task proves the provider callback path independently of the
+	// acceptance guard above.
+	task = mustTask(validCreateInput())
+	_ = acquireTestLease(t, &task, generationTestNow.Add(time.Minute), time.Minute)
+	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(90*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.ApplyProviderState("provider-job-1", StatusValidating, "", generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrGenerationLeaseExpired) {
+		t.Fatalf("expired provider callback error = %v", err)
+	}
+	if task.Status != StatusRunning {
+		t.Fatalf("expired provider callback changed task: %+v", task)
+	}
+}
+
 func TestLateAcceptanceResolvesUnknownSubmissionWithoutResubmission(t *testing.T) {
 	task, err := NewTask(validCreateInput(), generationTestNow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := task.Transition(StatusRunning, "", generationTestNow.Add(30*time.Second)); err != nil {
-		t.Fatalf("worker state transition error = %v", err)
-	}
+	_ = acquireTestLease(t, &task, generationTestNow.Add(30*time.Second), 10*time.Minute)
 	if _, err := task.BeginSubmission(generationTestNow.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -283,6 +316,7 @@ func TestProviderAcceptanceAndCallbacksAreMonotonic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	acquireTestLease(t, &task, generationTestNow.Add(time.Minute), 10*time.Minute)
 	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(time.Minute)); err != nil {
 		t.Fatalf("RecordExternalTaskID() error = %v", err)
 	}
@@ -364,6 +398,7 @@ func TestProviderCallbacksRequireTheRecordedExternalTask(t *testing.T) {
 	if err := task.ApplyProviderState("unrecorded", StatusRunning, "", generationTestNow.Add(time.Minute)); !errors.Is(err, ErrExternalTaskConflict) {
 		t.Fatalf("unrecorded callback error = %v", err)
 	}
+	acquireTestLease(t, &task, generationTestNow.Add(time.Minute), 10*time.Minute)
 	if err := task.RecordExternalTaskID("provider-job-1", generationTestNow.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}

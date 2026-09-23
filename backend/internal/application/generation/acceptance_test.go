@@ -137,6 +137,10 @@ func TestNewOutboxEventRejectsSubmittedOrCanceledTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), 10*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := task.BeginSubmission(generationTestNow.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}

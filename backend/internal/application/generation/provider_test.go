@@ -86,6 +86,10 @@ func TestSyntheticProviderLifecycleUsesOneSubmissionAndSupportsRecovery(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), 10*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	submission, err := task.BeginSubmission(generationTestNow.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("PrepareSubmission() error = %v", err)
@@ -111,6 +115,10 @@ func TestSyntheticProviderLifecycleUsesOneSubmissionAndSupportsRecovery(t *testi
 	otherInput.ID = "job-2"
 	otherInput.OwnerID = "owner-2"
 	otherTask, err := NewTask(otherInput, generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = otherTask.AcquireLease("worker-b", generationTestNow.Add(time.Minute), 10*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
