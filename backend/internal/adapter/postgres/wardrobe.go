@@ -40,15 +40,33 @@ type wardrobeItemRecord struct {
 
 func (wardrobeItemRecord) TableName() string { return "wardrobe_items" }
 
+type wardrobeItemDeletionRecord struct {
+	OwnerID   string    `gorm:"column:owner_id;type:uuid;primaryKey"`
+	ID        string    `gorm:"column:id;type:uuid;primaryKey"`
+	DeletedAt time.Time `gorm:"column:deleted_at;type:timestamptz;not null"`
+}
+
+func (wardrobeItemDeletionRecord) TableName() string { return "wardrobe_item_deletions" }
+
 func (r *WardrobeRepository) CreateWardrobeItem(ctx context.Context, item wardrobeapp.WardrobeItem) (wardrobeapp.WardrobeItem, error) {
 	record := wardrobeRecord(item)
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, item.OwnerID, item.CreatedAt); err != nil {
+			return err
+		}
+		var tombstones int64
+		if err := tx.Model(&wardrobeItemDeletionRecord{}).Where("owner_id = ? AND id = ?", item.OwnerID, item.ID).Count(&tombstones).Error; err != nil {
+			return err
+		}
+		if tombstones != 0 {
+			return wardrobeapp.ErrWardrobeConflict
+		}
 		created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&record)
 		if created.Error != nil {
 			return created.Error
 		}
 		if created.RowsAffected == 1 {
-			return nil
+			return appendSyncChanges(tx, item.OwnerID, item.CreatedAt, syncUpsert("wardrobe_item", item.ID, item.Revision))
 		}
 		var existing wardrobeItemRecord
 		if err := tx.Where("owner_id = ? AND id = ?", item.OwnerID, item.ID).First(&existing).Error; err != nil {
@@ -102,6 +120,9 @@ func (r *WardrobeRepository) GetWardrobeItem(ctx context.Context, ownerID, itemI
 func (r *WardrobeRepository) UpdateWardrobeItem(ctx context.Context, ownerID, itemID string, expectedRevision int, input wardrobeapp.UpdateWardrobeItemInput, at time.Time) (wardrobeapp.WardrobeItem, error) {
 	var record wardrobeItemRecord
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, itemID).First(&record).Error; err != nil {
 			return err
 		}
@@ -118,11 +139,14 @@ func (r *WardrobeRepository) UpdateWardrobeItem(ctx context.Context, ownerID, it
 			at = record.UpdatedAt
 		}
 		record.UpdatedAt = at
-		return tx.Model(&wardrobeItemRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, itemID, expectedRevision).Updates(map[string]any{
+		if err := tx.Model(&wardrobeItemRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, itemID, expectedRevision).Updates(map[string]any{
 			"name": record.Name, "category": record.Category, "availability": record.Availability,
 			"formality_band": record.FormalityBand, "warmth_band": record.WarmthBand, "rain_use": record.RainUse, "walking_use": record.WalkingUse,
 			"revision": record.Revision, "updated_at": record.UpdatedAt,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return appendSyncChanges(tx, ownerID, at, syncUpsert("wardrobe_item", itemID, record.Revision))
 	})
 	if err != nil {
 		return wardrobeapp.WardrobeItem{}, wardrobeWriteError(err)
@@ -148,6 +172,9 @@ func (r *WardrobeRepository) GetWardrobeDeletionImpact(ctx context.Context, owne
 
 func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, itemID string, expectedRevision int, policy wardrobeapp.WardrobeHistoryPolicy, expectedImpact string, at time.Time) error {
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		initialPlans, err := wardrobeAffectedPlans(tx, ownerID, itemID)
 		if err != nil {
 			return err
@@ -199,6 +226,9 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 				if err := tx.Model(&outfitPlanRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, plan.ID, plan.Revision).Updates(map[string]any{"revision": plan.Revision + 1, "updated_at": updatedAt}).Error; err != nil {
 					return err
 				}
+				if err := appendSyncChanges(tx, ownerID, at, syncUpsert("outfit_plan", plan.ID, plan.Revision+1)); err != nil {
+					return err
+				}
 			}
 			for _, event := range events {
 				if err := tx.Model(&wearEventItemRecord{}).Where("owner_id = ? AND event_id = ? AND wardrobe_item_id = ?", ownerID, event.ID, itemID).Updates(map[string]any{"wardrobe_item_id": nil, "item_revision": nil, "name": nil, "category": nil, "availability": nil, "formality_band": nil, "warmth_band": nil, "rain_use": nil, "walking_use": nil, "redacted": true}).Error; err != nil {
@@ -211,6 +241,9 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 				if err := tx.Model(&wearEventRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, event.ID, event.Revision).Updates(map[string]any{"revision": event.Revision + 1, "updated_at": updatedAt}).Error; err != nil {
 					return err
 				}
+				if err := appendSyncChanges(tx, ownerID, at, syncUpsert("wear_event", event.ID, event.Revision+1)); err != nil {
+					return err
+				}
 			}
 		case wardrobeapp.WardrobeHistoryDeleteAffectedHistory:
 			deletedPlans := map[string]bool{}
@@ -218,10 +251,16 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 				deletedPlans[plan.ID] = true
 			}
 			for _, event := range events {
+				if err := deleteLinkedWearRecords(tx, ownerID, event.ID, at); err != nil {
+					return err
+				}
 				if err := createWearEventTombstone(tx, ownerID, event.ID, at); err != nil {
 					return err
 				}
 				if err := tx.Where("owner_id = ? AND id = ?", ownerID, event.ID).Delete(&wearEventRecord{}).Error; err != nil {
+					return err
+				}
+				if err := appendSyncChanges(tx, ownerID, at, syncDelete("wear_event", event.ID, nil)); err != nil {
 					return err
 				}
 				if event.SourcePlanID != nil && !deletedPlans[*event.SourcePlanID] {
@@ -231,17 +270,29 @@ func (r *WardrobeRepository) DeleteWardrobeItem(ctx context.Context, ownerID, it
 				}
 			}
 			for _, plan := range plans {
+				if err := unlinkDiaryReference(tx, ownerID, "plan_id", plan.ID, at); err != nil {
+					return err
+				}
 				if err := createOutfitPlanTombstone(tx, ownerID, plan.ID, at); err != nil {
 					return err
 				}
 				if err := tx.Where("owner_id = ? AND id = ?", ownerID, plan.ID).Delete(&outfitPlanRecord{}).Error; err != nil {
 					return err
 				}
+				if err := appendSyncChanges(tx, ownerID, at, syncDelete("outfit_plan", plan.ID, nil)); err != nil {
+					return err
+				}
 			}
 		default:
 			return wardrobeapp.ErrInvalidWardrobeInput
 		}
-		return tx.Where("owner_id = ? AND id = ? AND revision = ?", ownerID, itemID, expectedRevision).Delete(&wardrobeItemRecord{}).Error
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&wardrobeItemDeletionRecord{OwnerID: ownerID, ID: itemID, DeletedAt: at}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("owner_id = ? AND id = ? AND revision = ?", ownerID, itemID, expectedRevision).Delete(&wardrobeItemRecord{}).Error; err != nil {
+			return err
+		}
+		return appendSyncChanges(tx, ownerID, at, syncDelete("wardrobe_item", itemID, nil))
 	})
 	return wardrobeWriteError(err)
 }

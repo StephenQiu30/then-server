@@ -90,6 +90,11 @@ func TestOutfitFeedbackPersistenceAndStatistics(t *testing.T) {
 	if repeated.Revision != 1 {
 		t.Fatal("feedback retry changed revision")
 	}
+	var feedbackChanges int64
+	serviceOK(t, "count idempotent feedback changes", db.Raw("SELECT count(*) FROM sync_changes WHERE owner_id = ? AND kind = 'wear_feedback' AND entity_id = ?", a.User.ID, eventID).Scan(&feedbackChanges).Error)
+	if feedbackChanges != 1 {
+		t.Fatalf("feedback retry appended %d sync changes", feedbackChanges)
+	}
 	changed := "hot"
 	if _, err := feedback.Save(ctx, a.Token, eventID, id, mutation, nil, feedbackapp.Input{ThermalComfort: &changed}); !errors.Is(err, feedbackapp.ErrConflict) {
 		t.Fatal("same mutation ID accepted changed content")
@@ -137,6 +142,7 @@ func TestOutfitFeedbackPersistenceAndStatistics(t *testing.T) {
 		t.Fatal("new day did not receive corrected event")
 	}
 	serviceOK(t, "delete wear event", wear.DeleteWearEvent(ctx, a.Token, eventID, 2))
+	assertSyncLatest(t, db, a.User.ID, "wear_feedback", eventID, "delete", nil)
 	if _, err := feedback.Get(ctx, a.Token, eventID); !errors.Is(err, feedbackapp.ErrNotFound) {
 		t.Fatal("deleted event retained feedback")
 	}

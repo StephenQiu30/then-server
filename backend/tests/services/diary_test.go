@@ -165,6 +165,10 @@ func TestDiaryPersistenceCalendarAndOwnershipLifecycle(t *testing.T) {
 	if persisted.WearEventID != nil || persisted.PlanID == nil {
 		t.Fatal("wear deletion removed or retained wrong diary associations")
 	}
+	if persisted.Revision != updated.Revision+1 {
+		t.Fatal("wear deletion did not revise linked diary")
+	}
+	assertSyncLatest(t, database, owner.User.ID, "diary_entry", secondID, "upsert", &persisted.Revision)
 	currentPlan, err := outfits.GetOutfitPlan(ctx, owner.Token, planID)
 	serviceOK(t, "read plan after wear deletion", err)
 	serviceOK(t, "delete linked plan", outfits.DeleteOutfitPlan(ctx, owner.Token, planID, currentPlan.Revision))
@@ -173,6 +177,10 @@ func TestDiaryPersistenceCalendarAndOwnershipLifecycle(t *testing.T) {
 	if persisted.PlanID != nil || persisted.WearEventID != nil {
 		t.Fatal("linked facts were not detached from diary")
 	}
+	if persisted.Revision != updated.Revision+2 {
+		t.Fatal("plan deletion did not revise linked diary")
+	}
+	assertSyncLatest(t, database, owner.User.ID, "diary_entry", secondID, "upsert", &persisted.Revision)
 	impact, err := diaries.DeletionImpact(ctx, owner.Token, secondID)
 	serviceOK(t, "read diary deletion impact", err)
 	if impact.MediaCount != 1 || !impact.MediaRetained || impact.PublishedPostCount != 0 {

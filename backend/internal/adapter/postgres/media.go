@@ -274,6 +274,9 @@ func (r *MediaRepository) DeleteMedia(ctx context.Context, ownerID, mediaID stri
 
 func deleteMediaInTx(tx *gorm.DB, ownerID, mediaID string, at time.Time) (deletionRequestRecord, error) {
 	var request deletionRequestRecord
+	if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+		return request, err
+	}
 	var media mediaAssetRecord
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND owner_id = ?", mediaID, ownerID).First(&media).Error; err != nil {
 		return request, err
@@ -348,6 +351,9 @@ func unlinkMediaFromDiaries(tx *gorm.DB, ownerID, mediaID string, at time.Time) 
 			updatedAt = entry.UpdatedAt
 		}
 		if err := tx.Model(&diaryEntryRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, link.EntryID, entry.Revision).Updates(map[string]any{"revision": entry.Revision + 1, "updated_at": updatedAt}).Error; err != nil {
+			return err
+		}
+		if err := appendSyncChanges(tx, ownerID, at, syncUpsert("diary_entry", link.EntryID, entry.Revision+1)); err != nil {
 			return err
 		}
 	}

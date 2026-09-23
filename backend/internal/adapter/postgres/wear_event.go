@@ -74,6 +74,9 @@ func (r *WearEventRepository) CreateWearEvent(ctx context.Context, ownerID, even
 	var result weareventapp.WearEvent
 	fingerprint := wearEventCreateFingerprint(input)
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		var existingRecord wearEventRecord
 		err := tx.Where("owner_id = ? AND id = ?", ownerID, eventID).First(&existingRecord).Error
 		if err == nil {
@@ -148,6 +151,9 @@ func (r *WearEventRepository) GetWearEvent(ctx context.Context, ownerID, eventID
 func (r *WearEventRepository) UpdateWearEvent(ctx context.Context, ownerID, eventID string, expectedRevision int, input weareventapp.WearEventInput, at time.Time) (weareventapp.WearEvent, error) {
 	var result weareventapp.WearEvent
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		var record wearEventRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, eventID).First(&record).Error; err != nil {
 			return err
@@ -170,6 +176,9 @@ func (r *WearEventRepository) UpdateWearEvent(ctx context.Context, ownerID, even
 
 func (r *WearEventRepository) DeleteWearEvent(ctx context.Context, ownerID, eventID string, expectedRevision int, at time.Time) error {
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		var record wearEventRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, eventID).First(&record).Error; err != nil {
 			return err
@@ -180,10 +189,13 @@ func (r *WearEventRepository) DeleteWearEvent(ctx context.Context, ownerID, even
 		if err := createWearEventTombstone(tx, ownerID, eventID, at); err != nil {
 			return err
 		}
-		if err := tx.Model(&diaryEntryRecord{}).Where("owner_id = ? AND wear_event_id = ?", ownerID, eventID).Update("wear_event_id", nil).Error; err != nil {
+		if err := deleteLinkedWearRecords(tx, ownerID, eventID, at); err != nil {
 			return err
 		}
 		if err := tx.Where("owner_id = ? AND id = ?", ownerID, eventID).Delete(&wearEventRecord{}).Error; err != nil {
+			return err
+		}
+		if err := appendSyncChanges(tx, ownerID, at, syncDelete("wear_event", eventID, nil)); err != nil {
 			return err
 		}
 		if record.SourcePlanID != nil {
@@ -245,6 +257,9 @@ func writeWearEvent(tx *gorm.DB, ownerID, eventID string, old *weareventapp.Wear
 		}
 	}
 	if err := tx.Create(&items).Error; err != nil {
+		return weareventapp.WearEvent{}, err
+	}
+	if err := appendSyncChanges(tx, ownerID, at, syncUpsert("wear_event", eventID, revision)); err != nil {
 		return weareventapp.WearEvent{}, err
 	}
 	if err := applyLaundrySelection(tx, wardrobe, input.LaundryItemIDs, at); err != nil {
@@ -336,6 +351,9 @@ func applyLaundrySelection(tx *gorm.DB, wardrobe map[string]wardrobeItemRecord, 
 		if updated.RowsAffected != 1 {
 			return weareventapp.ErrWearEventConflict
 		}
+		if err := appendSyncChanges(tx, item.OwnerID, at, syncUpsert("wardrobe_item", item.ID, item.Revision+1)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -401,7 +419,10 @@ func recomputeOutfitPlanStatus(tx *gorm.DB, ownerID, planID string, at time.Time
 	if at.Before(plan.UpdatedAt) {
 		at = plan.UpdatedAt
 	}
-	return tx.Model(&outfitPlanRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, planID, plan.Revision).Updates(map[string]any{"status": desired, "revision": plan.Revision + 1, "updated_at": at}).Error
+	if err := tx.Model(&outfitPlanRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, planID, plan.Revision).Updates(map[string]any{"status": desired, "revision": plan.Revision + 1, "updated_at": at}).Error; err != nil {
+		return err
+	}
+	return appendSyncChanges(tx, ownerID, at, syncUpsert("outfit_plan", planID, plan.Revision+1))
 }
 
 func readWearEvent(tx *gorm.DB, ownerID, eventID string) (weareventapp.WearEvent, error) {

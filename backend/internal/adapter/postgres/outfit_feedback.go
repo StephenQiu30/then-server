@@ -79,6 +79,9 @@ func (r *OutfitFeedbackRepository) Save(ctx context.Context, ownerID, eventID, f
 	var result feedbackapp.Feedback
 	fingerprint := feedbackFingerprint(feedbackID, "save", expected, &input)
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		var event wearEventRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, eventID).First(&event).Error; err != nil {
 			return err
@@ -129,7 +132,7 @@ func (r *OutfitFeedbackRepository) Save(ctx context.Context, ownerID, eventID, f
 			return err
 		}
 		result = feedbackFromRecord(current)
-		return nil
+		return appendSyncChanges(tx, ownerID, at, syncUpsert("wear_feedback", eventID, current.Revision))
 	})
 	if err != nil {
 		return feedbackapp.Feedback{}, feedbackWriteError(err)
@@ -139,7 +142,11 @@ func (r *OutfitFeedbackRepository) Save(ctx context.Context, ownerID, eventID, f
 
 func (r *OutfitFeedbackRepository) Delete(ctx context.Context, ownerID, eventID, feedbackID, mutationID string, expected int) error {
 	fingerprint := feedbackFingerprint(feedbackID, "delete", &expected, nil)
+	at := time.Now().UTC()
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		var event wearEventRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, eventID).First(&event).Error; err != nil {
 			return err
@@ -165,7 +172,10 @@ func (r *OutfitFeedbackRepository) Delete(ctx context.Context, ownerID, eventID,
 		if err := tx.Where("owner_id = ? AND event_id = ?", ownerID, eventID).Delete(&wearFeedbackRecord{}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&wearFeedbackMutationRecord{OwnerID: ownerID, EventID: eventID, ID: mutationID, FeedbackID: feedbackID, Operation: "delete", Fingerprint: fingerprint}).Error
+		if err := tx.Create(&wearFeedbackMutationRecord{OwnerID: ownerID, EventID: eventID, ID: mutationID, FeedbackID: feedbackID, Operation: "delete", Fingerprint: fingerprint}).Error; err != nil {
+			return err
+		}
+		return appendSyncChanges(tx, ownerID, at, syncDelete("wear_feedback", eventID, nil))
 	})
 	return feedbackWriteError(err)
 }

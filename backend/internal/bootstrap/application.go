@@ -23,6 +23,7 @@ import (
 	feedbackapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitfeedback"
 	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
 	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
+	syncapp "github.com/StephenQiu30/then-server/backend/internal/application/syncchange"
 	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
 	weareventapp "github.com/StephenQiu30/then-server/backend/internal/application/wearevent"
 	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
@@ -148,6 +149,10 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 	if err != nil {
 		return err
 	}
+	syncChanges, err := syncapp.New(accounts, postgres.NewSyncRepository(pool.ORM()))
+	if err != nil {
+		return err
+	}
 	var mediaHandler *httpapi.MediaHandler
 	var communityHandler *httpapi.CommunityHandler
 	var exportHandler *httpapi.DataExportHandler
@@ -174,7 +179,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 	if objects != nil {
 		accountHandler.WithAvatarObjects(objects)
 	}
-	router, err := httpapi.NewRouterWithExport(
+	router, err := httpapi.NewRouterWithSync(
 		startup, cfg.DocsEnabled, probes,
 		accountHandler,
 		httpapi.NewPrivacyHandler(privacy, cfg.SessionSecure),
@@ -183,7 +188,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		httpapi.NewWearEventHandler(wearEvents, cfg.SessionSecure),
 		httpapi.NewDiaryHandler(diaries, cfg.SessionSecure),
 		communityHandler, httpapi.NewFeedbackHandler(feedback, cfg.SessionSecure),
-		exportHandler, cfg.HealthTimeout, log, mediaHandler,
+		exportHandler, httpapi.NewSyncHandler(syncChanges, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler,
 	)
 	if err != nil {
 		return err

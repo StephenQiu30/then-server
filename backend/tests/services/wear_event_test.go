@@ -80,6 +80,10 @@ func TestWearEventPersistenceLifecycle(t *testing.T) {
 	input := weareventapp.WearEventInput{LocalDate: today, TimeZone: "Asia/Shanghai", Completeness: weareventapp.WearEventComplete, Items: []outfitplanapp.OutfitSelection{{ItemID: shirt.ID, Revision: shirt.Revision}}, LaundryItemIDs: []string{shirt.ID}, SourcePlanID: &planID, SourcePlanRevision: &sourceRevision, SourceKind: weareventapp.WearEventFollowedPlan}
 	created, err := wear.CreateWearEvent(ctx, owner.Token, eventID, input)
 	serviceOK(t, "create planned wear event", err)
+	assertSyncLatest(t, database, owner.User.ID, "wardrobe_item", shirt.ID, "upsert", wardrobeTestValue(shirt.Revision+1))
+	completedPlan, err := outfits.GetOutfitPlan(ctx, owner.Token, planID)
+	serviceOK(t, "read completed sync plan", err)
+	assertSyncLatest(t, database, owner.User.ID, "outfit_plan", planID, "upsert", &completedPlan.Revision)
 	if created.Revision != 1 || len(created.Items) != 1 || created.Items[0].Content == nil || created.Items[0].Content.Name != "Blue Shirt" {
 		t.Fatal("wear event did not preserve its server snapshot")
 	}
@@ -137,6 +141,7 @@ func TestWearEventPersistenceLifecycle(t *testing.T) {
 	if activeAgain.Status != outfitplanapp.OutfitPlanActive || activeAgain.Revision != completed.Revision+1 {
 		t.Fatal("deleting the last linked wear event did not restore the plan")
 	}
+	assertSyncLatest(t, database, owner.User.ID, "outfit_plan", planID, "upsert", &activeAgain.Revision)
 	if _, err := wear.CreateWearEvent(ctx, owner.Token, eventID, input); !errors.Is(err, weareventapp.ErrWearEventConflict) {
 		t.Fatal("wear event tombstone allowed late recreation")
 	}
@@ -152,6 +157,7 @@ func TestWearEventPersistenceLifecycle(t *testing.T) {
 	if redacted.Revision != second.Revision+1 || redacted.Items[0].Content != nil {
 		t.Fatal("wardrobe deletion did not redact and revise wear history")
 	}
+	assertSyncLatest(t, database, owner.User.ID, "wear_event", second.ID, "upsert", &redacted.Revision)
 
 	_, err = accounts.DeleteCurrentUser(ctx, owner.Token)
 	serviceOK(t, "delete wear event owner", err)

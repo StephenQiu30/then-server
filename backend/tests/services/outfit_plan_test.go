@@ -189,6 +189,7 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 		if plan.Revision != expected.revision || len(plan.Items) != 1 || plan.Items[0].Content != nil {
 			t.Fatal("wardrobe redaction did not clear the snapshot and advance plan revision")
 		}
+		assertSyncLatest(t, database, owner.User.ID, "outfit_plan", expected.id, "upsert", &plan.Revision)
 	}
 
 	bag, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, wardrobeapp.CreateWardrobeItemInput{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400c03", Name: "Canvas Bag", Category: wardrobeapp.WardrobeBag, Availability: wardrobeapp.WardrobeWearable, Source: wardrobeapp.WardrobeSourceWardrobe})
@@ -203,6 +204,7 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 	if _, err := outfits.GetOutfitPlan(ctx, owner.Token, fourthPlanID); !errors.Is(err, outfitplanapp.ErrOutfitPlanNotFound) {
 		t.Fatal("delete-affected-plans policy left an affected plan readable")
 	}
+	assertSyncLatest(t, database, owner.User.ID, "outfit_plan", fourthPlanID, "delete", nil)
 	if _, err := outfits.CreateOutfitPlan(ctx, owner.Token, fourthPlanID, fourthInput); !errors.Is(err, outfitplanapp.ErrOutfitPlanConflict) {
 		t.Fatal("delete-affected-plans policy omitted the plan tombstone")
 	}

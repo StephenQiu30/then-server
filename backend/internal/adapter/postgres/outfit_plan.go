@@ -64,6 +64,9 @@ func (outfitPlanDeletionRecord) TableName() string { return "outfit_plan_deletio
 func (r *OutfitPlanRepository) CreateOutfitPlan(ctx context.Context, ownerID, planID string, input outfitplanapp.OutfitPlanInput, at time.Time) (outfitplanapp.OutfitPlan, error) {
 	var result outfitplanapp.OutfitPlan
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		existing, err := readOutfitPlan(tx, ownerID, planID)
 		if err == nil {
 			if !outfitPlanMatchesInput(existing, input) {
@@ -104,7 +107,7 @@ func (r *OutfitPlanRepository) CreateOutfitPlan(ctx context.Context, ownerID, pl
 			return err
 		}
 		result = outfitFromRecord(record, items)
-		return nil
+		return appendSyncChanges(tx, ownerID, at, syncUpsert("outfit_plan", planID, record.Revision))
 	})
 	if err != nil {
 		return outfitplanapp.OutfitPlan{}, outfitPlanWriteError(err)
@@ -162,6 +165,9 @@ func (r *OutfitPlanRepository) GetOutfitPlan(ctx context.Context, ownerID, planI
 func (r *OutfitPlanRepository) UpdateOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, input outfitplanapp.OutfitPlanInput, at time.Time) (outfitplanapp.OutfitPlan, error) {
 	var result outfitplanapp.OutfitPlan
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		var record outfitPlanRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, planID).First(&record).Error; err != nil {
 			return err
@@ -201,7 +207,7 @@ func (r *OutfitPlanRepository) UpdateOutfitPlan(ctx context.Context, ownerID, pl
 			return err
 		}
 		result = outfitFromRecord(record, items)
-		return nil
+		return appendSyncChanges(tx, ownerID, at, syncUpsert("outfit_plan", planID, record.Revision))
 	})
 	if err != nil {
 		return outfitplanapp.OutfitPlan{}, outfitPlanWriteError(err)
@@ -212,6 +218,9 @@ func (r *OutfitPlanRepository) UpdateOutfitPlan(ctx context.Context, ownerID, pl
 func (r *OutfitPlanRepository) CancelOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, at time.Time) (outfitplanapp.OutfitPlan, error) {
 	var result outfitplanapp.OutfitPlan
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		var record outfitPlanRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, planID).First(&record).Error; err != nil {
 			return err
@@ -231,7 +240,7 @@ func (r *OutfitPlanRepository) CancelOutfitPlan(ctx context.Context, ownerID, pl
 			return err
 		}
 		result = outfitFromRecord(record, itemsByPlan[planID])
-		return nil
+		return appendSyncChanges(tx, ownerID, at, syncUpsert("outfit_plan", planID, record.Revision))
 	})
 	if err != nil {
 		return outfitplanapp.OutfitPlan{}, outfitPlanWriteError(err)
@@ -250,6 +259,9 @@ func (r *OutfitPlanRepository) RestoreOutfitPlan(ctx context.Context, ownerID, p
 func (r *OutfitPlanRepository) transitionOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, from, to outfitplanapp.OutfitPlanStatus, at time.Time) (outfitplanapp.OutfitPlan, error) {
 	var result outfitplanapp.OutfitPlan
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		var record outfitPlanRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, planID).First(&record).Error; err != nil {
 			return err
@@ -280,7 +292,7 @@ func (r *OutfitPlanRepository) transitionOutfitPlan(ctx context.Context, ownerID
 			return err
 		}
 		result = outfitFromRecord(record, items[planID])
-		return nil
+		return appendSyncChanges(tx, ownerID, at, syncUpsert("outfit_plan", planID, record.Revision))
 	})
 	if err != nil {
 		return outfitplanapp.OutfitPlan{}, outfitPlanWriteError(err)
@@ -290,6 +302,9 @@ func (r *OutfitPlanRepository) transitionOutfitPlan(ctx context.Context, ownerID
 
 func (r *OutfitPlanRepository) DeleteOutfitPlan(ctx context.Context, ownerID, planID string, expectedRevision int, at time.Time) error {
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		var record outfitPlanRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("owner_id", "id", "revision").Where("owner_id = ? AND id = ?", ownerID, planID).First(&record).Error; err != nil {
 			return err
@@ -303,10 +318,13 @@ func (r *OutfitPlanRepository) DeleteOutfitPlan(ctx context.Context, ownerID, pl
 		if err := unlinkWearEventsFromPlan(tx, ownerID, planID, at); err != nil {
 			return err
 		}
-		if err := tx.Model(&diaryEntryRecord{}).Where("owner_id = ? AND plan_id = ?", ownerID, planID).Update("plan_id", nil).Error; err != nil {
+		if err := unlinkDiaryReference(tx, ownerID, "plan_id", planID, at); err != nil {
 			return err
 		}
-		return tx.Where("owner_id = ? AND id = ?", ownerID, planID).Delete(&outfitPlanRecord{}).Error
+		if err := tx.Where("owner_id = ? AND id = ?", ownerID, planID).Delete(&outfitPlanRecord{}).Error; err != nil {
+			return err
+		}
+		return appendSyncChanges(tx, ownerID, at, syncDelete("outfit_plan", planID, nil))
 	})
 	return outfitPlanWriteError(err)
 }
@@ -322,6 +340,9 @@ func unlinkWearEventsFromPlan(tx *gorm.DB, ownerID, planID string, at time.Time)
 			updatedAt = event.UpdatedAt
 		}
 		if err := tx.Model(&wearEventRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, event.ID, event.Revision).Updates(map[string]any{"source_plan_id": nil, "source_plan_revision": nil, "source_kind": string(weareventapp.WearEventUnplanned), "revision": event.Revision + 1, "updated_at": updatedAt}).Error; err != nil {
+			return err
+		}
+		if err := appendSyncChanges(tx, ownerID, at, syncUpsert("wear_event", event.ID, event.Revision+1)); err != nil {
 			return err
 		}
 	}

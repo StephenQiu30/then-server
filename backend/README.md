@@ -70,7 +70,7 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `PUT /wardrobe/items/{item_id}`
 - `DELETE /wardrobe/items/{item_id}`
 
-当前运行时 OpenAPI 文档版本为 0.19.0，共 106 个 operation，覆盖账号邮件、衣橱、计划、实际事件、反馈统计、私人日记与社区互动治理，并保持业务路径无版本前缀。本人资源更新必须提交 `expected_revision`；公开帖子只包含批准版本的公开字段，来源日记、媒体 ID、owner、对象 key、对象 version 和同意记录不进入公开响应，HttpOnly 会话 Cookie 不进入生成客户端参数。
+当前运行时 OpenAPI 文档版本为 0.25.0，共 118 个 operation，覆盖账号邮件、衣橱、计划、实际事件、反馈统计、私人日记、服务端增量读取与社区互动治理，并保持业务路径无版本前缀。本人资源更新必须提交 `expected_revision`；公开帖子只包含批准版本的公开字段，来源日记、媒体 ID、owner、对象 key、对象 version 和同意记录不进入公开响应，HttpOnly 会话 Cookie 不进入生成客户端参数。
 
 ## 账号穿搭计划 API
 
@@ -81,7 +81,7 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `POST /outfit-plans/{plan_id}/cancel`
 - `DELETE /outfit-plans/{plan_id}`
 
-请求只提交计划日期、IANA 时区、可选摘要及有序的衣物 ID/revision；名称、类别、可用状态和确认属性由服务端在同一 PostgreSQL 事务中生成快照。创建按客户端 UUID 幂等，更新/状态/删除使用 revision，永久删除写入 tombstone 防止迟到请求复活。计划保存不会自行创建实际穿着；App 主动同步、反馈、推荐与提醒仍未启用。
+请求只提交计划日期、IANA 时区、可选摘要及有序的衣物 ID/revision；名称、类别、可用状态和确认属性由服务端在同一 PostgreSQL 事务中生成快照。创建按客户端 UUID 幂等，更新/状态/删除使用 revision，永久删除写入 tombstone 防止迟到请求复活。计划保存不会自行创建实际穿着；App 主动同步、推荐与提醒仍未启用。
 
 ## 账号实际穿着 API
 

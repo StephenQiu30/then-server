@@ -65,6 +65,9 @@ func (r *DiaryRepository) CreateDiaryEntry(ctx context.Context, ownerID, entryID
 	var result diaryapp.DiaryEntry
 	fingerprint := diaryFingerprint(input)
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		existing, err := readDiaryEntry(tx, ownerID, entryID)
 		if err == nil {
 			var record diaryEntryRecord
@@ -106,7 +109,7 @@ func (r *DiaryRepository) CreateDiaryEntry(ctx context.Context, ownerID, entryID
 			}
 		}
 		result = diaryFromRecord(record, input.MediaIDs)
-		return nil
+		return appendSyncChanges(tx, ownerID, at, syncUpsert("diary_entry", entryID, record.Revision))
 	})
 	if err != nil {
 		return diaryapp.DiaryEntry{}, diaryWriteError(err)
@@ -160,6 +163,9 @@ func (r *DiaryRepository) GetDiaryEntry(ctx context.Context, ownerID, entryID st
 func (r *DiaryRepository) UpdateDiaryEntry(ctx context.Context, ownerID, entryID string, expectedRevision int, input diaryapp.DiaryEntryInput, at time.Time) (diaryapp.DiaryEntry, error) {
 	var result diaryapp.DiaryEntry
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		var record diaryEntryRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, entryID).First(&record).Error; err != nil {
 			return err
@@ -192,7 +198,7 @@ func (r *DiaryRepository) UpdateDiaryEntry(ctx context.Context, ownerID, entryID
 		record.Mood, record.Occasion, record.PlanID, record.WearEventID = input.Mood, input.Occasion, input.PlanID, input.WearEventID
 		record.Revision, record.UpdatedAt = record.Revision+1, at
 		result = diaryFromRecord(record, input.MediaIDs)
-		return nil
+		return appendSyncChanges(tx, ownerID, at, syncUpsert("diary_entry", entryID, record.Revision))
 	})
 	if err != nil {
 		return diaryapp.DiaryEntry{}, diaryWriteError(err)
@@ -214,6 +220,9 @@ func (r *DiaryRepository) DiaryDeletionImpact(ctx context.Context, ownerID, entr
 
 func (r *DiaryRepository) DeleteDiaryEntry(ctx context.Context, ownerID, entryID string, expectedRevision int, at time.Time) error {
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
 		var record diaryEntryRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, entryID).First(&record).Error; err != nil {
 			return err
@@ -230,7 +239,10 @@ func (r *DiaryRepository) DeleteDiaryEntry(ctx context.Context, ownerID, entryID
 		if err := tx.Where("owner_id = ? AND id = ?", ownerID, entryID).Delete(&diaryEntryRecord{}).Error; err != nil {
 			return err
 		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&diaryEntryDeletionRecord{OwnerID: ownerID, ID: entryID, DeletedAt: at}).Error
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&diaryEntryDeletionRecord{OwnerID: ownerID, ID: entryID, DeletedAt: at}).Error; err != nil {
+			return err
+		}
+		return appendSyncChanges(tx, ownerID, at, syncDelete("diary_entry", entryID, nil))
 	})
 	return diaryWriteError(err)
 }
