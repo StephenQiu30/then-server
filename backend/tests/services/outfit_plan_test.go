@@ -96,6 +96,16 @@ func TestOutfitPlanPersistenceLifecycle(t *testing.T) {
 	if _, err := outfits.CreateOutfitPlan(ctx, owner.Token, firstPlanID, changedInput); !errors.Is(err, outfitplanapp.ErrOutfitPlanConflict) {
 		t.Fatal("same outfit plan ID accepted different content")
 	}
+	archivedShoes, err := wardrobe.ArchiveWardrobeItem(ctx, owner.Token, shoes.ID, shoes.Revision)
+	serviceOK(t, "archive an item after creating a plan snapshot", err)
+	if _, err := outfits.CreateOutfitPlan(ctx, owner.Token, "018f1f74-a2d0-7c6d-9c17-4a0ea2400d05", outfitplanapp.OutfitPlanInput{LocalDate: firstDate, TimeZone: "Asia/Shanghai", Items: []outfitplanapp.OutfitSelection{{ItemID: archivedShoes.ID, Revision: archivedShoes.Revision}}, ConfirmedUnavailableIDs: []string{archivedShoes.ID}}); !errors.Is(err, outfitplanapp.ErrOutfitPlanConflict) {
+		t.Fatal("archived wardrobe item was accepted into a new outfit plan")
+	}
+	if created.Items[1].Content == nil || created.Items[1].Content.Availability != wardrobeapp.WardrobeLaundry {
+		t.Fatal("archiving a wardrobe item rewrote the existing plan snapshot")
+	}
+	_, err = wardrobe.RestoreWardrobeItem(ctx, owner.Token, shoes.ID, archivedShoes.Revision)
+	serviceOK(t, "restore archived outfit item", err)
 	if _, err := outfits.GetOutfitPlan(ctx, other.Token, firstPlanID); !errors.Is(err, outfitplanapp.ErrOutfitPlanNotFound) {
 		t.Fatal("cross-owner outfit plan lookup did not return uniform not-found")
 	}

@@ -375,6 +375,9 @@ func snapshotOutfitItems(tx *gorm.DB, ownerID, planID string, input outfitplanap
 		if item.Revision != selected.Revision {
 			return nil, outfitplanapp.ErrOutfitPlanConflict
 		}
+		if item.ArchivedAt != nil {
+			return nil, outfitplanapp.ErrOutfitPlanConflict
+		}
 		unavailable := item.Availability != string(wardrobeapp.WardrobeWearable)
 		if unavailable && !confirmed[item.ID] {
 			return nil, outfitplanapp.ErrOutfitItemsUnavailable

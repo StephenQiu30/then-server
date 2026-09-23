@@ -11,9 +11,11 @@ import (
 
 type WardrobeHTTPService interface {
 	CreateWardrobeItem(context.Context, string, wardrobeapp.CreateWardrobeItemInput) (wardrobeapp.WardrobeItem, error)
-	ListWardrobeItems(context.Context, string, int, *string) (wardrobeapp.WardrobePage, error)
+	ListWardrobeItems(context.Context, string, int, *string, wardrobeapp.WardrobeListFilter) (wardrobeapp.WardrobePage, error)
 	GetWardrobeItem(context.Context, string, string) (wardrobeapp.WardrobeItem, error)
 	UpdateWardrobeItem(context.Context, string, string, int, wardrobeapp.UpdateWardrobeItemInput) (wardrobeapp.WardrobeItem, error)
+	ArchiveWardrobeItem(context.Context, string, string, int) (wardrobeapp.WardrobeItem, error)
+	RestoreWardrobeItem(context.Context, string, string, int) (wardrobeapp.WardrobeItem, error)
 	GetWardrobeDeletionImpact(context.Context, string, string) (wardrobeapp.WardrobeDeletionImpact, error)
 	DeleteWardrobeItem(context.Context, string, string, int, wardrobeapp.WardrobeHistoryPolicy, string) error
 }
@@ -56,7 +58,11 @@ func (h *WardrobeHandler) list(ctx context.Context, input *listWardrobeItemsInpu
 	if input.AfterID != "" {
 		afterID = &input.AfterID
 	}
-	page, err := h.service.ListWardrobeItems(ctx, input.Session, input.Limit, afterID)
+	var availability *wardrobeapp.WardrobeAvailability
+	if input.Availability != "" {
+		availability = &input.Availability
+	}
+	page, err := h.service.ListWardrobeItems(ctx, input.Session, input.Limit, afterID, wardrobeapp.WardrobeListFilter{Lifecycle: input.Lifecycle, Availability: availability})
 	if err != nil {
 		return nil, h.error(ctx, err)
 	}
@@ -83,6 +89,28 @@ func (h *WardrobeHandler) update(ctx context.Context, input *updateWardrobeItemI
 		return nil, err
 	}
 	item, err := h.service.UpdateWardrobeItem(ctx, input.Session, input.ID, input.Body.ExpectedRevision, wardrobeapp.UpdateWardrobeItemInput{Name: input.Body.Name, Category: input.Body.Category, Availability: input.Body.Availability, Attributes: wardrobeAttributes(input.Body.Attributes)})
+	if err != nil {
+		return nil, h.error(ctx, err)
+	}
+	return &wardrobeItemOutput{RequestID: requestID(ctx), Body: wardrobeResponse(item)}, nil
+}
+
+func (h *WardrobeHandler) archive(ctx context.Context, input *transitionWardrobeItemInput) (*wardrobeItemOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	item, err := h.service.ArchiveWardrobeItem(ctx, input.Session, input.ID, input.Body.ExpectedRevision)
+	if err != nil {
+		return nil, h.error(ctx, err)
+	}
+	return &wardrobeItemOutput{RequestID: requestID(ctx), Body: wardrobeResponse(item)}, nil
+}
+
+func (h *WardrobeHandler) restore(ctx context.Context, input *transitionWardrobeItemInput) (*wardrobeItemOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	item, err := h.service.RestoreWardrobeItem(ctx, input.Session, input.ID, input.Body.ExpectedRevision)
 	if err != nil {
 		return nil, h.error(ctx, err)
 	}
@@ -128,7 +156,11 @@ func (h *WardrobeHandler) error(ctx context.Context, err error) error {
 }
 
 func wardrobeResponse(item wardrobeapp.WardrobeItem) WardrobeItemResponse {
-	return WardrobeItemResponse{ID: item.ID, Name: item.Name, Category: item.Category, Availability: item.Availability, Source: item.Source, Attributes: wardrobeAttributesResponse(item.Attributes), Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	lifecycle := wardrobeapp.WardrobeActive
+	if item.ArchivedAt != nil {
+		lifecycle = wardrobeapp.WardrobeArchived
+	}
+	return WardrobeItemResponse{ID: item.ID, Name: item.Name, Category: item.Category, Availability: item.Availability, Source: item.Source, Attributes: wardrobeAttributesResponse(item.Attributes), Lifecycle: lifecycle, ArchivedAt: item.ArchivedAt, Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func wardrobeAttributes(value WardrobeAttributesRequest) wardrobeapp.WardrobeAttributes {

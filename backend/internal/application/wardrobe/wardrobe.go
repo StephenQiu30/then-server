@@ -13,9 +13,11 @@ import (
 
 type WardrobeRepository interface {
 	CreateWardrobeItem(context.Context, WardrobeItem) (WardrobeItem, error)
-	ListWardrobeItems(context.Context, string, int, *string) (WardrobePage, error)
+	ListWardrobeItems(context.Context, string, int, *string, WardrobeListFilter) (WardrobePage, error)
 	GetWardrobeItem(context.Context, string, string) (WardrobeItem, error)
 	UpdateWardrobeItem(context.Context, string, string, int, UpdateWardrobeItemInput, time.Time) (WardrobeItem, error)
+	ArchiveWardrobeItem(context.Context, string, string, int, time.Time) (WardrobeItem, error)
+	RestoreWardrobeItem(context.Context, string, string, int, time.Time) (WardrobeItem, error)
 	GetWardrobeDeletionImpact(context.Context, string, string) (WardrobeDeletionImpact, error)
 	DeleteWardrobeItem(context.Context, string, string, int, WardrobeHistoryPolicy, string, time.Time) error
 }
@@ -49,15 +51,15 @@ func (s *WardrobeService) CreateWardrobeItem(ctx context.Context, token string, 
 	})
 }
 
-func (s *WardrobeService) ListWardrobeItems(ctx context.Context, token string, limit int, afterID *string) (WardrobePage, error) {
+func (s *WardrobeService) ListWardrobeItems(ctx context.Context, token string, limit int, afterID *string, filter WardrobeListFilter) (WardrobePage, error) {
 	user, err := s.authenticator.CurrentUser(ctx, token)
 	if err != nil {
 		return WardrobePage{}, err
 	}
-	if limit < 1 || limit > 100 || (afterID != nil && !validUUID(*afterID)) {
+	if limit < 1 || limit > 100 || (afterID != nil && !validUUID(*afterID)) || !validWardrobeListFilter(filter) {
 		return WardrobePage{}, ErrInvalidWardrobeInput
 	}
-	return s.repository.ListWardrobeItems(ctx, user.ID, limit, afterID)
+	return s.repository.ListWardrobeItems(ctx, user.ID, limit, afterID, filter)
 }
 
 func (s *WardrobeService) GetWardrobeItem(ctx context.Context, token, itemID string) (WardrobeItem, error) {
@@ -82,6 +84,28 @@ func (s *WardrobeService) UpdateWardrobeItem(ctx context.Context, token, itemID 
 	}
 	input.Name = name
 	return s.repository.UpdateWardrobeItem(ctx, user.ID, itemID, expectedRevision, input, s.now().UTC())
+}
+
+func (s *WardrobeService) ArchiveWardrobeItem(ctx context.Context, token, itemID string, expectedRevision int) (WardrobeItem, error) {
+	user, err := s.authenticator.CurrentUser(ctx, token)
+	if err != nil {
+		return WardrobeItem{}, err
+	}
+	if !validUUID(itemID) || expectedRevision < 1 {
+		return WardrobeItem{}, ErrInvalidWardrobeInput
+	}
+	return s.repository.ArchiveWardrobeItem(ctx, user.ID, itemID, expectedRevision, s.now().UTC())
+}
+
+func (s *WardrobeService) RestoreWardrobeItem(ctx context.Context, token, itemID string, expectedRevision int) (WardrobeItem, error) {
+	user, err := s.authenticator.CurrentUser(ctx, token)
+	if err != nil {
+		return WardrobeItem{}, err
+	}
+	if !validUUID(itemID) || expectedRevision < 1 {
+		return WardrobeItem{}, ErrInvalidWardrobeInput
+	}
+	return s.repository.RestoreWardrobeItem(ctx, user.ID, itemID, expectedRevision, s.now().UTC())
 }
 
 func (s *WardrobeService) GetWardrobeDeletionImpact(ctx context.Context, token, itemID string) (WardrobeDeletionImpact, error) {
@@ -141,6 +165,16 @@ func validWardrobeAvailability(value WardrobeAvailability) bool {
 	default:
 		return false
 	}
+}
+
+func validWardrobeListFilter(value WardrobeListFilter) bool {
+	if value.Lifecycle == "" {
+		return false
+	}
+	if value.Lifecycle != WardrobeActive && value.Lifecycle != WardrobeArchived && value.Lifecycle != WardrobeAll {
+		return false
+	}
+	return value.Availability == nil || validWardrobeAvailability(*value.Availability)
 }
 
 func validWardrobeSource(value WardrobeSource) bool {

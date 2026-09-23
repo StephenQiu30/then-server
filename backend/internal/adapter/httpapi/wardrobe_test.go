@@ -17,6 +17,7 @@ import (
 type wardrobeTransportStub struct {
 	created wardrobeapp.CreateWardrobeItemInput
 	updated wardrobeapp.UpdateWardrobeItemInput
+	filter  wardrobeapp.WardrobeListFilter
 	token   string
 	err     error
 }
@@ -25,8 +26,8 @@ func (s *wardrobeTransportStub) CreateWardrobeItem(_ context.Context, token stri
 	s.token, s.created = token, input
 	return wardrobeFixture(), s.err
 }
-func (s *wardrobeTransportStub) ListWardrobeItems(_ context.Context, token string, _ int, _ *string) (wardrobeapp.WardrobePage, error) {
-	s.token = token
+func (s *wardrobeTransportStub) ListWardrobeItems(_ context.Context, token string, _ int, _ *string, filter wardrobeapp.WardrobeListFilter) (wardrobeapp.WardrobePage, error) {
+	s.token, s.filter = token, filter
 	return wardrobeapp.WardrobePage{Items: []wardrobeapp.WardrobeItem{wardrobeFixture()}}, s.err
 }
 func (s *wardrobeTransportStub) GetWardrobeItem(_ context.Context, token, _ string) (wardrobeapp.WardrobeItem, error) {
@@ -35,6 +36,17 @@ func (s *wardrobeTransportStub) GetWardrobeItem(_ context.Context, token, _ stri
 }
 func (s *wardrobeTransportStub) UpdateWardrobeItem(_ context.Context, token, _ string, _ int, input wardrobeapp.UpdateWardrobeItemInput) (wardrobeapp.WardrobeItem, error) {
 	s.token, s.updated = token, input
+	return wardrobeFixture(), s.err
+}
+func (s *wardrobeTransportStub) ArchiveWardrobeItem(_ context.Context, token, _ string, _ int) (wardrobeapp.WardrobeItem, error) {
+	s.token = token
+	item := wardrobeFixture()
+	archivedAt := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
+	item.ArchivedAt = &archivedAt
+	return item, s.err
+}
+func (s *wardrobeTransportStub) RestoreWardrobeItem(_ context.Context, token, _ string, _ int) (wardrobeapp.WardrobeItem, error) {
+	s.token = token
 	return wardrobeFixture(), s.err
 }
 func (s *wardrobeTransportStub) GetWardrobeDeletionImpact(_ context.Context, token, _ string) (wardrobeapp.WardrobeDeletionImpact, error) {
@@ -158,6 +170,37 @@ func TestWardrobeListUpdateAndDeleteHTTPContract(t *testing.T) {
 	}
 	if service.updated.Name != "Updated Shirt" || service.updated.Availability != wardrobeapp.WardrobeLaundry || service.updated.Attributes.WarmthBand == nil || *service.updated.Attributes.WarmthBand != wardrobeapp.WardrobeWarmthWarm || service.updated.Attributes.RainUse != nil {
 		t.Fatal("wardrobe update transport lost confirmed fields")
+	}
+	if service.filter.Lifecycle != wardrobeapp.WardrobeActive {
+		t.Fatalf("wardrobe list did not default to active lifecycle: %+v", service.filter)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/wardrobe/items?lifecycle=archived&availability=laundry", nil)
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || service.filter.Lifecycle != wardrobeapp.WardrobeArchived || service.filter.Availability == nil || *service.filter.Availability != wardrobeapp.WardrobeLaundry {
+		t.Fatalf("wardrobe list filters were not forwarded: status=%d filter=%+v", response.Code, service.filter)
+	}
+}
+
+func TestWardrobeArchiveAndRestoreHTTPContract(t *testing.T) {
+	service := new(wardrobeTransportStub)
+	router := wardrobeRouter(t, service)
+	for _, test := range []struct {
+		path      string
+		lifecycle string
+	}{
+		{path: "/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12/archive", lifecycle: "archived"},
+		{path: "/wardrobe/items/018f1f74-a2d0-7c6d-9c17-4a0ea2400a12/restore", lifecycle: "active"},
+	} {
+		request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(`{"expected_revision":1}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"lifecycle":"`+test.lifecycle+`"`) {
+			t.Fatalf("lifecycle transition failed for %s: status=%d body=%s", test.path, response.Code, response.Body.String())
+		}
 	}
 }
 

@@ -191,7 +191,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.25.0" || operations != 118 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.26.0" || operations != 120 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
 	}
 	for _, operationID := range []string{"listCurrentUserSessions", "revokeCurrentUserSession"} {
@@ -204,7 +204,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			t.Fatalf("generated contract is missing account mail operation %s", operationID)
 		}
 	}
-	for _, operationID := range []string{"getCurrentProfile", "putCurrentProfile", "getPublicProfile", "putProfileAvatar", "deleteProfileAvatar", "getPublicProfileAvatar", "createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent", "createDiaryEntry", "listDiaryEntries", "getDiaryEntry", "updateDiaryEntry", "getDiaryEntryDeletionImpact", "deleteDiaryEntry", "getCalendarMonth", "createPost", "listOwnPosts", "getOwnPost", "updatePost", "submitPost", "withdrawPost", "deletePost", "getPublicPost", "getPublicPostImage", "listPostModerationCandidates", "getPostModerationCandidate", "getPostModerationImage", "decidePostModeration", "removePublishedPost", "createPostReport", "listOwnReports", "listCommunityReports", "resolveCommunityReport", "listModerationActions", "listAdminUsers", "suspendUser", "restoreUser"} {
+	for _, operationID := range []string{"getCurrentProfile", "putCurrentProfile", "getPublicProfile", "putProfileAvatar", "deleteProfileAvatar", "getPublicProfileAvatar", "createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "archiveWardrobeItem", "restoreWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent", "createDiaryEntry", "listDiaryEntries", "getDiaryEntry", "updateDiaryEntry", "getDiaryEntryDeletionImpact", "deleteDiaryEntry", "getCalendarMonth", "createPost", "listOwnPosts", "getOwnPost", "updatePost", "submitPost", "withdrawPost", "deletePost", "getPublicPost", "getPublicPostImage", "listPostModerationCandidates", "getPostModerationCandidate", "getPostModerationImage", "decidePostModeration", "removePublishedPost", "createPostReport", "listOwnReports", "listCommunityReports", "resolveCommunityReport", "listModerationActions", "listAdminUsers", "suspendUser", "restoreUser"} {
 		if !identifiers[operationID] {
 			t.Fatalf("generated contract is missing %s", operationID)
 		}

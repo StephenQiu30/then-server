@@ -59,6 +59,8 @@ type WardrobeItemResponse struct {
 	Availability wardrobeapp.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
 	Source       wardrobeapp.WardrobeSource       `json:"source" enum:"wardrobe,quick_add"`
 	Attributes   WardrobeAttributesResponse       `json:"attributes"`
+	Lifecycle    wardrobeapp.WardrobeLifecycle    `json:"lifecycle" enum:"active,archived"`
+	ArchivedAt   *time.Time                       `json:"archived_at,omitempty" format:"date-time"`
 	Revision     int                              `json:"revision" minimum:"1"`
 	CreatedAt    time.Time                        `json:"created_at" format:"date-time"`
 	UpdatedAt    time.Time                        `json:"updated_at" format:"date-time"`
@@ -81,9 +83,11 @@ type createWardrobeItemInput struct {
 }
 
 type listWardrobeItemsInput struct {
-	Session string `cookie:"then_session" hidden:"true"`
-	Limit   int    `query:"limit" default:"50" minimum:"1" maximum:"100"`
-	AfterID string `query:"after_id" format:"uuid" required:"false"`
+	Session      string                           `cookie:"then_session" hidden:"true"`
+	Limit        int                              `query:"limit" default:"50" minimum:"1" maximum:"100"`
+	AfterID      string                           `query:"after_id" format:"uuid" required:"false"`
+	Lifecycle    wardrobeapp.WardrobeLifecycle    `query:"lifecycle" enum:"active,archived,all" default:"active"`
+	Availability wardrobeapp.WardrobeAvailability `query:"availability" enum:"wearable,laundry,lent_out,packed" required:"false"`
 }
 
 type wardrobeItemInput struct {
@@ -95,6 +99,16 @@ type updateWardrobeItemInput struct {
 	Session string `cookie:"then_session" hidden:"true"`
 	ID      string `path:"item_id" format:"uuid"`
 	Body    UpdateWardrobeItemRequest
+}
+
+type transitionWardrobeItemInput struct {
+	Session string `cookie:"then_session" hidden:"true"`
+	ID      string `path:"item_id" format:"uuid"`
+	Body    WardrobeLifecycleRequest
+}
+
+type WardrobeLifecycleRequest struct {
+	ExpectedRevision int `json:"expected_revision" minimum:"1"`
 }
 
 type deleteWardrobeItemInput struct {

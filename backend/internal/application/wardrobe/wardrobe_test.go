@@ -19,23 +19,25 @@ func (s wardrobeAuthenticatorStub) CurrentUser(context.Context, string) (account
 }
 
 type wardrobeRepositoryStub struct {
-	created  WardrobeItem
-	ownerID  string
-	updated  UpdateWardrobeItemInput
-	deleted  string
-	expected int
-	policy   WardrobeHistoryPolicy
-	impact   string
-	page     WardrobePage
-	err      error
+	created   WardrobeItem
+	ownerID   string
+	updated   UpdateWardrobeItemInput
+	deleted   string
+	expected  int
+	policy    WardrobeHistoryPolicy
+	impact    string
+	page      WardrobePage
+	lifecycle string
+	err       error
 }
 
 func (s *wardrobeRepositoryStub) CreateWardrobeItem(_ context.Context, item WardrobeItem) (WardrobeItem, error) {
 	s.created, s.ownerID = item, item.OwnerID
 	return item, s.err
 }
-func (s *wardrobeRepositoryStub) ListWardrobeItems(_ context.Context, ownerID string, limit int, afterID *string) (WardrobePage, error) {
+func (s *wardrobeRepositoryStub) ListWardrobeItems(_ context.Context, ownerID string, limit int, afterID *string, filter WardrobeListFilter) (WardrobePage, error) {
 	s.ownerID = ownerID
+	s.lifecycle = string(filter.Lifecycle)
 	return s.page, s.err
 }
 func (s *wardrobeRepositoryStub) GetWardrobeItem(_ context.Context, ownerID, itemID string) (WardrobeItem, error) {
@@ -45,6 +47,15 @@ func (s *wardrobeRepositoryStub) GetWardrobeItem(_ context.Context, ownerID, ite
 func (s *wardrobeRepositoryStub) UpdateWardrobeItem(_ context.Context, ownerID, itemID string, expected int, input UpdateWardrobeItemInput, _ time.Time) (WardrobeItem, error) {
 	s.ownerID, s.updated, s.expected = ownerID, input, expected
 	return WardrobeItem{ID: itemID, OwnerID: ownerID, Name: input.Name, Revision: expected + 1}, s.err
+}
+func (s *wardrobeRepositoryStub) ArchiveWardrobeItem(_ context.Context, ownerID, itemID string, expected int, _ time.Time) (WardrobeItem, error) {
+	s.ownerID, s.expected = ownerID, expected
+	archivedAt := time.Date(2026, 9, 15, 8, 0, 0, 0, time.UTC)
+	return WardrobeItem{ID: itemID, OwnerID: ownerID, ArchivedAt: &archivedAt, Revision: expected + 1}, s.err
+}
+func (s *wardrobeRepositoryStub) RestoreWardrobeItem(_ context.Context, ownerID, itemID string, expected int, _ time.Time) (WardrobeItem, error) {
+	s.ownerID, s.expected = ownerID, expected
+	return WardrobeItem{ID: itemID, OwnerID: ownerID, Revision: expected + 1}, s.err
 }
 func (s *wardrobeRepositoryStub) GetWardrobeDeletionImpact(_ context.Context, ownerID, _ string) (WardrobeDeletionImpact, error) {
 	s.ownerID = ownerID
@@ -116,7 +127,7 @@ func TestWardrobeUpdateDeleteAndListValidateRevisionAndLimit(t *testing.T) {
 		t.Fatal("delete did not forward the expected revision")
 	}
 	for _, limit := range []int{0, 101} {
-		if _, err := service.ListWardrobeItems(context.Background(), "session", limit, nil); !errors.Is(err, ErrInvalidWardrobeInput) {
+		if _, err := service.ListWardrobeItems(context.Background(), "session", limit, nil, WardrobeListFilter{Lifecycle: WardrobeActive}); !errors.Is(err, ErrInvalidWardrobeInput) {
 			t.Fatal("invalid list limit was accepted")
 		}
 	}
@@ -125,6 +136,25 @@ func TestWardrobeUpdateDeleteAndListValidateRevisionAndLimit(t *testing.T) {
 	}
 	if err := service.DeleteWardrobeItem(context.Background(), "session", id, 1, "keep_everything", emptyWardrobeImpact); !errors.Is(err, ErrInvalidWardrobeInput) {
 		t.Fatal("invalid history policy was accepted")
+	}
+}
+
+func TestWardrobeLifecycleCommandsAndFilters(t *testing.T) {
+	repository := new(wardrobeRepositoryStub)
+	service := newWardrobeServiceForTest(t, repository)
+	id := "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12"
+	archived, err := service.ArchiveWardrobeItem(context.Background(), "session", id, 2)
+	if err != nil || archived.ArchivedAt == nil || repository.expected != 2 {
+		t.Fatalf("archive did not forward the revision: item=%+v err=%v", archived, err)
+	}
+	restored, err := service.RestoreWardrobeItem(context.Background(), "session", id, 3)
+	if err != nil || restored.ArchivedAt != nil || repository.expected != 3 {
+		t.Fatalf("restore did not forward the revision: item=%+v err=%v", restored, err)
+	}
+	for _, filter := range []WardrobeListFilter{{}, {Lifecycle: "unknown"}, {Lifecycle: WardrobeActive, Availability: wardrobeValue(WardrobeAvailability("unknown"))}} {
+		if _, err := service.ListWardrobeItems(context.Background(), "session", 10, nil, filter); !errors.Is(err, ErrInvalidWardrobeInput) {
+			t.Fatalf("invalid wardrobe list filter was accepted: %+v", filter)
+		}
 	}
 }
 

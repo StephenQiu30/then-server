@@ -23,19 +23,20 @@ func NewWardrobeRepository(database *gorm.DB) *WardrobeRepository {
 }
 
 type wardrobeItemRecord struct {
-	OwnerID       string    `gorm:"column:owner_id;type:uuid;primaryKey;index:wardrobe_items_owner_order_idx,priority:1"`
-	ID            string    `gorm:"column:id;type:uuid;primaryKey"`
-	Name          string    `gorm:"column:name;type:text;not null;check:wardrobe_items_name_check,name = btrim(name) AND char_length(name) BETWEEN 1 AND 80"`
-	Category      string    `gorm:"column:category;type:text;not null;check:wardrobe_items_category_check,category IN ('top','bottom','one_piece','outerwear','shoes','bag','accessory')"`
-	Availability  string    `gorm:"column:availability;type:text;not null;check:wardrobe_items_availability_check,availability IN ('wearable','laundry','lent_out','packed')"`
-	Source        string    `gorm:"column:source;type:text;not null;check:wardrobe_items_source_check,source IN ('wardrobe','quick_add')"`
-	FormalityBand *string   `gorm:"column:formality_band;type:text;check:wardrobe_items_formality_band_check,formality_band IN ('casual','smart_casual','formal')"`
-	WarmthBand    *string   `gorm:"column:warmth_band;type:text;check:wardrobe_items_warmth_band_check,warmth_band IN ('light','medium','warm')"`
-	RainUse       *string   `gorm:"column:rain_use;type:text;check:wardrobe_items_rain_use_check,rain_use IN ('suitable','unsuitable')"`
-	WalkingUse    *string   `gorm:"column:walking_use;type:text;check:wardrobe_items_walking_use_check,walking_use IN ('suitable','unsuitable')"`
-	Revision      int       `gorm:"column:revision;not null;check:wardrobe_items_revision_check,revision >= 1"`
-	CreatedAt     time.Time `gorm:"column:created_at;type:timestamptz;not null;index:wardrobe_items_owner_order_idx,priority:2,sort:desc"`
-	UpdatedAt     time.Time `gorm:"column:updated_at;type:timestamptz;not null;check:wardrobe_items_timestamps_check,updated_at >= created_at"`
+	OwnerID       string     `gorm:"column:owner_id;type:uuid;primaryKey;index:wardrobe_items_owner_order_idx,priority:1"`
+	ID            string     `gorm:"column:id;type:uuid;primaryKey"`
+	Name          string     `gorm:"column:name;type:text;not null;check:wardrobe_items_name_check,name = btrim(name) AND char_length(name) BETWEEN 1 AND 80"`
+	Category      string     `gorm:"column:category;type:text;not null;check:wardrobe_items_category_check,category IN ('top','bottom','one_piece','outerwear','shoes','bag','accessory')"`
+	Availability  string     `gorm:"column:availability;type:text;not null;check:wardrobe_items_availability_check,availability IN ('wearable','laundry','lent_out','packed')"`
+	Source        string     `gorm:"column:source;type:text;not null;check:wardrobe_items_source_check,source IN ('wardrobe','quick_add')"`
+	FormalityBand *string    `gorm:"column:formality_band;type:text;check:wardrobe_items_formality_band_check,formality_band IN ('casual','smart_casual','formal')"`
+	WarmthBand    *string    `gorm:"column:warmth_band;type:text;check:wardrobe_items_warmth_band_check,warmth_band IN ('light','medium','warm')"`
+	RainUse       *string    `gorm:"column:rain_use;type:text;check:wardrobe_items_rain_use_check,rain_use IN ('suitable','unsuitable')"`
+	WalkingUse    *string    `gorm:"column:walking_use;type:text;check:wardrobe_items_walking_use_check,walking_use IN ('suitable','unsuitable')"`
+	ArchivedAt    *time.Time `gorm:"column:archived_at;type:timestamptz"`
+	Revision      int        `gorm:"column:revision;not null;check:wardrobe_items_revision_check,revision >= 1"`
+	CreatedAt     time.Time  `gorm:"column:created_at;type:timestamptz;not null;index:wardrobe_items_owner_order_idx,priority:2,sort:desc"`
+	UpdatedAt     time.Time  `gorm:"column:updated_at;type:timestamptz;not null;check:wardrobe_items_timestamps_check,updated_at >= created_at"`
 }
 
 func (wardrobeItemRecord) TableName() string { return "wardrobe_items" }
@@ -72,7 +73,7 @@ func (r *WardrobeRepository) CreateWardrobeItem(ctx context.Context, item wardro
 		if err := tx.Where("owner_id = ? AND id = ?", item.OwnerID, item.ID).First(&existing).Error; err != nil {
 			return err
 		}
-		if existing.Name != item.Name || existing.Category != string(item.Category) || existing.Availability != string(item.Availability) || existing.Source != string(item.Source) || !wardrobeRecordAttributesEqual(existing, item.Attributes) {
+		if existing.Name != item.Name || existing.Category != string(item.Category) || existing.Availability != string(item.Availability) || existing.Source != string(item.Source) || (existing.ArchivedAt != nil) != (item.ArchivedAt != nil) || !wardrobeRecordAttributesEqual(existing, item.Attributes) {
 			return wardrobeapp.ErrWardrobeConflict
 		}
 		record = existing
@@ -84,11 +85,12 @@ func (r *WardrobeRepository) CreateWardrobeItem(ctx context.Context, item wardro
 	return wardrobeFromRecord(record), nil
 }
 
-func (r *WardrobeRepository) ListWardrobeItems(ctx context.Context, ownerID string, limit int, afterID *string) (wardrobeapp.WardrobePage, error) {
-	query := r.database.WithContext(ctx).Where("owner_id = ?", ownerID)
+func (r *WardrobeRepository) ListWardrobeItems(ctx context.Context, ownerID string, limit int, afterID *string, filter wardrobeapp.WardrobeListFilter) (wardrobeapp.WardrobePage, error) {
+	query := wardrobeListQuery(r.database.WithContext(ctx).Where("owner_id = ?", ownerID), filter)
 	if afterID != nil {
 		var cursor wardrobeItemRecord
-		if err := r.database.WithContext(ctx).Select("id", "created_at").Where("owner_id = ? AND id = ?", ownerID, *afterID).First(&cursor).Error; err != nil {
+		cursorQuery := wardrobeListQuery(r.database.WithContext(ctx).Select("id", "created_at").Where("owner_id = ? AND id = ?", ownerID, *afterID), filter)
+		if err := cursorQuery.First(&cursor).Error; err != nil {
 			return wardrobeapp.WardrobePage{}, wardrobeLookupError(err)
 		}
 		query = query.Where("created_at < ? OR (created_at = ? AND id > ?)", cursor.CreatedAt, cursor.CreatedAt, cursor.ID)
@@ -143,6 +145,49 @@ func (r *WardrobeRepository) UpdateWardrobeItem(ctx context.Context, ownerID, it
 			"name": record.Name, "category": record.Category, "availability": record.Availability,
 			"formality_band": record.FormalityBand, "warmth_band": record.WarmthBand, "rain_use": record.RainUse, "walking_use": record.WalkingUse,
 			"revision": record.Revision, "updated_at": record.UpdatedAt,
+		}).Error; err != nil {
+			return err
+		}
+		return appendSyncChanges(tx, ownerID, at, syncUpsert("wardrobe_item", itemID, record.Revision))
+	})
+	if err != nil {
+		return wardrobeapp.WardrobeItem{}, wardrobeWriteError(err)
+	}
+	return wardrobeFromRecord(record), nil
+}
+
+func (r *WardrobeRepository) ArchiveWardrobeItem(ctx context.Context, ownerID, itemID string, expectedRevision int, at time.Time) (wardrobeapp.WardrobeItem, error) {
+	return r.transitionWardrobeLifecycle(ctx, ownerID, itemID, expectedRevision, true, at)
+}
+
+func (r *WardrobeRepository) RestoreWardrobeItem(ctx context.Context, ownerID, itemID string, expectedRevision int, at time.Time) (wardrobeapp.WardrobeItem, error) {
+	return r.transitionWardrobeLifecycle(ctx, ownerID, itemID, expectedRevision, false, at)
+}
+
+func (r *WardrobeRepository) transitionWardrobeLifecycle(ctx context.Context, ownerID, itemID string, expectedRevision int, archived bool, at time.Time) (wardrobeapp.WardrobeItem, error) {
+	var record wardrobeItemRecord
+	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureSyncSeed(tx, ownerID, at); err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND id = ?", ownerID, itemID).First(&record).Error; err != nil {
+			return err
+		}
+		if record.Revision != expectedRevision || (record.ArchivedAt != nil) == archived {
+			return wardrobeapp.ErrWardrobeConflict
+		}
+		if at.Before(record.UpdatedAt) {
+			at = record.UpdatedAt
+		}
+		record.Revision++
+		if archived {
+			record.ArchivedAt = timePointer(at)
+		} else {
+			record.ArchivedAt = nil
+		}
+		record.UpdatedAt = at
+		if err := tx.Model(&wardrobeItemRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, itemID, expectedRevision).Updates(map[string]any{
+			"archived_at": record.ArchivedAt, "revision": record.Revision, "updated_at": record.UpdatedAt,
 		}).Error; err != nil {
 			return err
 		}
@@ -343,11 +388,38 @@ func sortedWearEventIDs(events []wearEventRecord) []string {
 }
 
 func wardrobeRecord(item wardrobeapp.WardrobeItem) wardrobeItemRecord {
-	return wardrobeItemRecord{OwnerID: item.OwnerID, ID: item.ID, Name: item.Name, Category: string(item.Category), Availability: string(item.Availability), Source: string(item.Source), FormalityBand: stringPointer(item.Attributes.FormalityBand), WarmthBand: stringPointer(item.Attributes.WarmthBand), RainUse: stringPointer(item.Attributes.RainUse), WalkingUse: stringPointer(item.Attributes.WalkingUse), Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return wardrobeItemRecord{OwnerID: item.OwnerID, ID: item.ID, Name: item.Name, Category: string(item.Category), Availability: string(item.Availability), Source: string(item.Source), FormalityBand: stringPointer(item.Attributes.FormalityBand), WarmthBand: stringPointer(item.Attributes.WarmthBand), RainUse: stringPointer(item.Attributes.RainUse), WalkingUse: stringPointer(item.Attributes.WalkingUse), ArchivedAt: item.ArchivedAt, Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func wardrobeFromRecord(record wardrobeItemRecord) wardrobeapp.WardrobeItem {
-	return wardrobeapp.WardrobeItem{OwnerID: record.OwnerID, ID: record.ID, Name: record.Name, Category: wardrobeapp.WardrobeCategory(record.Category), Availability: wardrobeapp.WardrobeAvailability(record.Availability), Source: wardrobeapp.WardrobeSource(record.Source), Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: typedPointer[wardrobeapp.WardrobeFormalityBand](record.FormalityBand), WarmthBand: typedPointer[wardrobeapp.WardrobeWarmthBand](record.WarmthBand), RainUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.RainUse), WalkingUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.WalkingUse)}, Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+	return wardrobeapp.WardrobeItem{OwnerID: record.OwnerID, ID: record.ID, Name: record.Name, Category: wardrobeapp.WardrobeCategory(record.Category), Availability: wardrobeapp.WardrobeAvailability(record.Availability), Source: wardrobeapp.WardrobeSource(record.Source), Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: typedPointer[wardrobeapp.WardrobeFormalityBand](record.FormalityBand), WarmthBand: typedPointer[wardrobeapp.WardrobeWarmthBand](record.WarmthBand), RainUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.RainUse), WalkingUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.WalkingUse)}, ArchivedAt: timePointerCopy(record.ArchivedAt), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+}
+
+func wardrobeListQuery(query *gorm.DB, filter wardrobeapp.WardrobeListFilter) *gorm.DB {
+	switch filter.Lifecycle {
+	case wardrobeapp.WardrobeArchived:
+		query = query.Where("archived_at IS NOT NULL")
+	case wardrobeapp.WardrobeAll:
+		// Keep both lifecycle states in the management view.
+	default:
+		query = query.Where("archived_at IS NULL")
+	}
+	if filter.Availability != nil {
+		query = query.Where("availability = ?", string(*filter.Availability))
+	}
+	return query
+}
+
+func timePointer(value time.Time) *time.Time {
+	return &value
+}
+
+func timePointerCopy(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 func wardrobeRecordAttributesEqual(record wardrobeItemRecord, attributes wardrobeapp.WardrobeAttributes) bool {

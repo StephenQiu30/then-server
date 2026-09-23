@@ -33,6 +33,14 @@ const (
 	WardrobePacked   WardrobeAvailability = "packed"
 )
 
+type WardrobeLifecycle string
+
+const (
+	WardrobeActive   WardrobeLifecycle = "active"
+	WardrobeArchived WardrobeLifecycle = "archived"
+	WardrobeAll      WardrobeLifecycle = "all"
+)
+
 type WardrobeSource string
 
 const (
@@ -82,9 +90,15 @@ type WardrobeItem struct {
 	Availability WardrobeAvailability
 	Source       WardrobeSource
 	Attributes   WardrobeAttributes
+	ArchivedAt   *time.Time
 	Revision     int
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+type WardrobeListFilter struct {
+	Lifecycle    WardrobeLifecycle
+	Availability *WardrobeAvailability
 }
 
 type CreateWardrobeItemInput struct {

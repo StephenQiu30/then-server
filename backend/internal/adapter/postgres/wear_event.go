@@ -321,6 +321,9 @@ func snapshotWearItems(tx *gorm.DB, ownerID, eventID string, input weareventapp.
 		if !exists || item.Revision != selected.Revision {
 			return nil, nil, weareventapp.ErrWearEventConflict
 		}
+		if item.ArchivedAt != nil {
+			return nil, nil, weareventapp.ErrWearEventConflict
+		}
 		unavailable := item.Availability != string(wardrobeapp.WardrobeWearable)
 		if unavailable != confirmed[item.ID] {
 			if unavailable {
