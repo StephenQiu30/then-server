@@ -357,7 +357,11 @@ func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
 		return ErrInvalidGenerationState
 	}
-	if next == StatusSucceeded && failureCode != "" || next != StatusSucceeded && failureCode != "" && !validToken(failureCode, 96) {
+	if next == StatusFailed {
+		if !validToken(failureCode, 96) {
+			return ErrInvalidGenerationState
+		}
+	} else if failureCode != "" {
 		return ErrInvalidGenerationState
 	}
 	at = at.UTC()
