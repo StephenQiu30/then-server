@@ -39,6 +39,8 @@ type AccountRepository interface {
 	DeleteProfileAvatar(context.Context, string, int, time.Time) (PublicProfile, error)
 	FindProfileAvatar(context.Context, string) (ProfileAvatarReference, error)
 	DeleteSession(context.Context, []byte) error
+	ListSessions(context.Context, string, []byte, time.Time, int, int) (SessionPage, error)
+	RevokeSession(context.Context, []byte, string, time.Time) (bool, error)
 	BeginAccountDeletion(context.Context, string, []byte, time.Time, time.Time) (AccountDeletionRequest, error)
 	GetDeletionReceipt(context.Context, string, []byte, time.Time) (AccountDeletionRequest, error)
 	RevokeDeletionReceipt(context.Context, string, []byte, time.Time) error
@@ -192,6 +194,37 @@ func (s *AccountService) Logout(ctx context.Context, token string) error {
 		return ErrAuthentication
 	}
 	return s.repository.DeleteSession(ctx, hash)
+}
+
+func (s *AccountService) ListSessions(ctx context.Context, token string, limit, offset int) (SessionPage, error) {
+	hash, ok := hashToken(token)
+	if !ok {
+		return SessionPage{}, ErrAuthentication
+	}
+	now := s.now().UTC()
+	user, err := s.repository.FindUserBySession(ctx, hash, now)
+	if err != nil {
+		return SessionPage{}, err
+	}
+	if limit < 1 || limit > 100 || offset < 0 || offset > 10000 {
+		return SessionPage{}, ErrInvalidAccountInput
+	}
+	return s.repository.ListSessions(ctx, user.ID, hash, now, limit, offset)
+}
+
+func (s *AccountService) RevokeSession(ctx context.Context, token, sessionID string) (bool, error) {
+	hash, ok := hashToken(token)
+	if !ok {
+		return false, ErrAuthentication
+	}
+	now := s.now().UTC()
+	if _, err := s.repository.FindUserBySession(ctx, hash, now); err != nil {
+		return false, err
+	}
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return false, ErrSessionNotFound
+	}
+	return s.repository.RevokeSession(ctx, hash, sessionID, now)
 }
 
 func (s *AccountService) DeleteCurrentUser(ctx context.Context, token string) (AccountDeletionRequest, error) {

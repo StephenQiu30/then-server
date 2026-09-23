@@ -38,6 +38,7 @@ func registerAccountOperations(api huma.API, handler *AccountHandler) {
 	registerAccountDeletionReceiptOperations(api, handler)
 	registerProfileOperations(api, handler)
 	registerAccountMailOperations(api, handler)
+	registerAccountSessionOperations(api, handler)
 }
 
 func authenticatedOperation(operation huma.Operation) huma.Operation {

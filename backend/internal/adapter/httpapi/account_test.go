@@ -20,19 +20,21 @@ import (
 )
 
 type accountServiceStub struct {
-	registered   accountapp.RegisterAccountInput
-	loggedIn     accountapp.CreateSessionInput
-	updated      accountapp.UpdateCurrentUserInput
-	user         accountapp.User
-	profile      accountapp.PublicProfile
-	profilePut   accountapp.PutProfileInput
-	deletion     accountapp.AccountDeletionRequest
-	receiptID    string
-	receiptToken string
-	token        string
-	err          error
-	registers    int
-	logins       int
+	registered    accountapp.RegisterAccountInput
+	loggedIn      accountapp.CreateSessionInput
+	updated       accountapp.UpdateCurrentUserInput
+	user          accountapp.User
+	profile       accountapp.PublicProfile
+	profilePut    accountapp.PutProfileInput
+	sessions      accountapp.SessionPage
+	revokeCurrent bool
+	deletion      accountapp.AccountDeletionRequest
+	receiptID     string
+	receiptToken  string
+	token         string
+	err           error
+	registers     int
+	logins        int
 }
 
 func (s *accountServiceStub) Register(_ context.Context, input accountapp.RegisterAccountInput) (accountapp.AuthenticatedUser, error) {
@@ -106,6 +108,57 @@ func (s *accountServiceStub) PublicProfileAvatar(context.Context, string) (accou
 func (s *accountServiceStub) Logout(_ context.Context, token string) error {
 	s.token = token
 	return s.err
+}
+
+func (s *accountServiceStub) ListSessions(_ context.Context, token string, _, _ int) (accountapp.SessionPage, error) {
+	s.token = token
+	return s.sessions, s.err
+}
+
+func (s *accountServiceStub) RevokeSession(_ context.Context, token, _ string) (bool, error) {
+	s.token = token
+	return s.revokeCurrent, s.err
+}
+
+func TestSessionManagementContract(t *testing.T) {
+	id := "018f1f74-a2d0-7c6d-9c17-4a0ea2400a18"
+	now := time.Date(2026, 9, 23, 8, 0, 0, 0, time.UTC)
+	service := &accountServiceStub{user: fixtureUser(), sessions: accountapp.SessionPage{Items: []accountapp.SessionView{{ID: id, CreatedAt: now, ExpiresAt: now.Add(time.Hour), Current: true}}}}
+	router := accountRouter(t, service, true)
+	request := func(method, path string) *http.Request {
+		req := httptest.NewRequest(method, path, nil)
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
+		return req
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request(http.MethodGet, "/users/me/sessions?limit=1"))
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" || !strings.Contains(response.Body.String(), `"current":true`) || strings.Contains(response.Body.String(), "token") || strings.Contains(response.Body.String(), "hash") {
+		t.Fatalf("session list contract: status=%d headers=%v body=%s", response.Code, response.Header(), response.Body.String())
+	}
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request(http.MethodDelete, "/users/me/sessions/"+id))
+	if response.Code != http.StatusNoContent || response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("Set-Cookie") != "" {
+		t.Fatalf("remote revoke contract: status=%d headers=%v", response.Code, response.Header())
+	}
+	service.revokeCurrent = true
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request(http.MethodDelete, "/users/me/sessions/"+id))
+	cookies := response.Result().Cookies()
+	if response.Code != http.StatusNoContent || len(cookies) != 1 || cookies[0].MaxAge != -1 || !cookies[0].HttpOnly || !cookies[0].Secure || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatalf("current revoke did not clear cookie: status=%d headers=%v", response.Code, response.Header())
+	}
+	service.err = accountapp.ErrSessionNotFound
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request(http.MethodDelete, "/users/me/sessions/"+id))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("missing session status=%d", response.Code)
+	}
+	service.err = accountapp.ErrAuthentication
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request(http.MethodGet, "/users/me/sessions"))
+	if response.Code != http.StatusUnauthorized || len(response.Result().Cookies()) != 1 {
+		t.Fatalf("invalid caller status=%d headers=%v", response.Code, response.Header())
+	}
 }
 
 func (s *accountServiceStub) DeleteCurrentUser(_ context.Context, token string) (accountapp.AccountDeletionRequest, error) {
