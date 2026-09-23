@@ -190,6 +190,10 @@ type Task struct {
 	ExternalTaskID      string
 	ResultAssetID       string
 	FailureCode         string
+	LeaseOwner          string
+	FencingToken        uint64
+	LeaseAttempt        int
+	LeaseUntil          *time.Time
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 }

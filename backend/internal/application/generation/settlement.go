@@ -17,7 +17,11 @@ type Settlement struct {
 	Task        Task
 	Reservation *QuotaReservation
 	Asset       *OutputAsset
-	Reused      bool
+	// FencingToken is the token a repository must include in its conditional
+	// update. A stale worker therefore cannot publish or finalize after lease
+	// recovery, even if it still holds an old task snapshot.
+	FencingToken uint64
+	Reused       bool
 }
 
 // PublishOutput composes a validated output with the task's succeeded state
@@ -31,7 +35,7 @@ func PublishOutput(task Task, reservation *QuotaReservation, asset OutputAsset, 
 		if task.ResultAssetID != asset.ID || !reservationFinalizedAs(reservation, ReservationConsumed) {
 			return Settlement{}, ErrGenerationSettlementConflict
 		}
-		return Settlement{Task: cloneTask(task), Reservation: cloneReservation(reservation), Asset: cloneAsset(asset), Reused: true}, nil
+		return Settlement{Task: cloneTask(task), Reservation: cloneReservation(reservation), Asset: cloneAsset(asset), FencingToken: task.FencingToken, Reused: true}, nil
 	}
 	if task.Status != StatusValidating || task.ResultAssetID != "" || !reservationAvailable(reservation) {
 		return Settlement{}, ErrInvalidGenerationSettlement
@@ -39,6 +43,8 @@ func PublishOutput(task Task, reservation *QuotaReservation, asset OutputAsset, 
 
 	nextTask := cloneTask(task)
 	nextTask.ResultAssetID = asset.ID
+	nextTask.LeaseOwner = ""
+	nextTask.LeaseUntil = nil
 	if err := nextTask.Transition(StatusSucceeded, "", at); err != nil {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
@@ -48,7 +54,7 @@ func PublishOutput(task Task, reservation *QuotaReservation, asset OutputAsset, 
 			return Settlement{}, ErrInvalidGenerationSettlement
 		}
 	}
-	return Settlement{Task: nextTask, Reservation: nextReservation, Asset: cloneAsset(asset)}, nil
+	return Settlement{Task: nextTask, Reservation: nextReservation, Asset: cloneAsset(asset), FencingToken: task.FencingToken}, nil
 }
 
 // FinalizeWithoutOutput moves an active task to failed, canceled or expired
@@ -68,13 +74,15 @@ func FinalizeWithoutOutput(task Task, reservation *QuotaReservation, next Status
 		if task.ResultAssetID != "" || task.FailureCode != failureCode || !reservationFinalizedAs(reservation, ReservationReleased) {
 			return Settlement{}, ErrGenerationSettlementConflict
 		}
-		return Settlement{Task: cloneTask(task), Reservation: cloneReservation(reservation), Reused: true}, nil
+		return Settlement{Task: cloneTask(task), Reservation: cloneReservation(reservation), FencingToken: task.FencingToken, Reused: true}, nil
 	}
 	if task.Status.terminal() || !reservationAvailable(reservation) {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
 
 	nextTask := cloneTask(task)
+	nextTask.LeaseOwner = ""
+	nextTask.LeaseUntil = nil
 	if err := nextTask.Transition(next, failureCode, at); err != nil {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
@@ -84,7 +92,7 @@ func FinalizeWithoutOutput(task Task, reservation *QuotaReservation, next Status
 			return Settlement{}, ErrInvalidGenerationSettlement
 		}
 	}
-	return Settlement{Task: nextTask, Reservation: nextReservation}, nil
+	return Settlement{Task: nextTask, Reservation: nextReservation, FencingToken: task.FencingToken}, nil
 }
 
 func validSettlementTime(task Task, at time.Time) bool {
