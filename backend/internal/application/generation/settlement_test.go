@@ -192,3 +192,34 @@ func TestSettlementRejectsMalformedPersistedLease(t *testing.T) {
 		t.Fatalf("malformed released lease error = %v", err)
 	}
 }
+
+func TestSettlementRejectsActiveLeaseOnTerminalTask(t *testing.T) {
+	task := validatingTask(t, validCreateInput())
+	asset, err := NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	task.ResultAssetID = asset.ID
+	if err := task.Transition(StatusSucceeded, "", generationTestNow.Add(4*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	task.LeaseOwner = "worker-a"
+	task.LeaseAttempt = 1
+	task.FencingToken = 1
+	task.LeaseUntil = timePtr(generationTestNow.Add(10 * time.Minute))
+	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(5*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("terminal active lease success replay error = %v", err)
+	}
+
+	task = mustTask(validCreateInput())
+	if err := task.Transition(StatusCanceled, "", generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	task.LeaseOwner = "worker-a"
+	task.LeaseAttempt = 1
+	task.FencingToken = 1
+	task.LeaseUntil = timePtr(generationTestNow.Add(10 * time.Minute))
+	if _, err := FinalizeWithoutOutput(task, nil, StatusCanceled, "", generationTestNow.Add(2*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("terminal active lease cancellation replay error = %v", err)
+	}
+}
