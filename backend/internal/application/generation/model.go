@@ -213,6 +213,10 @@ func submissionStatusAllowed(status Status) bool {
 	return status == StatusQueued || status == StatusRunning
 }
 
+func activeStatus(status Status) bool {
+	return status == StatusQueued || status == StatusRunning || status == StatusValidating
+}
+
 func (t Task) submission() Submission {
 	return Submission{
 		TaskID:      t.ID,
@@ -346,6 +350,9 @@ func NewTask(input CreateInput, now time.Time) (Task, error) {
 // revision. A failure code is retained as a stable, non-sensitive reason.
 func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 	if t == nil || !t.Status.CanTransitionTo(next) || at.IsZero() {
+		return ErrInvalidGenerationState
+	}
+	if next.terminal() && (t.LeaseOwner != "" || t.LeaseUntil != nil || t.LeaseAttempt < 0) {
 		return ErrInvalidGenerationState
 	}
 	if !validFailureState(t.Status, t.FailureCode) || !validFailureState(next, failureCode) {

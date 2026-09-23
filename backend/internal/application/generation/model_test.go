@@ -561,6 +561,8 @@ func TestTransitionRequiresFailureCodeOnlyForFailedState(t *testing.T) {
 
 func TestTransitionRequiresValidOutputReferenceAndRejectsOutputOnFailure(t *testing.T) {
 	task := validatingTask(t, validCreateInput())
+	task.LeaseOwner = ""
+	task.LeaseUntil = nil
 	task.ResultAssetID = " "
 	if err := task.Transition(StatusSucceeded, "", generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrGenerationOutputRequired) {
 		t.Fatalf("invalid output reference error = %v", err)
@@ -570,6 +572,8 @@ func TestTransitionRequiresValidOutputReferenceAndRejectsOutputOnFailure(t *test
 	}
 
 	task = validatingTask(t, validCreateInput())
+	task.LeaseOwner = ""
+	task.LeaseUntil = nil
 	task.ResultAssetID = "asset-image-1"
 	if err := task.Transition(StatusFailed, "provider_error", generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
 		t.Fatalf("failed transition retained an output reference: %v", err)
