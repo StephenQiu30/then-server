@@ -28,16 +28,19 @@ type Settlement struct {
 // and consumes its temporary quota hold. Repeating the same success command is
 // idempotent when the task already records the same asset and consumed hold.
 func PublishOutput(task Task, reservation *QuotaReservation, asset OutputAsset, at time.Time) (Settlement, error) {
-	if !validSettlementTime(task, at) || !validSettlementLease(task, at) || !validFailureState(task.Status, task.FailureCode) || !validOutputAsset(task, asset) || asset.PublishedAt.After(at) || !reservationMatchesTask(task, reservation) {
+	if !validSettlementTime(task, at) || !validFailureState(task.Status, task.FailureCode) || !validOutputAsset(task, asset) || asset.PublishedAt.After(at) || !reservationMatchesTask(task, reservation) {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
 	if task.Status == StatusSucceeded {
+		if !validSettlementLease(task, at) {
+			return Settlement{}, ErrInvalidGenerationSettlement
+		}
 		if task.ResultAssetID != asset.ID || !reservationFinalizedAs(reservation, ReservationConsumed) {
 			return Settlement{}, ErrGenerationSettlementConflict
 		}
 		return Settlement{Task: cloneTask(task), Reservation: cloneReservation(reservation), Asset: cloneAsset(asset), FencingToken: task.FencingToken, Reused: true}, nil
 	}
-	if task.Status != StatusValidating || task.CancelRequestedAt != nil || task.ResultAssetID != "" || !reservationAvailable(reservation) {
+	if task.Status != StatusValidating || task.CancelRequestedAt != nil || task.ResultAssetID != "" || !validActiveSettlementLease(task, at) || !reservationAvailable(reservation) {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
 
@@ -108,6 +111,10 @@ func validSettlementLease(task Task, at time.Time) bool {
 		// but its persisted lease shape must still be internally consistent.
 		return task.LeaseOwner == "" && task.LeaseAttempt >= 0
 	}
+	return task.validateActiveLeaseAt(at) == nil
+}
+
+func validActiveSettlementLease(task Task, at time.Time) bool {
 	return task.validateActiveLeaseAt(at) == nil
 }
 

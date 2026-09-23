@@ -30,7 +30,7 @@ func validatingTask(t *testing.T, input CreateInput) Task {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := task.Transition(StatusRunning, "", generationTestNow.Add(time.Minute)); err != nil {
+	if _, err := task.AcquireLease("worker-a", generationTestNow.Add(time.Minute), 10*time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	if err := task.Transition(StatusValidating, "", generationTestNow.Add(2*time.Minute)); err != nil {
