@@ -117,6 +117,36 @@ func TestFinalizeWithoutOutputReleasesReservationAndReplays(t *testing.T) {
 	}
 }
 
+func TestSettlementReplayRejectsMalformedSubmissionFacts(t *testing.T) {
+	task := validatingTask(t, validCreateInput())
+	asset, err := NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	task.ResultAssetID = asset.ID
+	task.LeaseOwner = ""
+	task.LeaseUntil = nil
+	if err := task.Transition(StatusSucceeded, "", generationTestNow.Add(4*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	task.SubmissionState = SubmissionAccepted
+	task.ExternalTaskID = ""
+	if _, err := PublishOutput(task, nil, asset, generationTestNow.Add(5*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("success replay accepted malformed submission facts: %v", err)
+	}
+
+	task = mustTask(validCreateInput())
+	settled, err := FinalizeWithoutOutput(task, nil, StatusFailed, "provider_error", generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settled.Task.SubmissionState = SubmissionAccepted
+	settled.Task.ExternalTaskID = ""
+	if _, err := FinalizeWithoutOutput(settled.Task, nil, StatusFailed, "provider_error", generationTestNow.Add(2*time.Minute)); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("failure replay accepted malformed submission facts: %v", err)
+	}
+}
+
 func TestFinalizeWithoutOutputSupportsZeroCostCancelAndRejectsInvalidFailure(t *testing.T) {
 	task := mustTask(validCreateInput())
 	settled, err := FinalizeWithoutOutput(task, nil, StatusCanceled, "", generationTestNow.Add(time.Minute))
