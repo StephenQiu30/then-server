@@ -84,12 +84,31 @@ func TestModelRequiresConfirmedImageSnapshot(t *testing.T) {
 	}
 	input.Inputs.ImageAssetID = "image-1"
 	input.Inputs.ImageSHA256 = strings.Repeat("c", 64)
+	input.Inputs.References = []InputReference{{MediaID: "image-1", Role: InputRoleLookImage, Ordinal: 0, Revision: 5, SHA256: strings.Repeat("c", 64)}}
 	task, err := NewTask(input, generationTestNow)
 	if err != nil {
 		t.Fatalf("valid model NewTask() error = %v", err)
 	}
 	if task.Purpose != PurposeModel || task.Inputs.ImageAssetID != "image-1" {
 		t.Fatalf("model source was not retained: %+v", task)
+	}
+}
+
+func TestImageSnapshotRequiresOnePersonAndNoLookImage(t *testing.T) {
+	input := validCreateInput()
+	input.Inputs.References = []InputReference{{MediaID: "garment-1", Role: InputRoleGarment, Ordinal: 0, Revision: 1, SHA256: strings.Repeat("a", 64)}}
+	if _, err := NewTask(input, generationTestNow); !errors.Is(err, ErrInvalidGenerationInput) {
+		t.Fatalf("image without person was accepted: %v", err)
+	}
+	input = validCreateInput()
+	input.Inputs.References = append(input.Inputs.References, InputReference{MediaID: "person-2", Role: InputRolePerson, Ordinal: 2, Revision: 1, SHA256: strings.Repeat("c", 64)})
+	if _, err := NewTask(input, generationTestNow); !errors.Is(err, ErrInvalidGenerationInput) {
+		t.Fatalf("image with two people was accepted: %v", err)
+	}
+	input = validCreateInput()
+	input.Inputs.References[0].Role = InputRoleLookImage
+	if _, err := NewTask(input, generationTestNow); !errors.Is(err, ErrInvalidGenerationInput) {
+		t.Fatalf("image with a look image reference was accepted: %v", err)
 	}
 }
 
@@ -227,6 +246,46 @@ func TestProviderCallbacksRequireTheRecordedExternalTask(t *testing.T) {
 		// Replaying the same acceptance is idempotent even if the transport
 		// reports an older observation timestamp.
 		t.Fatalf("same external ID replay error = %v", err)
+	}
+}
+
+func TestClassifyRequestSeparatesReplayConflictAndContentDedupe(t *testing.T) {
+	existing, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	match, err := ClassifyRequest(existing, validCreateInput())
+	if err != nil || match != RequestMatchIdempotentReplay {
+		t.Fatalf("same request classified as %q, error=%v", match, err)
+	}
+	conflicting := validCreateInput()
+	conflicting.Parameters = []byte(`{"seed":"different"}`)
+	match, err = ClassifyRequest(existing, conflicting)
+	if err != nil || match != RequestMatchIdempotencyConflict {
+		t.Fatalf("same key with changed request classified as %q, error=%v", match, err)
+	}
+	deduped := validCreateInput()
+	deduped.IdempotencyKey = "request-2"
+	match, err = ClassifyRequest(existing, deduped)
+	if err != nil || match != RequestMatchContentDedupe {
+		t.Fatalf("new key with same content classified as %q, error=%v", match, err)
+	}
+	otherOwner := validCreateInput()
+	otherOwner.OwnerID = "owner-2"
+	match, err = ClassifyRequest(existing, otherOwner)
+	if err != nil || match != RequestMatchNone {
+		t.Fatalf("cross-owner request classified as %q, error=%v", match, err)
+	}
+	failed := existing
+	if err := failed.Transition(StatusRunning, "", generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := failed.Transition(StatusFailed, "provider_error", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	match, err = ClassifyRequest(failed, deduped)
+	if err != nil || match != RequestMatchNone {
+		t.Fatalf("failed task blocked a new attempt as %q, error=%v", match, err)
 	}
 }
 
