@@ -50,8 +50,8 @@ func (e *CleanupTargetError) Unwrap() error {
 }
 
 // CleanupRetryPolicy bounds cleanup lease recovery and target retry delay.
-// MaxAttempts remains enforced by CleanupRequest.Begin (100), while this
-// policy keeps each worker's wait window finite and deterministic.
+// MaxCleanupAttempts remains enforced by CleanupRequest.Begin; the repository
+// excludes exhausted retries and settles stale exhausted claims durably.
 type CleanupRetryPolicy struct {
 	LeaseTTL  time.Duration
 	BaseDelay time.Duration

@@ -390,7 +390,7 @@ func (r *GenerationRepository) ClaimNextCleanup(ctx context.Context, at time.Tim
 		var record generationCleanupRequestRecord
 		readyBefore := at.Add(-staleAfter)
 		query := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("(status IN ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (status = ? AND updated_at <= ?)", []string{string(generationapp.CleanupPending), string(generationapp.CleanupFailed)}, at, string(generationapp.CleanupRunning), readyBefore).
+			Where("(status IN ? AND attempts < ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (status = ? AND updated_at <= ?)", []string{string(generationapp.CleanupPending), string(generationapp.CleanupFailed)}, generationapp.MaxCleanupAttempts, at, string(generationapp.CleanupRunning), readyBefore).
 			Order("created_at ASC").Order("id ASC")
 		if err := query.First(&record).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -407,6 +407,16 @@ func (r *GenerationRepository) ClaimNextCleanup(ctx context.Context, at time.Tim
 			previousStatus := string(loaded.Status)
 			previousAttempts := loaded.Attempts
 			previousUpdatedAt := loaded.UpdatedAt
+			if loaded.Attempts >= generationapp.MaxCleanupAttempts {
+				if err := loaded.Exhaust(at); err != nil {
+					return err
+				}
+				if err := updateGenerationCleanup(tx, loaded, previousStatus, previousAttempts, previousUpdatedAt); err != nil {
+					return err
+				}
+				found = false
+				return nil
+			}
 			if err := loaded.Fail(at, "worker_expired", at); err != nil {
 				return err
 			}
