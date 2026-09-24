@@ -166,6 +166,80 @@ func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database
 	}
 }
 
+func verifyGenerationHTTPQuotaPersistence(t *testing.T, ctx context.Context, database *gorm.DB, service *generationapp.Service, ownerID, ownerToken string) {
+	t.Helper()
+
+	router, err := httpapi.NewRouterWithGeneration(
+		ctx,
+		false,
+		generationIntegrationProbe{},
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		httpapi.NewGenerationHandler(service, false),
+		time.Second,
+		slog.New(slog.NewJSONHandler(io.Discard, nil)),
+	)
+	if err != nil {
+		t.Fatalf("construct quota generation HTTP router: %v", err)
+	}
+
+	body := fmt.Sprintf(`{"idempotency_key":"generation-http-quota-request","look_id":"00000000-0000-4000-8000-000000000911","look_revision":1,"purpose":"image","provider":"fixture","model":"fixture-image-v1","parameters":{"seed":911},"inputs":[{"media_id":"00000000-0000-4000-8000-000000000912","role":"person","ordinal":0,"revision":1,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"media_id":"00000000-0000-4000-8000-000000000913","role":"garment","ordinal":1,"revision":1,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],"consent":{"id":"00000000-0000-4000-8000-000000000914","purpose":"image","policy_version":"local-image-v1","accepted_at":"%s"},"cost":{"currency":"USD","estimated_minor_units":60,"reserved_quota_units":1}}`, time.Now().UTC().Add(-time.Minute).Format(time.RFC3339))
+	call := func(requestBody string) *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodPost, "/generation-jobs", strings.NewReader(requestBody))
+		request.Header.Set("Content-Type", "application/json")
+		request.AddCookie(&http.Cookie{Name: "then_session", Value: ownerToken})
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		return response
+	}
+	decodeJob := func(response *httptest.ResponseRecorder) httpapi.GenerationJobResponse {
+		t.Helper()
+		var job httpapi.GenerationJobResponse
+		if err := json.Unmarshal(response.Body.Bytes(), &job); err != nil {
+			t.Fatalf("decode quota generation response %q: %v", response.Body.String(), err)
+		}
+		return job
+	}
+
+	createdResponse := call(body)
+	if createdResponse.Code != http.StatusAccepted {
+		t.Fatalf("create quota-backed generation over HTTP status=%d body=%s", createdResponse.Code, createdResponse.Body.String())
+	}
+	created := decodeJob(createdResponse)
+	if created.Reservation == nil || created.Reservation.State != generationapp.ReservationReserved || created.Reservation.EstimatedMinorUnits != 60 || created.Reservation.ReservedQuotaUnits != 1 || created.Reservation.Currency != "USD" {
+		t.Fatalf("HTTP admission did not return its persisted quota reservation: %+v", created)
+	}
+
+	replayResponse := call(body)
+	if replayResponse.Code != http.StatusAccepted {
+		t.Fatalf("replay quota-backed generation over HTTP status=%d body=%s", replayResponse.Code, replayResponse.Body.String())
+	}
+	replayed := decodeJob(replayResponse)
+	if replayed.ID != created.ID || !replayed.Reused || replayed.Match != generationapp.RequestMatchIdempotentReplay || replayed.Reservation == nil || replayed.Reservation.ID != created.Reservation.ID {
+		t.Fatalf("HTTP replay changed the persisted quota reservation: created=%+v replayed=%+v", created, replayed)
+	}
+
+	overBudget := strings.ReplaceAll(body, "generation-http-quota-request", "generation-http-budget-overrun")
+	overBudget = strings.ReplaceAll(overBudget, "00000000-0000-4000-8000-000000000911", "00000000-0000-4000-8000-000000000921")
+	overBudget = strings.ReplaceAll(overBudget, "00000000-0000-4000-8000-000000000912", "00000000-0000-4000-8000-000000000922")
+	overBudget = strings.ReplaceAll(overBudget, "00000000-0000-4000-8000-000000000913", "00000000-0000-4000-8000-000000000923")
+	overBudget = strings.ReplaceAll(overBudget, "00000000-0000-4000-8000-000000000914", "00000000-0000-4000-8000-000000000924")
+	overBudget = strings.ReplaceAll(overBudget, `"seed":911`, `"seed":921`)
+	overBudget = strings.ReplaceAll(overBudget, `"estimated_minor_units":60`, `"estimated_minor_units":50`)
+	overBudgetResponse := call(overBudget)
+	if overBudgetResponse.Code != http.StatusConflict || !strings.Contains(overBudgetResponse.Body.String(), `"code":"CONFLICT"`) {
+		t.Fatalf("over-budget HTTP request status=%d body=%s", overBudgetResponse.Code, overBudgetResponse.Body.String())
+	}
+
+	var jobs, reservations int64
+	if err := database.WithContext(ctx).Table("generation_jobs").Where("owner_id = ?", ownerID).Count(&jobs).Error; err != nil || jobs != 1 {
+		t.Fatalf("over-budget HTTP request persisted a task: count=%d err=%v", jobs, err)
+	}
+	if err := database.WithContext(ctx).Table("generation_quota_reservations").Where("owner_id = ? AND state = ?", ownerID, string(generationapp.ReservationReserved)).Count(&reservations).Error; err != nil || reservations != 1 {
+		t.Fatalf("HTTP retry or rejection changed active reservations: count=%d err=%v", reservations, err)
+	}
+}
+
 func TestGenerationPersistenceLifecycle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -206,6 +280,10 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	fourth, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "generation-http@example.test", DisplayName: "Generation HTTP", Password: "correct-password-generation-http"})
 	if err != nil {
 		t.Fatalf("register generation HTTP owner: %v", err)
+	}
+	fifth, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "generation-http-quota@example.test", DisplayName: "Generation HTTP Quota", Password: "correct-password-generation-http-quota"})
+	if err != nil {
+		t.Fatalf("register generation HTTP quota owner: %v", err)
 	}
 
 	policy := generationapp.AdmissionPolicy{Enabled: true, ZeroCost: true, MaxConcurrentTasks: 4, MaxQuotaUnits: 4}
@@ -1072,5 +1150,5 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("expected four atomic reconciliation audit rows, got %d", reconciliationAuditCount)
 	}
 	verifyGenerationHTTPPersistence(t, ctx, database, generations, fourth.Token, second.Token)
-
+	verifyGenerationHTTPQuotaPersistence(t, ctx, database, paidGenerations, fifth.User.ID, fifth.Token)
 }
