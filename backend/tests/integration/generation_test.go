@@ -5,6 +5,8 @@ package integration
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -424,7 +426,7 @@ func verifyGenerationHTTPQuotaPersistence(t *testing.T, ctx context.Context, dat
 }
 
 func TestGenerationPersistenceLifecycle(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
 	password := rand.Text()
@@ -442,6 +444,20 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 	if err := store.Migrate(ctx, database); err != nil {
 		t.Fatalf("migrate generation database: %v", err)
+	}
+
+	objectStorePassword := rand.Text()
+	objectStoreContainer := integrationContainer(t, ctx, testcontainers.ContainerRequest{
+		Image:        "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+		Cmd:          []string{"server", "/data"},
+		Env:          map[string]string{"MINIO_ROOT_USER": "then_test", "MINIO_ROOT_PASSWORD": objectStorePassword},
+		ExposedPorts: []string{"9000/tcp"},
+		WaitingFor:   wait.ForHTTP("/minio/health/live").WithPort("9000/tcp").WithStartupTimeout(time.Minute),
+	})
+	objectStoreAddress := mappedAddress(t, ctx, objectStoreContainer, "9000/tcp")
+	objects, err := objectstore.Open(ctx, objectStoreAddress, "then_test", objectStorePassword, false)
+	if err != nil {
+		t.Fatalf("open isolated generation object store: %v", err)
 	}
 
 	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
@@ -744,10 +760,16 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build task-bound output key: %v", err)
 	}
+	outputBytes := "synthetic-generation-output"
+	outputDigest := sha256.Sum256([]byte(outputBytes))
+	outputVersionID, err := objects.PutDerived(ctx, outputObjectKey, strings.NewReader(outputBytes), int64(len(outputBytes)))
+	if err != nil || outputVersionID == "" {
+		t.Fatalf("write synthetic generation output: version=%q err=%v", outputVersionID, err)
+	}
 	asset, err := generationapp.NewOutputAsset(
 		"00000000-0000-4000-8000-000000000401",
 		resultView.Task,
-		generationapp.OutputFact{ObjectKey: outputObjectKey, ContentType: generationapp.OutputContentTypeJPEG, ByteSize: 4096, SHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", ObjectVersionID: "local-object-v1"},
+		generationapp.OutputFact{ObjectKey: outputObjectKey, ContentType: generationapp.OutputContentTypeJPEG, ByteSize: int64(len(outputBytes)), SHA256: hex.EncodeToString(outputDigest[:]), ObjectVersionID: outputVersionID},
 		outputAt,
 	)
 	if err != nil {
@@ -956,39 +978,63 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if deletedView.Task.AccessRevokedAt == nil || deletedView.Asset != nil || deletedView.Cleanup == nil || deletedView.Cleanup.ID != deletedCleanup.ID || deletedCleanup.Status != generationapp.CleanupPending || len(deletedCleanup.Targets) != 2 || deletedCleanup.Targets[0].ObjectKey != outputObjectKey {
 		t.Fatalf("generation cleanup did not revoke access or retain targets: view=%+v cleanup=%+v", deletedView, deletedCleanup)
 	}
-	claimedCleanup, targets, err := workerRepository.BeginTaskCleanup(ctx, deletedCleanup.ID, deletedCleanup.AccessRevokedAt.Add(time.Minute))
+	if len(deletedCleanup.Targets) != 2 || deletedCleanup.Targets[0].Kind != generationapp.CleanupTargetObject || deletedCleanup.Targets[0].ObjectKey != outputObjectKey || deletedCleanup.Targets[0].ObjectVersionID != outputVersionID || deletedCleanup.Targets[1].Kind != generationapp.CleanupTargetProvider {
+		t.Fatalf("generation cleanup request lost its target snapshot: request=%+v", deletedCleanup)
+	}
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("id <> ? AND status IN ?", deletedCleanup.ID, []string{string(generationapp.CleanupPending), string(generationapp.CleanupFailed)}).Update("next_attempt_at", time.Now().UTC().Add(time.Hour)).Error; err != nil {
+		t.Fatalf("delay unrelated cleanup fixtures: %v", err)
+	}
+	cleanupExecutor, err := objectstore.NewGenerationCleanupExecutor(objects)
 	if err != nil {
-		t.Fatalf("begin generation cleanup: %v", err)
+		t.Fatalf("construct generation cleanup executor: %v", err)
 	}
-	if claimedCleanup.Status != generationapp.CleanupRunning || len(targets) != 2 || targets[0].Kind != generationapp.CleanupTargetObject || targets[0].ObjectKey != outputObjectKey || targets[0].ObjectVersionID != "local-object-v1" || targets[1].Kind != generationapp.CleanupTargetProvider {
-		t.Fatalf("generation cleanup claim lost its target snapshot: request=%+v targets=%+v", claimedCleanup, targets)
-	}
-	completedCleanup, err := workerRepository.CompleteTaskCleanup(ctx, claimedCleanup, claimedCleanup.UpdatedAt.Add(time.Minute))
+	cleanupWorker, err := generationapp.NewCleanupWorker(workerRepository, cleanupExecutor, generationapp.CleanupRetryPolicy{LeaseTTL: time.Minute, BaseDelay: time.Second, MaxDelay: time.Minute})
 	if err != nil {
-		t.Fatalf("complete generation cleanup: %v", err)
+		t.Fatalf("construct generation cleanup worker: %v", err)
 	}
-	if completedCleanup.Status != generationapp.CleanupComplete || completedCleanup.CompletedAt == nil {
-		t.Fatalf("generation cleanup did not complete: %+v", completedCleanup)
+	firstCleanupAt := deletedCleanup.AccessRevokedAt.Add(time.Minute)
+	found, err = cleanupWorker.RunOnceAt(ctx, firstCleanupAt)
+	if err != nil || !found {
+		t.Fatalf("run generation cleanup worker: found=%v err=%v", found, err)
+	}
+	_, failedCleanup, err := workerRepository.RequestTaskCleanup(ctx, second.User.ID, paidCreated.View.Task.ID, firstCleanupAt.Add(time.Minute))
+	if err != nil || failedCleanup.ID != deletedCleanup.ID || failedCleanup.Status != generationapp.CleanupFailed || failedCleanup.StableError != "provider_cleanup_unavailable" || failedCleanup.Attempts != 1 || failedCleanup.NextAttemptAt == nil {
+		t.Fatalf("provider cleanup was not retained as a retryable failure: request=%+v err=%v", failedCleanup, err)
+	}
+	if _, err := objects.OpenDerivedVersion(ctx, outputObjectKey, outputVersionID); err == nil {
+		t.Fatal("cleanup worker left the manifest-targeted MinIO object version in place")
+	}
+	cleanupRetryAt := firstCleanupAt.Add(2 * time.Second)
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("id = ?", deletedCleanup.ID).Update("next_attempt_at", cleanupRetryAt.Add(-time.Second)).Error; err != nil {
+		t.Fatalf("make failed provider cleanup retry eligible: %v", err)
+	}
+	found, err = cleanupWorker.RunOnceAt(ctx, cleanupRetryAt)
+	if err != nil || !found {
+		t.Fatalf("retry generation cleanup worker: found=%v err=%v", found, err)
+	}
+	_, retriedCleanup, err := workerRepository.RequestTaskCleanup(ctx, second.User.ID, paidCreated.View.Task.ID, cleanupRetryAt.Add(time.Minute))
+	if err != nil || retriedCleanup.Status != generationapp.CleanupFailed || retriedCleanup.StableError != "provider_cleanup_unavailable" || retriedCleanup.Attempts != 2 || retriedCleanup.NextAttemptAt == nil {
+		t.Fatalf("cleanup retry did not retain the unavailable provider target: request=%+v err=%v", retriedCleanup, err)
 	}
 	loadedDeleted, err := workerRepository.Get(ctx, second.User.ID, paidCreated.View.Task.ID)
 	if err != nil {
 		t.Fatalf("reload revoked generation task: %v", err)
 	}
-	if loadedDeleted.Task.AccessRevokedAt == nil || loadedDeleted.Asset != nil || loadedDeleted.Cleanup == nil || loadedDeleted.Cleanup.Status != generationapp.CleanupComplete {
+	if loadedDeleted.Task.AccessRevokedAt == nil || loadedDeleted.Asset != nil || loadedDeleted.Cleanup == nil || loadedDeleted.Cleanup.Status != generationapp.CleanupFailed {
 		t.Fatalf("revoked generation output became visible again: %+v", loadedDeleted)
 	}
 	var outputCount int64
 	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", paidCreated.View.Task.ID).Count(&outputCount).Error; err != nil {
 		t.Fatalf("count cleaned generation output: %v", err)
 	}
-	if outputCount != 0 {
-		t.Fatalf("generation output metadata remained after cleanup: %d", outputCount)
+	if outputCount != 1 {
+		t.Fatalf("output metadata was deleted before all manifest targets succeeded: %d", outputCount)
 	}
-	deletedViewAgain, deletedCleanupAgain, err := workerRepository.RequestTaskCleanup(ctx, second.User.ID, paidCreated.View.Task.ID, completedCleanup.CompletedAt.Add(time.Minute))
+	deletedViewAgain, deletedCleanupAgain, err := workerRepository.RequestTaskCleanup(ctx, second.User.ID, paidCreated.View.Task.ID, cleanupRetryAt.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("repeat generation cleanup request: %v", err)
 	}
-	if deletedViewAgain.Task.AccessRevokedAt == nil || deletedCleanupAgain.Status != generationapp.CleanupComplete || deletedCleanupAgain.ID != deletedCleanup.ID {
+	if deletedViewAgain.Task.AccessRevokedAt == nil || deletedCleanupAgain.Status != generationapp.CleanupFailed || deletedCleanupAgain.ID != deletedCleanup.ID {
 		t.Fatalf("repeat generation cleanup was not idempotent: view=%+v cleanup=%+v", deletedViewAgain, deletedCleanupAgain)
 	}
 

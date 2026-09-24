@@ -83,9 +83,9 @@ func (p CleanupRetryPolicy) RetryAt(at time.Time, attempts int) (time.Time, erro
 	return at.UTC().Add(delay), nil
 }
 
-// CleanupWorker executes one durable cleanup request per RunOnce call. It is
-// intentionally not started by the API bootstrap until concrete deletion
-// adapters and their production gates exist.
+// CleanupWorker executes one durable cleanup request per RunOnce call. Runtime
+// bootstrap wires the local object-store adapter; unavailable Provider deletion
+// remains a bounded retryable failure until an approved adapter exists.
 type CleanupWorker struct {
 	repository CleanupRepository
 	executor   CleanupExecutor
@@ -107,10 +107,26 @@ func NewCleanupWorker(repository CleanupRepository, executor CleanupExecutor, po
 // recorded as a retryable request and therefore returns nil; repository or
 // completion failures are returned so the caller can stop and alert.
 func (w *CleanupWorker) RunOnce(ctx context.Context) (bool, error) {
+	if w == nil {
+		return false, ErrInvalidGenerationCleanupWorker
+	}
+	return w.runOnce(ctx, w.now)
+}
+
+// RunOnceAt executes one cleanup claim at a supplied timestamp. It keeps
+// durable worker behavior deterministic for recovery and integration checks.
+func (w *CleanupWorker) RunOnceAt(ctx context.Context, at time.Time) (bool, error) {
+	if at.IsZero() {
+		return false, ErrInvalidGenerationCleanupWorker
+	}
+	return w.runOnce(ctx, func() time.Time { return at })
+}
+
+func (w *CleanupWorker) runOnce(ctx context.Context, now func() time.Time) (bool, error) {
 	if w == nil || w.repository == nil || w.executor == nil || w.policy.Validate() != nil {
 		return false, ErrInvalidGenerationCleanupWorker
 	}
-	at := w.now().UTC()
+	at := now().UTC()
 	request, targets, found, err := w.repository.ClaimNextCleanup(ctx, at, w.policy.LeaseTTL)
 	if err != nil || !found {
 		return found, err
@@ -118,17 +134,17 @@ func (w *CleanupWorker) RunOnce(ctx context.Context) (bool, error) {
 	for _, target := range targets {
 		if err := w.deleteTarget(ctx, request.OwnerID, request.TaskID, target); err != nil {
 			failureCode := cleanupFailureCode(err)
-			retryAt, retryErr := w.policy.RetryAt(w.now().UTC(), request.Attempts)
+			retryAt, retryErr := w.policy.RetryAt(now().UTC(), request.Attempts)
 			if retryErr != nil {
 				return true, retryErr
 			}
-			if _, failErr := w.repository.FailTaskCleanup(ctx, request, w.now().UTC(), failureCode, retryAt); failErr != nil {
+			if _, failErr := w.repository.FailTaskCleanup(ctx, request, now().UTC(), failureCode, retryAt); failErr != nil {
 				return true, failErr
 			}
 			return true, nil
 		}
 	}
-	_, err = w.repository.CompleteTaskCleanup(ctx, request, w.now().UTC())
+	_, err = w.repository.CompleteTaskCleanup(ctx, request, now().UTC())
 	return true, err
 }
 
