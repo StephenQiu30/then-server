@@ -97,7 +97,7 @@ func TestResultWorkerPublishesValidatedOutputAtomically(t *testing.T) {
 	if result.Outcome != ResultOutcomePublished || result.View.Task.Status != StatusSucceeded || result.View.Task.ResultAssetID == "" || result.View.Asset == nil {
 		t.Fatalf("unexpected result publication: %+v", result)
 	}
-	if result.View.Task.LeaseOwner != "" || fetcher.fetches != 1 || fetcher.request.TaskID != repository.task.ID || fetcher.request.LookID != repository.task.LookID || fetcher.request.LookRevision != repository.task.LookRevision || !inputSnapshotsEqual(fetcher.request.Inputs, repository.task.Inputs) {
+	if result.View.Task.LeaseOwner != "" || fetcher.fetches != 1 || fetcher.request.TaskID != repository.task.ID || fetcher.request.ObjectKey != "owners/owner-1/generation/job-1/output.jpg" || fetcher.request.LookID != repository.task.LookID || fetcher.request.LookRevision != repository.task.LookRevision || !inputSnapshotsEqual(fetcher.request.Inputs, repository.task.Inputs) {
 		t.Fatalf("publication retained lease or fetched unexpected count: task=%+v fetches=%d", result.View.Task, fetcher.fetches)
 	}
 }
@@ -162,6 +162,7 @@ func TestResultWorkerRejectsWrongLineageOrFact(t *testing.T) {
 		{name: "look revision", mutate: func(result *FetchedResult) { result.LookRevision++ }},
 		{name: "input snapshot", mutate: func(result *FetchedResult) { result.Inputs.References[0].Revision++ }},
 		{name: "wrong content type", mutate: func(result *FetchedResult) { result.Fact = modelOutputFact() }},
+		{name: "wrong output object key", mutate: func(result *FetchedResult) { result.Fact.ObjectKey = "owners/other-owner/generation/job-1/output.jpg" }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -197,6 +198,9 @@ func TestResultWorkerRejectsTaskBeforeValidating(t *testing.T) {
 }
 
 func fetchedImageResult(task Task) FetchedResult {
+	objectKey, _ := OutputObjectKey(task)
+	fact := imageOutputFact()
+	fact.ObjectKey = objectKey
 	return FetchedResult{
 		ExternalTaskID: task.ExternalTaskID,
 		TaskID:         task.ID,
@@ -204,6 +208,6 @@ func fetchedImageResult(task Task) FetchedResult {
 		LookID:         task.LookID,
 		LookRevision:   task.LookRevision,
 		Inputs:         cloneSnapshot(task.Inputs),
-		Fact:           imageOutputFact(),
+		Fact:           fact,
 	}
 }

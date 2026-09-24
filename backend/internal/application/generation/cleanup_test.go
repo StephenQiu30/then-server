@@ -70,6 +70,24 @@ func TestCleanupRequestRetainsTargetsAcrossRetry(t *testing.T) {
 	}
 }
 
+func TestCleanupRequestRejectsObjectKeyOutsideTaskOwnership(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if err := task.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewCleanupRequest("cleanup-cross-task-object", task, CleanupScopeTask, nil, generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignTarget := CleanupTarget{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectKey: "owners/other-owner/generation/other-task/output.jpg", ObjectVersionID: "object-version-1"}
+	if err := request.AddTarget(foreignTarget, generationTestNow.Add(2*time.Minute)); !errors.Is(err, ErrInvalidGenerationCleanup) {
+		t.Fatalf("cleanup accepted a key owned by another owner or task: %v", err)
+	}
+	if len(request.Targets) != 0 {
+		t.Fatalf("rejected object target mutated the manifest: %+v", request.Targets)
+	}
+}
+
 func TestCleanupRequestExhaustsAfterMaximumAttempts(t *testing.T) {
 	task := mustTask(validCreateInput())
 	if err := task.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {

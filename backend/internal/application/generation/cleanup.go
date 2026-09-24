@@ -42,13 +42,13 @@ const (
 	CleanupTargetProvider CleanupTargetKind = "provider_task"
 )
 
-// CleanupTarget is a non-sensitive snapshot of an external side effect that
-// still needs to be removed. Object version IDs and provider task IDs are
-// intentionally copied into the request so deleting the task row cannot erase
-// the evidence required by a later cleanup worker.
+// CleanupTarget snapshots the private object identity or provider task that
+// still needs removal. The manifest is internal and is never returned by the
+// public task API. Empty object keys are retained only for legacy records.
 type CleanupTarget struct {
 	Kind            CleanupTargetKind `json:"kind"`
 	ID              string            `json:"id"`
+	ObjectKey       string            `json:"object_key,omitempty"`
 	ObjectVersionID string            `json:"object_version_id,omitempty"`
 }
 
@@ -62,7 +62,7 @@ func SameCleanupTarget(left, right CleanupTarget) bool {
 func cleanupTargetKey(target CleanupTarget) string {
 	key := string(target.Kind) + "\x00" + target.ID
 	if target.Kind == CleanupTargetObject {
-		key += "\x00" + target.ObjectVersionID
+		key += "\x00" + target.ObjectKey + "\x00" + target.ObjectVersionID
 	}
 	return key
 }
@@ -73,14 +73,24 @@ func (target CleanupTarget) Validate() error {
 	}
 	switch target.Kind {
 	case CleanupTargetObject:
-		if !validToken(target.ObjectVersionID, 160) {
+		if !validToken(target.ObjectVersionID, 160) || (target.ObjectKey != "" && !validGenerationOutputObjectKey(target.ObjectKey)) {
 			return ErrInvalidGenerationCleanup
 		}
 	case CleanupTargetProvider:
-		if target.ObjectVersionID != "" {
+		if target.ObjectKey != "" || target.ObjectVersionID != "" {
 			return ErrInvalidGenerationCleanup
 		}
 	default:
+		return ErrInvalidGenerationCleanup
+	}
+	return nil
+}
+
+func (target CleanupTarget) validateForTask(ownerID, taskID string) error {
+	if err := target.Validate(); err != nil {
+		return err
+	}
+	if target.Kind == CleanupTargetObject && target.ObjectKey != "" && !validGenerationOutputObjectKeyForTask(ownerID, taskID, target.ObjectKey) {
 		return ErrInvalidGenerationCleanup
 	}
 	return nil
@@ -151,7 +161,7 @@ func (r CleanupRequest) Validate() error {
 	}
 	seen := make(map[string]struct{}, len(r.Targets))
 	for _, target := range r.Targets {
-		if err := target.Validate(); err != nil {
+		if err := target.validateForTask(r.OwnerID, r.TaskID); err != nil {
 			return err
 		}
 		key := cleanupTargetKey(target)
@@ -260,7 +270,7 @@ func (r *CleanupRequest) AddTarget(target CleanupTarget, at time.Time) error {
 	if r == nil || r.Validate() != nil || at.IsZero() {
 		return ErrInvalidGenerationCleanup
 	}
-	if err := target.Validate(); err != nil {
+	if err := target.validateForTask(r.OwnerID, r.TaskID); err != nil {
 		return err
 	}
 	for _, existing := range r.Targets {

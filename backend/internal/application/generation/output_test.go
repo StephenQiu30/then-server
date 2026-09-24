@@ -9,6 +9,7 @@ import (
 
 func imageOutputFact() OutputFact {
 	return OutputFact{
+		ObjectKey:       "owners/owner-1/generation/job-1/output.jpg",
 		ContentType:     OutputContentTypeJPEG,
 		ByteSize:        1024,
 		SHA256:          strings.Repeat("d", 64),
@@ -18,6 +19,7 @@ func imageOutputFact() OutputFact {
 
 func modelOutputFact() OutputFact {
 	fact := imageOutputFact()
+	fact.ObjectKey = "owners/owner-1/generation/job-1/output.glb"
 	fact.ContentType = OutputContentTypeGLB
 	fact.SHA256 = strings.Repeat("e", 64)
 	fact.ObjectVersionID = "version-model-1"
@@ -50,6 +52,9 @@ func TestNewOutputAssetPreservesImageLineage(t *testing.T) {
 	}
 	if asset.Lineage.SourceImageAssetID != "" || asset.ContentType != OutputContentTypeJPEG || asset.PublishedAt.Location() != time.UTC {
 		t.Fatalf("unexpected image output: %+v", asset)
+	}
+	if asset.ObjectKey != "owners/owner-1/generation/job-1/output.jpg" {
+		t.Fatalf("image output object key was not bound to its task: %q", asset.ObjectKey)
 	}
 }
 
@@ -112,5 +117,50 @@ func TestNewOutputAssetRejectsUntrustedObjectFact(t *testing.T) {
 	fact.SHA256 = strings.Repeat("x", 64)
 	if _, err := NewOutputAsset("asset-image-1", task, fact, generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrInvalidGenerationOutput) {
 		t.Fatalf("invalid digest output was accepted: %v", err)
+	}
+	fact = imageOutputFact()
+	fact.ObjectKey = "owners/another-owner/generation/job-1/output.jpg"
+	if _, err := NewOutputAsset("asset-image-1", task, fact, generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrInvalidGenerationOutput) {
+		t.Fatalf("output stored outside its task-bound key was accepted: %v", err)
+	}
+}
+
+func TestOutputObjectKeyBindsPurposeAndRejectsUnsafeIDs(t *testing.T) {
+	task := mustTask(validCreateInput())
+	imageKey, err := OutputObjectKey(task)
+	if err != nil || imageKey != "owners/owner-1/generation/job-1/output.jpg" {
+		t.Fatalf("image OutputObjectKey() = %q, %v", imageKey, err)
+	}
+
+	input := validCreateInput()
+	input.Purpose = PurposeModel
+	input.Consent.Purpose = PurposeModel
+	input.Inputs.ImageAssetID = "image-1"
+	input.Inputs.ImageSHA256 = strings.Repeat("c", 64)
+	input.Inputs.References = []InputReference{{MediaID: "image-1", Role: InputRoleLookImage, Ordinal: 0, Revision: 5, SHA256: strings.Repeat("c", 64)}}
+	modelTask := mustTask(input)
+	modelKey, err := OutputObjectKey(modelTask)
+	if err != nil || modelKey != "owners/owner-1/generation/job-1/output.glb" {
+		t.Fatalf("model OutputObjectKey() = %q, %v", modelKey, err)
+	}
+
+	task.ID = "../outside"
+	if _, err := OutputObjectKey(task); !errors.Is(err, ErrInvalidGenerationOutput) {
+		t.Fatalf("unsafe task id produced an object key: %v", err)
+	}
+}
+
+func TestPersistedLegacyOutputWithoutObjectKeyIsReadableButNotPublishable(t *testing.T) {
+	task := validatingTask(t, validCreateInput())
+	asset, err := NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset.ObjectKey = ""
+	if err := asset.ValidateFor(task); !errors.Is(err, ErrInvalidGenerationOutput) {
+		t.Fatalf("legacy output passed the new publication validation: %v", err)
+	}
+	if err := asset.ValidatePersistedFor(task); err != nil {
+		t.Fatalf("legacy persisted output became unreadable: %v", err)
 	}
 }

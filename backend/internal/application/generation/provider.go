@@ -69,6 +69,7 @@ type RemoteTask struct {
 type FetchRequest struct {
 	TaskID         string
 	ExternalTaskID string
+	ObjectKey      string
 	Purpose        Purpose
 	LookID         string
 	LookRevision   int

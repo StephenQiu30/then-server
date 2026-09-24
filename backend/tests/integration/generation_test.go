@@ -342,10 +342,14 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("claim validating generation result lease: found=%v err=%v", found, err)
 	}
 	outputAt := workflowAt.Add(7 * time.Minute)
+	outputObjectKey, err := generationapp.OutputObjectKey(resultView.Task)
+	if err != nil {
+		t.Fatalf("build task-bound output key: %v", err)
+	}
 	asset, err := generationapp.NewOutputAsset(
 		"00000000-0000-4000-8000-000000000401",
 		resultView.Task,
-		generationapp.OutputFact{ContentType: generationapp.OutputContentTypeJPEG, ByteSize: 4096, SHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", ObjectVersionID: "local-object-v1"},
+		generationapp.OutputFact{ObjectKey: outputObjectKey, ContentType: generationapp.OutputContentTypeJPEG, ByteSize: 4096, SHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", ObjectVersionID: "local-object-v1"},
 		outputAt,
 	)
 	if err != nil {
@@ -357,6 +361,20 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 	if published.Task.Status != generationapp.StatusSucceeded || published.Task.ResultAssetID != asset.ID || published.Task.LeaseOwner != "" || published.Task.LeaseUntil != nil || published.Reservation == nil || published.Reservation.State != generationapp.ReservationConsumed || published.Asset == nil || published.Asset.ID != asset.ID {
 		t.Fatalf("generation output settlement was not atomic: %+v", published)
+	}
+	var storedOutputObjectKey string
+	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", resultView.Task.ID).Select("object_key").Scan(&storedOutputObjectKey).Error; err != nil || storedOutputObjectKey != outputObjectKey {
+		t.Fatalf("generation output key was not persisted: key=%q err=%v", storedOutputObjectKey, err)
+	}
+	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", resultView.Task.ID).Update("object_key", "").Error; err != nil {
+		t.Fatalf("simulate legacy output without object key: %v", err)
+	}
+	legacyOutputView, err := workerRepository.Get(ctx, second.User.ID, resultView.Task.ID)
+	if err != nil || legacyOutputView.Asset == nil || legacyOutputView.Asset.ObjectKey != "" {
+		t.Fatalf("legacy output could not be read: view=%+v err=%v", legacyOutputView, err)
+	}
+	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", resultView.Task.ID).Update("object_key", outputObjectKey).Error; err != nil {
+		t.Fatalf("restore generation output object key: %v", err)
 	}
 	replayedOutput, err := workerRepository.PublishOutput(ctx, resultLease, *published.Asset, outputAt)
 	if err != nil {
@@ -471,14 +489,14 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request generation cleanup: %v", err)
 	}
-	if deletedView.Task.AccessRevokedAt == nil || deletedView.Asset != nil || deletedView.Cleanup == nil || deletedView.Cleanup.ID != deletedCleanup.ID || deletedCleanup.Status != generationapp.CleanupPending || len(deletedCleanup.Targets) != 2 {
+	if deletedView.Task.AccessRevokedAt == nil || deletedView.Asset != nil || deletedView.Cleanup == nil || deletedView.Cleanup.ID != deletedCleanup.ID || deletedCleanup.Status != generationapp.CleanupPending || len(deletedCleanup.Targets) != 2 || deletedCleanup.Targets[0].ObjectKey != outputObjectKey {
 		t.Fatalf("generation cleanup did not revoke access or retain targets: view=%+v cleanup=%+v", deletedView, deletedCleanup)
 	}
 	claimedCleanup, targets, err := workerRepository.BeginTaskCleanup(ctx, deletedCleanup.ID, deletedCleanup.AccessRevokedAt.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("begin generation cleanup: %v", err)
 	}
-	if claimedCleanup.Status != generationapp.CleanupRunning || len(targets) != 2 || targets[0].Kind != generationapp.CleanupTargetObject || targets[1].Kind != generationapp.CleanupTargetProvider {
+	if claimedCleanup.Status != generationapp.CleanupRunning || len(targets) != 2 || targets[0].Kind != generationapp.CleanupTargetObject || targets[0].ObjectKey != outputObjectKey || targets[0].ObjectVersionID != "local-object-v1" || targets[1].Kind != generationapp.CleanupTargetProvider {
 		t.Fatalf("generation cleanup claim lost its target snapshot: request=%+v targets=%+v", claimedCleanup, targets)
 	}
 	completedCleanup, err := workerRepository.CompleteTaskCleanup(ctx, claimedCleanup, claimedCleanup.UpdatedAt.Add(time.Minute))

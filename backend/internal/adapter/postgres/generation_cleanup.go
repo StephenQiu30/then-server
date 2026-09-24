@@ -132,7 +132,7 @@ func generationCleanupTargets(database *gorm.DB, task generationapp.Task) ([]gen
 	targets := make([]generationapp.CleanupTarget, 0, 2)
 	var output generationOutputRecord
 	if err := database.Where("task_id = ?", task.ID).First(&output).Error; err == nil {
-		targets = append(targets, generationapp.CleanupTarget{Kind: generationapp.CleanupTargetObject, ID: output.ID, ObjectVersionID: output.ObjectVersionID})
+		targets = append(targets, generationapp.CleanupTarget{Kind: generationapp.CleanupTargetObject, ID: output.ID, ObjectKey: output.ObjectKey, ObjectVersionID: output.ObjectVersionID})
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
