@@ -18,16 +18,17 @@ import (
 )
 
 var (
-	ErrInvalidGenerationInput   = errors.New("invalid generation input")
-	ErrInvalidGenerationState   = errors.New("invalid generation state")
-	ErrGenerationNotCancellable = errors.New("generation job is not cancellable")
-	ErrGenerationNotSubmittable = errors.New("generation job is not submittable")
-	ErrGenerationRetryNotReady  = errors.New("generation retry is not ready")
-	ErrGenerationRetryExhausted = errors.New("generation submission retries exhausted")
-	ErrSubmissionInProgress     = errors.New("generation submission is already in progress")
-	ErrSubmissionOutcomeUnknown = errors.New("generation submission outcome is unknown")
-	ErrExternalTaskConflict     = errors.New("external generation task conflict")
-	ErrGenerationOutputRequired = errors.New("validated generation output is required before success")
+	ErrInvalidGenerationInput      = errors.New("invalid generation input")
+	ErrInvalidGenerationState      = errors.New("invalid generation state")
+	ErrGenerationNotCancellable    = errors.New("generation job is not cancellable")
+	ErrGenerationNotSubmittable    = errors.New("generation job is not submittable")
+	ErrGenerationRetryNotReady     = errors.New("generation retry is not ready")
+	ErrGenerationRetryExhausted    = errors.New("generation submission retries exhausted")
+	ErrSubmissionInProgress        = errors.New("generation submission is already in progress")
+	ErrSubmissionOutcomeUnknown    = errors.New("generation submission outcome is unknown")
+	ErrExternalTaskConflict        = errors.New("external generation task conflict")
+	ErrGenerationOutputRequired    = errors.New("validated generation output is required before success")
+	ErrGenerationSourceUnavailable = errors.New("generation source image is unavailable")
 )
 
 // RetryPolicy bounds safe, known-not-accepted submission retries. The policy
@@ -758,7 +759,7 @@ func ClassifyRequest(existing Task, input CreateInput) (RequestMatch, error) {
 		}
 		return RequestMatchIdempotencyConflict, nil
 	}
-	if existing.DedupeKey == dedupeKey && dedupeEligible(existing.Status) {
+	if existing.AccessRevokedAt == nil && existing.DedupeKey == dedupeKey && dedupeEligible(existing.Status) {
 		return RequestMatchContentDedupe, nil
 	}
 	return RequestMatchNone, nil

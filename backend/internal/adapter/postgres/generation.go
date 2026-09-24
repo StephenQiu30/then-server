@@ -141,6 +141,9 @@ func (r *GenerationRepository) Accept(ctx context.Context, input generationapp.C
 			result.Reservation = view.Reservation
 			return nil
 		}
+		if err := requireGenerationImageSource(tx, accepted.Task); err != nil {
+			return err
+		}
 		job, err := generationJobRecordFromTask(accepted.Task)
 		if err != nil {
 			return err
@@ -190,6 +193,53 @@ func (r *GenerationRepository) Accept(ctx context.Context, input generationapp.C
 		return generationapp.AcceptanceResult{}, generationGenerationError(err)
 	}
 	return result, nil
+}
+
+// requireGenerationImageSource keeps model admission tied to a confirmed
+// image output instead of trusting a client-supplied asset ID and digest. The
+// source task is locked in share mode so a concurrent source cleanup cannot
+// revoke it between validation and model task insertion.
+func requireGenerationImageSource(tx *gorm.DB, task generationapp.Task) error {
+	if task.Purpose != generationapp.PurposeModel {
+		return nil
+	}
+	var output generationOutputRecord
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
+		"id = ? AND owner_id = ? AND look_id = ? AND look_revision = ? AND purpose = ? AND content_type = ? AND sha256 = ?",
+		task.Inputs.ImageAssetID,
+		task.OwnerID,
+		task.LookID,
+		task.LookRevision,
+		string(generationapp.PurposeImage),
+		generationapp.OutputContentTypeJPEG,
+		task.Inputs.ImageSHA256,
+	).First(&output).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return generationapp.ErrGenerationSourceUnavailable
+		}
+		return err
+	}
+	var source generationJobRecord
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
+		"id = ? AND owner_id = ? AND status = ? AND access_revoked_at IS NULL AND result_asset_id = ?",
+		output.TaskID,
+		task.OwnerID,
+		string(generationapp.StatusSucceeded),
+		output.ID,
+	).First(&source).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return generationapp.ErrGenerationSourceUnavailable
+		}
+		return err
+	}
+	sourceTask, err := generationTaskFromRecord(source)
+	if err != nil {
+		return err
+	}
+	if _, err := generationOutputFromRecord(output, sourceTask); err != nil {
+		return generationapp.ErrGenerationSourceUnavailable
+	}
+	return nil
 }
 
 func (r *GenerationRepository) Get(ctx context.Context, ownerID, taskID string) (generationapp.TaskView, error) {
@@ -416,7 +466,7 @@ func generationLookupError(err error) error {
 }
 
 func generationGenerationError(err error) error {
-	if errors.Is(err, generationapp.ErrGenerationNotFound) || errors.Is(err, generationapp.ErrGenerationUnavailable) || errors.Is(err, generationapp.ErrInvalidGenerationInput) || errors.Is(err, generationapp.ErrGenerationDisabled) || errors.Is(err, generationapp.ErrGenerationQuotaExceeded) || errors.Is(err, generationapp.ErrGenerationBudgetExceeded) || errors.Is(err, generationapp.ErrGenerationConcurrency) || errors.Is(err, generationapp.ErrGenerationCurrency) || errors.Is(err, generationapp.ErrGenerationIdempotencyConflict) || errors.Is(err, generationapp.ErrGenerationNotCancellable) || errors.Is(err, generationapp.ErrGenerationRetryNotReady) || errors.Is(err, generationapp.ErrGenerationRetryExhausted) || errors.Is(err, generationapp.ErrGenerationLeaseHeld) || errors.Is(err, generationapp.ErrGenerationLeaseExpired) || errors.Is(err, generationapp.ErrGenerationLeaseConflict) || errors.Is(err, generationapp.ErrInvalidGenerationLease) || errors.Is(err, generationapp.ErrInvalidGenerationCleanup) || errors.Is(err, generationapp.ErrGenerationCleanupNotReady) || errors.Is(err, generationapp.ErrGenerationCleanupInProgress) || errors.Is(err, generationapp.ErrGenerationCleanupClaim) {
+	if errors.Is(err, generationapp.ErrGenerationNotFound) || errors.Is(err, generationapp.ErrGenerationUnavailable) || errors.Is(err, generationapp.ErrInvalidGenerationInput) || errors.Is(err, generationapp.ErrGenerationDisabled) || errors.Is(err, generationapp.ErrGenerationQuotaExceeded) || errors.Is(err, generationapp.ErrGenerationBudgetExceeded) || errors.Is(err, generationapp.ErrGenerationConcurrency) || errors.Is(err, generationapp.ErrGenerationCurrency) || errors.Is(err, generationapp.ErrGenerationIdempotencyConflict) || errors.Is(err, generationapp.ErrGenerationNotCancellable) || errors.Is(err, generationapp.ErrGenerationRetryNotReady) || errors.Is(err, generationapp.ErrGenerationRetryExhausted) || errors.Is(err, generationapp.ErrGenerationLeaseHeld) || errors.Is(err, generationapp.ErrGenerationLeaseExpired) || errors.Is(err, generationapp.ErrGenerationLeaseConflict) || errors.Is(err, generationapp.ErrInvalidGenerationLease) || errors.Is(err, generationapp.ErrInvalidGenerationCleanup) || errors.Is(err, generationapp.ErrGenerationCleanupNotReady) || errors.Is(err, generationapp.ErrGenerationCleanupInProgress) || errors.Is(err, generationapp.ErrGenerationCleanupClaim) || errors.Is(err, generationapp.ErrGenerationSourceUnavailable) {
 		return err
 	}
 	return generationapp.ErrGenerationUnavailable

@@ -130,7 +130,7 @@ func (h *GenerationHandler) error(ctx context.Context, err error) error {
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
 	case errors.Is(err, generationapp.ErrGenerationNotFound):
 		return newErrorResponse(http.StatusNotFound, requestID(ctx))
-	case errors.Is(err, generationapp.ErrGenerationIdempotencyConflict), errors.Is(err, generationapp.ErrGenerationNotCancellable), errors.Is(err, generationapp.ErrGenerationQuotaExceeded), errors.Is(err, generationapp.ErrGenerationBudgetExceeded), errors.Is(err, generationapp.ErrGenerationConcurrency), errors.Is(err, generationapp.ErrGenerationCurrency), errors.Is(err, generationapp.ErrGenerationCleanupInProgress):
+	case errors.Is(err, generationapp.ErrGenerationIdempotencyConflict), errors.Is(err, generationapp.ErrGenerationNotCancellable), errors.Is(err, generationapp.ErrGenerationQuotaExceeded), errors.Is(err, generationapp.ErrGenerationBudgetExceeded), errors.Is(err, generationapp.ErrGenerationConcurrency), errors.Is(err, generationapp.ErrGenerationCurrency), errors.Is(err, generationapp.ErrGenerationCleanupInProgress), errors.Is(err, generationapp.ErrGenerationSourceUnavailable):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Generation request conflicts with the current task or admission limits."
 		return response

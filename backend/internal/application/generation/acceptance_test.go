@@ -84,6 +84,27 @@ func TestPrepareAcceptanceContentDedupeReturnsExistingTask(t *testing.T) {
 	}
 }
 
+func TestPrepareAcceptanceDoesNotReuseRevokedContentDuplicate(t *testing.T) {
+	existingInput := validCreateInput()
+	existing, err := NewTask(existingInput, generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := existing.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	newInput := existingInput
+	newInput.ID = "job-revoked-duplicate"
+	newInput.IdempotencyKey = "request-revoked-duplicate"
+	result, err := PrepareAcceptance(generationPolicy(), AdmissionUsage{}, []Task{existing}, newInput, "reservation-2", "outbox-2", generationTestNow.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("revoked content duplicate was rejected before source validation: %v", err)
+	}
+	if result.Reused || result.Match != RequestMatchNone || result.Task.ID != newInput.ID {
+		t.Fatalf("revoked content duplicate was reused: %+v", result)
+	}
+}
+
 func TestPrepareAcceptanceRejectsIdempotencyConflictBeforeDedupe(t *testing.T) {
 	conflictInput := validCreateInput()
 	conflictInput.ID = "job-conflict"

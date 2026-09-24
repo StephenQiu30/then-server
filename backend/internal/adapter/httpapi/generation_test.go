@@ -167,6 +167,14 @@ func TestGenerationHTTPContractMapsDisabledAndConflictErrors(t *testing.T) {
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"CONFLICT"`) {
 		t.Fatalf("cancel conflict status=%d body=%s", response.Code, response.Body.String())
 	}
+
+	service.err = generationapp.ErrGenerationSourceUnavailable
+	request = generationSessionRequest(http.MethodPost, "/generation-jobs", generationHTTPCreateBody())
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"CONFLICT"`) {
+		t.Fatalf("source conflict status=%d body=%s", response.Code, response.Body.String())
+	}
 }
 
 func stringPointer(value string) *string { return &value }
