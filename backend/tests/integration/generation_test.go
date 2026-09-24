@@ -20,6 +20,21 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+type generationRecoveryProviderStub struct{ submitCalls int }
+
+func (p *generationRecoveryProviderStub) Submit(context.Context, generationapp.Submission) (generationapp.Receipt, error) {
+	p.submitCalls++
+	return generationapp.Receipt{ExternalTaskID: "unexpected-provider-task"}, nil
+}
+
+func (*generationRecoveryProviderStub) Query(context.Context, string) (generationapp.RemoteTask, error) {
+	return generationapp.RemoteTask{}, errors.New("query is not part of submission recovery")
+}
+
+func (*generationRecoveryProviderStub) Cancel(context.Context, string) error {
+	return errors.New("cancel is not part of submission recovery")
+}
+
 func TestGenerationPersistenceLifecycle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -711,6 +726,48 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 	if exhaustedState.Status != string(generationapp.CleanupFailed) || exhaustedState.StableError != "cleanup_retry_exhausted" || exhaustedState.Attempts != generationapp.MaxCleanupAttempts {
 		t.Fatalf("stale exhausted cleanup was not durably settled: %+v", exhaustedState)
+	}
+
+	recoveryInput := input
+	recoveryInput.IdempotencyKey = "generation-recovered-in-flight"
+	recoveryInput.LookID = "00000000-0000-4000-8000-000000000102"
+	recoveryInput.Parameters = []byte(`{"seed":"recovery"}`)
+	recoveryInput.Inputs.LookID = recoveryInput.LookID
+	recoveryTask, err := generations.Create(ctx, third.Token, recoveryInput)
+	if err != nil {
+		t.Fatalf("create stale in-flight recovery task: %v", err)
+	}
+	crashedAt := recoveryTask.View.Task.CreatedAt
+	_, crashedLease, err := workerRepository.AcquireLease(ctx, recoveryTask.View.Task.ID, "worker-crashed", crashedAt, time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease before simulated worker crash: %v", err)
+	}
+	if _, _, err := workerRepository.BeginSubmission(ctx, crashedLease, crashedAt); err != nil {
+		t.Fatalf("persist in-flight submission before simulated crash: %v", err)
+	}
+	if err := database.WithContext(ctx).Table("generation_jobs").Where("id = ?", recoveryTask.View.Task.ID).Update("lease_until", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+		t.Fatalf("expire crashed worker lease: %v", err)
+	}
+
+	provider := &generationRecoveryProviderStub{}
+	recoveryWorker, err := generationapp.NewSubmissionWorker(workerRepository, provider, generationapp.SubmissionWorkerPolicy{
+		WorkerID:        "worker-recovery",
+		LeaseTTL:        time.Minute,
+		ProviderTimeout: time.Second,
+		Retry:           generationapp.RetryPolicy{MaxAttempts: 3, BaseDelay: time.Second, MaxDelay: time.Minute},
+	})
+	if err != nil {
+		t.Fatalf("construct submission recovery worker: %v", err)
+	}
+	found, recoveredResult, err := recoveryWorker.RunNext(ctx)
+	if !errors.Is(err, generationapp.ErrGenerationSubmissionUnknown) || !found || recoveredResult.View.Task.ID != recoveryTask.View.Task.ID {
+		t.Fatalf("expired in-flight task was not durably recovered: found=%v task=%+v err=%v", found, recoveredResult.View.Task, err)
+	}
+	if recoveredResult.View.Task.SubmissionState != generationapp.SubmissionUnknown || recoveredResult.View.Task.ExternalTaskID != "" || recoveredResult.View.Task.LeaseOwner != "" || recoveredResult.View.Task.FencingToken != crashedLease.FencingToken+1 || provider.submitCalls != 0 {
+		t.Fatalf("recovery did not fence without resubmitting: task=%+v provider submits=%d", recoveredResult.View.Task, provider.submitCalls)
+	}
+	if found, _, err := recoveryWorker.RunNext(ctx); err != nil || found {
+		t.Fatalf("unknown task remained eligible for submission: found=%v err=%v", found, err)
 	}
 
 }

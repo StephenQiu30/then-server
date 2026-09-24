@@ -101,8 +101,8 @@ func (r *GenerationRepository) AcquireResultLease(ctx context.Context, taskID, o
 // the domain lease still fences a worker recovered after expiry.
 func (r *GenerationRepository) ClaimNextSubmissionLease(ctx context.Context, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
 	return r.claimNextLease(ctx, owner, at, ttl, func(query *gorm.DB) *gorm.DB {
-		return query.Where("status IN ? AND submission_state = ? AND external_task_id = '' AND access_revoked_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= ?) AND (lease_until IS NULL OR lease_until <= ?)",
-			[]string{string(generationapp.StatusQueued), string(generationapp.StatusRunning)}, string(generationapp.SubmissionNotStarted), at, at)
+		return query.Where("status IN ? AND external_task_id = '' AND access_revoked_at IS NULL AND (lease_until IS NULL OR lease_until <= ?) AND ((submission_state = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (submission_state = ? AND lease_until IS NOT NULL))",
+			[]string{string(generationapp.StatusQueued), string(generationapp.StatusRunning)}, at, string(generationapp.SubmissionNotStarted), at, string(generationapp.SubmissionInFlight))
 	})
 }
 
