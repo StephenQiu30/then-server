@@ -202,6 +202,60 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("generation lease release left an active lease: %+v", released.Task)
 	}
 
+	workflowAt := released.Task.UpdatedAt.Add(time.Minute)
+	workflowView, workflowLease, err := workerRepository.AcquireLease(ctx, paidCreated.View.Task.ID, "worker-c", workflowAt, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("reacquire generation lease for submission workflow: %v", err)
+	}
+	if workflowView.Task.Status != generationapp.StatusRunning || workflowLease.FencingToken != recovered.FencingToken+1 || workflowLease.Attempt != recovered.Attempt+1 {
+		t.Fatalf("submission workflow lease was not fenced: task=%+v lease=%+v", workflowView.Task, workflowLease)
+	}
+	started, submission, err := workerRepository.BeginSubmission(ctx, workflowLease, workflowAt)
+	if err != nil {
+		t.Fatalf("begin generation submission: %v", err)
+	}
+	if started.Task.SubmissionState != generationapp.SubmissionInFlight || started.Task.SubmissionAttempt != 1 || submission.Attempt != 1 || submission.TaskID != paidCreated.View.Task.ID {
+		t.Fatalf("generation submission was not persisted as in flight: task=%+v submission=%+v", started.Task, submission)
+	}
+	unknown, err := workerRepository.MarkSubmissionUnknown(ctx, workflowLease, workflowAt.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("mark generation submission unknown: %v", err)
+	}
+	if unknown.Task.SubmissionState != generationapp.SubmissionUnknown || unknown.Task.SubmissionUnknownAt == nil {
+		t.Fatalf("unknown generation submission was not persisted: %+v", unknown.Task)
+	}
+	if _, _, err := workerRepository.BeginSubmission(ctx, workflowLease, workflowAt.Add(90*time.Second)); !errors.Is(err, generationapp.ErrSubmissionOutcomeUnknown) {
+		t.Fatalf("unknown generation submission was resubmitted: %v", err)
+	}
+	reconciled, err := workerRepository.ReconcileSubmissionNotAccepted(ctx, workflowLease, workflowAt.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("reconcile generation submission: %v", err)
+	}
+	if reconciled.Task.SubmissionState != generationapp.SubmissionNotStarted || reconciled.Task.SubmissionUnknownAt != nil || reconciled.Task.SubmissionAttempt != 1 {
+		t.Fatalf("generation submission reconciliation was incorrect: %+v", reconciled.Task)
+	}
+	startedAgain, submissionAgain, err := workerRepository.BeginSubmission(ctx, workflowLease, workflowAt.Add(3*time.Minute))
+	if err != nil {
+		t.Fatalf("begin reconciled generation submission: %v", err)
+	}
+	if startedAgain.Task.SubmissionState != generationapp.SubmissionInFlight || startedAgain.Task.SubmissionAttempt != 2 || submissionAgain.Attempt != 2 {
+		t.Fatalf("reconciled generation submission did not increment attempt: task=%+v submission=%+v", startedAgain.Task, submissionAgain)
+	}
+	external, err := workerRepository.RecordExternalTaskID(ctx, workflowLease, "provider-task-1", workflowAt.Add(4*time.Minute))
+	if err != nil {
+		t.Fatalf("record generation provider task identity: %v", err)
+	}
+	if external.Task.SubmissionState != generationapp.SubmissionAccepted || external.Task.ExternalTaskID != "provider-task-1" || external.Task.SubmissionAttempt != 2 {
+		t.Fatalf("generation provider identity was not persisted: %+v", external.Task)
+	}
+	observed, err := workerRepository.ApplyProviderState(ctx, workflowLease, "provider-task-1", generationapp.StatusValidating, "", workflowAt.Add(5*time.Minute))
+	if err != nil {
+		t.Fatalf("apply generation provider state: %v", err)
+	}
+	if observed.Task.Status != generationapp.StatusValidating || observed.Task.ExternalTaskID != "provider-task-1" || observed.Task.SubmissionState != generationapp.SubmissionAccepted {
+		t.Fatalf("generation provider state observation was not persisted: %+v", observed.Task)
+	}
+
 	canceled, err := generations.Cancel(ctx, first.Token, created.View.Task.ID)
 	if err != nil {
 		t.Fatalf("request generation cancellation: %v", err)

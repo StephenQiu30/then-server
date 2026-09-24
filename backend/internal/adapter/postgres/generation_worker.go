@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
@@ -139,6 +140,110 @@ func (r *GenerationRepository) ReleaseLease(ctx context.Context, lease generatio
 	return view, nil
 }
 
+// BeginSubmission marks a leased task in flight and returns the immutable
+// provider-neutral submission payload. The caller must persist this mutation
+// before making any external request.
+func (r *GenerationRepository) BeginSubmission(ctx context.Context, lease generationapp.Lease, at time.Time) (generationapp.TaskView, generationapp.Submission, error) {
+	var submission generationapp.Submission
+	view, err := r.mutateLeasedTask(ctx, lease, at, func(task *generationapp.Task) error {
+		var beginErr error
+		submission, beginErr = task.BeginSubmission(at)
+		return beginErr
+	})
+	if err != nil {
+		return generationapp.TaskView{}, generationapp.Submission{}, err
+	}
+	return view, submission, nil
+}
+
+// MarkSubmissionUnknown persists a transport outcome that cannot prove
+// whether the external service accepted the request. It deliberately keeps
+// the task blocked until ReconcileSubmissionNotAccepted or RecordExternalTaskID.
+func (r *GenerationRepository) MarkSubmissionUnknown(ctx context.Context, lease generationapp.Lease, at time.Time) (generationapp.TaskView, error) {
+	return r.mutateLeasedTask(ctx, lease, at, func(task *generationapp.Task) error {
+		return task.MarkSubmissionUnknown(at)
+	})
+}
+
+// ReconcileSubmissionNotAccepted clears an unknown submission only after the
+// caller has evidence that no external task was accepted.
+func (r *GenerationRepository) ReconcileSubmissionNotAccepted(ctx context.Context, lease generationapp.Lease, at time.Time) (generationapp.TaskView, error) {
+	return r.mutateLeasedTask(ctx, lease, at, func(task *generationapp.Task) error {
+		return task.ReconcileSubmissionNotAccepted(at)
+	})
+}
+
+// RecordExternalTaskID attaches the first external identity. A terminal task
+// may retain a late identity for cleanup, but the fencing token must still
+// match the worker attempt that submitted it.
+func (r *GenerationRepository) RecordExternalTaskID(ctx context.Context, lease generationapp.Lease, externalID string, at time.Time) (generationapp.TaskView, error) {
+	return r.mutateLeasedTask(ctx, lease, at, func(task *generationapp.Task) error {
+		return task.RecordExternalTaskID(externalID, at)
+	})
+}
+
+// ApplyProviderState records a non-terminal provider observation after the
+// adapter has mapped it to the domain state machine. Terminal settlement is a
+// separate atomic operation and is intentionally not performed here.
+func (r *GenerationRepository) ApplyProviderState(ctx context.Context, lease generationapp.Lease, externalID string, next generationapp.Status, failureCode string, at time.Time) (generationapp.TaskView, error) {
+	return r.mutateLeasedTask(ctx, lease, at, func(task *generationapp.Task) error {
+		return task.ApplyProviderState(externalID, next, failureCode, at)
+	})
+}
+
+func (r *GenerationRepository) mutateLeasedTask(ctx context.Context, lease generationapp.Lease, at time.Time, mutate func(*generationapp.Task) error) (generationapp.TaskView, error) {
+	if r == nil || r.database == nil {
+		return generationapp.TaskView{}, generationapp.ErrGenerationUnavailable
+	}
+	if mutate == nil {
+		return generationapp.TaskView{}, generationapp.ErrInvalidGenerationState
+	}
+	if _, err := uuid.Parse(lease.TaskID); err != nil {
+		return generationapp.TaskView{}, generationapp.ErrInvalidGenerationLease
+	}
+	var view generationapp.TaskView
+	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record generationJobRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", lease.TaskID).First(&record).Error; err != nil {
+			return generationLookupError(err)
+		}
+		task, err := generationTaskFromRecord(record)
+		if err != nil {
+			return err
+		}
+		if err := validateGenerationWorkerProof(task, lease, at); err != nil {
+			return err
+		}
+		previousRevision := task.StatusRevision
+		if err := mutate(&task); err != nil {
+			return err
+		}
+		if err := updateGenerationTask(tx, task, previousRevision); err != nil {
+			return err
+		}
+		persisted, err := generationTaskByID(tx, lease.TaskID)
+		if err != nil {
+			return err
+		}
+		view, err = r.readTaskView(tx, persisted)
+		return err
+	})
+	if err != nil {
+		return generationapp.TaskView{}, generationWorkerError(err)
+	}
+	return view, nil
+}
+
+func validateGenerationWorkerProof(task generationapp.Task, lease generationapp.Lease, at time.Time) error {
+	if task.Status.Terminal() {
+		if lease.TaskID != task.ID || lease.Owner == "" || lease.FencingToken == 0 || lease.Attempt < 1 || task.FencingToken != lease.FencingToken || task.LeaseAttempt != lease.Attempt {
+			return generationapp.ErrGenerationLeaseConflict
+		}
+		return nil
+	}
+	return task.ValidateLease(lease, at)
+}
+
 func generationTaskByID(database *gorm.DB, taskID string) (generationapp.Task, error) {
 	var record generationJobRecord
 	if err := database.Where("id = ?", taskID).First(&record).Error; err != nil {
@@ -172,4 +277,22 @@ func updateGenerationTask(database *gorm.DB, task generationapp.Task, previousRe
 		return generationapp.ErrGenerationLeaseConflict
 	}
 	return nil
+}
+
+func generationWorkerError(err error) error {
+	if errors.Is(err, generationapp.ErrGenerationNotFound) ||
+		errors.Is(err, generationapp.ErrGenerationUnavailable) ||
+		errors.Is(err, generationapp.ErrInvalidGenerationInput) ||
+		errors.Is(err, generationapp.ErrGenerationNotSubmittable) ||
+		errors.Is(err, generationapp.ErrSubmissionInProgress) ||
+		errors.Is(err, generationapp.ErrSubmissionOutcomeUnknown) ||
+		errors.Is(err, generationapp.ErrExternalTaskConflict) ||
+		errors.Is(err, generationapp.ErrInvalidGenerationState) ||
+		errors.Is(err, generationapp.ErrGenerationLeaseHeld) ||
+		errors.Is(err, generationapp.ErrGenerationLeaseExpired) ||
+		errors.Is(err, generationapp.ErrGenerationLeaseConflict) ||
+		errors.Is(err, generationapp.ErrInvalidGenerationLease) {
+		return err
+	}
+	return generationapp.ErrGenerationUnavailable
 }
