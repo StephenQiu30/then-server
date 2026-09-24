@@ -21,6 +21,10 @@ var (
 	// durable, validated object fact. The task remains validating and can be
 	// retried by a later output worker.
 	ErrGenerationOutputFetchUnknown = errors.New("generation output fetch requires retry")
+	// ErrGenerationCancellationUnknown means a requested provider cancellation
+	// did not produce a trustworthy outcome. The task remains visible as a
+	// cancellation request and can be reconciled by a later observation.
+	ErrGenerationCancellationUnknown = errors.New("generation cancellation requires retry")
 )
 
 // Provider is the only application port a future provider adapter may satisfy.

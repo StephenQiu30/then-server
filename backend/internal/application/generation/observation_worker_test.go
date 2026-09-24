@@ -8,9 +8,12 @@ import (
 )
 
 type observationWorkerProviderStub struct {
-	remote   RemoteTask
-	queryErr error
-	queries  int
+	remote      RemoteTask
+	queryErr    error
+	cancelErr   error
+	cancelState *Status
+	queries     int
+	cancels     int
 }
 
 func (p *observationWorkerProviderStub) Submit(context.Context, Submission) (Receipt, error) {
@@ -25,7 +28,19 @@ func (p *observationWorkerProviderStub) Query(context.Context, string) (RemoteTa
 	return p.remote, nil
 }
 
-func (p *observationWorkerProviderStub) Cancel(context.Context, string) error { return nil }
+func (p *observationWorkerProviderStub) Cancel(_ context.Context, externalID string) error {
+	p.cancels++
+	if p.cancelErr != nil {
+		return p.cancelErr
+	}
+	if p.remote.ExternalTaskID != externalID {
+		return errors.New("unexpected external task")
+	}
+	if p.cancelState != nil {
+		p.remote.State = *p.cancelState
+	}
+	return nil
+}
 
 type observationWorkerRepositoryStub struct {
 	task        Task
@@ -145,6 +160,64 @@ func TestObservationWorkerRunNextClaimsRunningQueue(t *testing.T) {
 	}
 	if provider.queries != 1 || repository.task.LeaseOwner != "" {
 		t.Fatalf("RunNext() did not query and release exactly once: queries=%d task=%+v", provider.queries, repository.task)
+	}
+}
+
+func TestObservationWorkerCancelsRequestedProviderTaskBeforeSettling(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: acceptedObservationTask(t)}
+	if err := repository.task.RequestCancel(generationTestNow.Add(3*time.Minute + 30*time.Second)); err != nil {
+		t.Fatalf("RequestCancel() error = %v", err)
+	}
+	canceled := StatusCanceled
+	provider := &observationWorkerProviderStub{
+		remote:      RemoteTask{ExternalTaskID: "provider-job-1", State: StatusRunning},
+		cancelState: &canceled,
+	}
+	worker := newObservationWorker(t, repository, provider)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if err != nil {
+		t.Fatalf("RunOnce() error = %v", err)
+	}
+	if result.Outcome != ObservationOutcomeTerminal || result.View.Task.Status != StatusCanceled || result.View.Task.LeaseOwner != "" {
+		t.Fatalf("requested cancellation did not settle task: %+v", result)
+	}
+	if provider.cancels != 1 || provider.queries != 2 {
+		t.Fatalf("provider cancellation/reconciliation calls = cancel %d query %d, want 1/2", provider.cancels, provider.queries)
+	}
+}
+
+func TestObservationWorkerKeepsCancellationRequestWhenProviderCancelFails(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: acceptedObservationTask(t)}
+	if err := repository.task.RequestCancel(generationTestNow.Add(3*time.Minute + 30*time.Second)); err != nil {
+		t.Fatalf("RequestCancel() error = %v", err)
+	}
+	provider := &observationWorkerProviderStub{
+		remote:    RemoteTask{ExternalTaskID: "provider-job-1", State: StatusRunning},
+		cancelErr: errors.New("provider timeout"),
+	}
+	worker := newObservationWorker(t, repository, provider)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrGenerationCancellationUnknown) {
+		t.Fatalf("RunOnce() error = %v, want cancellation retry", err)
+	}
+	if result.View.Task.Status != StatusRunning || result.View.Task.CancelRequestedAt == nil || result.View.Task.LeaseOwner != "" {
+		t.Fatalf("failed cancellation changed task or retained lease: %+v", result.View.Task)
+	}
+	if provider.cancels != 1 || provider.queries != 1 {
+		t.Fatalf("provider calls = cancel %d query %d, want 1/1", provider.cancels, provider.queries)
+	}
+}
+
+func TestObservationWorkerMapsQueuedProviderStateToRunning(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: acceptedObservationTask(t)}
+	provider := &observationWorkerProviderStub{remote: RemoteTask{ExternalTaskID: "provider-job-1", State: StatusQueued}}
+	worker := newObservationWorker(t, repository, provider)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if err != nil || result.Outcome != ObservationOutcomeRunning || result.View.Task.Status != StatusRunning {
+		t.Fatalf("queued provider state = result=%+v err=%v", result, err)
 	}
 }
 

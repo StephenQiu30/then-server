@@ -347,6 +347,60 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("generation output settlement replay was not idempotent: %+v", replayedOutput)
 	}
 
+	cancelInput := paidInput
+	cancelInput.IdempotencyKey = "generation-cancel-after-acceptance"
+	cancelInput.Parameters = []byte(`{"seed":"cancel"}`)
+	cancelInput.Inputs.References = []generationapp.InputReference{
+		{MediaID: "00000000-0000-4000-8000-000000000203", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{MediaID: "00000000-0000-4000-8000-000000000204", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 3, SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+	}
+	cancelCreated, err := paidGenerations.Create(ctx, second.Token, cancelInput)
+	if err != nil {
+		t.Fatalf("accept cancellation workflow task: %v", err)
+	}
+	cancelAt := time.Now().UTC()
+	_, cancelLease, err := workerRepository.AcquireLease(ctx, cancelCreated.View.Task.ID, "worker-cancel-submit", cancelAt, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("acquire cancellation workflow lease: %v", err)
+	}
+	if _, _, err := workerRepository.BeginSubmission(ctx, cancelLease, cancelAt); err != nil {
+		t.Fatalf("begin cancellation workflow submission: %v", err)
+	}
+	cancelAccepted, err := workerRepository.RecordExternalTaskID(ctx, cancelLease, "provider-task-cancel", cancelAt)
+	if err != nil || cancelAccepted.Task.SubmissionState != generationapp.SubmissionAccepted {
+		t.Fatalf("record cancellation workflow provider identity: view=%+v err=%v", cancelAccepted, err)
+	}
+	if _, err := workerRepository.ReleaseLease(ctx, cancelLease, cancelAt); err != nil {
+		t.Fatalf("release cancellation workflow submission lease: %v", err)
+	}
+	cancelObserveAt := time.Now().UTC()
+	_, cancelObservationLease, found, err := workerRepository.ClaimNextObservationLease(ctx, "worker-cancel-observe", cancelObserveAt, 10*time.Minute)
+	if err != nil || !found {
+		t.Fatalf("claim cancellation workflow observation lease: found=%v err=%v", found, err)
+	}
+	_, err = workerRepository.ApplyProviderState(ctx, cancelObservationLease, "provider-task-cancel", generationapp.StatusValidating, "", cancelObserveAt)
+	if err != nil {
+		t.Fatalf("move cancellation workflow to validating: %v", err)
+	}
+	if _, err := workerRepository.ReleaseLease(ctx, cancelObservationLease, cancelObserveAt); err != nil {
+		t.Fatalf("release cancellation workflow observation lease: %v", err)
+	}
+	cancelRequested, err := paidGenerations.Cancel(ctx, second.Token, cancelCreated.View.Task.ID)
+	if err != nil || cancelRequested.Task.CancelRequestedAt == nil || cancelRequested.Task.Status != generationapp.StatusValidating {
+		t.Fatalf("request cancellation after provider acceptance: view=%+v err=%v", cancelRequested, err)
+	}
+	cancelResultView, cancelResultLease, found, err := workerRepository.ClaimNextResultLease(ctx, "worker-cancel-result", cancelRequested.Task.UpdatedAt, 10*time.Minute)
+	if err != nil || !found {
+		t.Fatalf("claim canceled result lease: found=%v err=%v", found, err)
+	}
+	canceledResult, err := workerRepository.FinalizeWithoutOutput(ctx, cancelResultLease, generationapp.StatusCanceled, "", cancelResultView.Task.UpdatedAt)
+	if err != nil {
+		t.Fatalf("settle canceled result before fetch: %v", err)
+	}
+	if canceledResult.Task.Status != generationapp.StatusCanceled || canceledResult.Task.ResultAssetID != "" || canceledResult.Task.LeaseOwner != "" || canceledResult.Reservation == nil || canceledResult.Reservation.State != generationapp.ReservationReleased {
+		t.Fatalf("canceled result settlement was not atomic: %+v", canceledResult)
+	}
+
 	modelInput := paidInput
 	modelInput.IdempotencyKey = "generation-model-dependent"
 	modelInput.Purpose = generationapp.PurposeModel
