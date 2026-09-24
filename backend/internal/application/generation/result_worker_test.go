@@ -1,17 +1,38 @@
 package generation
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"testing"
 	"time"
 )
 
 type resultWorkerFetcherStub struct {
-	result  FetchedResult
-	err     error
-	request FetchRequest
-	fetches int
+	result      FetchedResult
+	outputBytes []byte
+	err         error
+	readErr     error
+	request     FetchRequest
+	fetches     int
+	reads       int
+	readKey     string
+	readVersion string
+	readLimit   int64
+}
+
+func (f *resultWorkerFetcherStub) ReadOutputVersion(_ context.Context, objectKey, versionID string, maxBytes int64) ([]byte, error) {
+	f.reads++
+	f.readKey = objectKey
+	f.readVersion = versionID
+	f.readLimit = maxBytes
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
+	return append([]byte(nil), f.outputBytes...), nil
 }
 
 func (f *resultWorkerFetcherStub) Fetch(_ context.Context, request FetchRequest) (FetchedResult, error) {
@@ -73,7 +94,7 @@ func validatingResultTask(t *testing.T) Task {
 
 func newResultWorker(t *testing.T, repository *observationWorkerRepositoryStub, fetcher *resultWorkerFetcherStub) *ResultWorker {
 	t.Helper()
-	worker, err := NewResultWorker(repository, fetcher, ResultWorkerPolicy{
+	worker, err := NewResultWorker(repository, fetcher, fetcher, ResultWorkerPolicy{
 		WorkerID:     "result-worker",
 		LeaseTTL:     10 * time.Minute,
 		FetchTimeout: time.Minute,
@@ -87,7 +108,8 @@ func newResultWorker(t *testing.T, repository *observationWorkerRepositoryStub, 
 
 func TestResultWorkerPublishesValidatedOutputAtomically(t *testing.T) {
 	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
-	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task)}
+	data := validGenerationJPEG(t)
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task, data), outputBytes: data}
 	worker := newResultWorker(t, repository, fetcher)
 
 	result, err := worker.RunOnce(context.Background(), repository.task.ID)
@@ -97,14 +119,15 @@ func TestResultWorkerPublishesValidatedOutputAtomically(t *testing.T) {
 	if result.Outcome != ResultOutcomePublished || result.View.Task.Status != StatusSucceeded || result.View.Task.ResultAssetID == "" || result.View.Asset == nil {
 		t.Fatalf("unexpected result publication: %+v", result)
 	}
-	if result.View.Task.LeaseOwner != "" || fetcher.fetches != 1 || fetcher.request.TaskID != repository.task.ID || fetcher.request.ObjectKey != "owners/owner-1/generation/job-1/output.jpg" || fetcher.request.LookID != repository.task.LookID || fetcher.request.LookRevision != repository.task.LookRevision || !inputSnapshotsEqual(fetcher.request.Inputs, repository.task.Inputs) {
+	if result.View.Task.LeaseOwner != "" || fetcher.fetches != 1 || fetcher.reads != 1 || fetcher.readKey != result.View.Asset.ObjectKey || fetcher.readVersion != result.View.Asset.ObjectVersionID || fetcher.readLimit != MaxGenerationImageOutputBytes || fetcher.request.TaskID != repository.task.ID || fetcher.request.ObjectKey != "owners/owner-1/generation/job-1/output.jpg" || fetcher.request.LookID != repository.task.LookID || fetcher.request.LookRevision != repository.task.LookRevision || !inputSnapshotsEqual(fetcher.request.Inputs, repository.task.Inputs) {
 		t.Fatalf("publication retained lease or fetched unexpected count: task=%+v fetches=%d", result.View.Task, fetcher.fetches)
 	}
 }
 
 func TestResultWorkerRunNextClaimsValidatingQueue(t *testing.T) {
 	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
-	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task)}
+	data := validGenerationJPEG(t)
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task, data), outputBytes: data}
 	worker := newResultWorker(t, repository, fetcher)
 
 	found, result, err := worker.RunNext(context.Background())
@@ -121,7 +144,8 @@ func TestResultWorkerSettlesCancellationBeforeFetchingOutput(t *testing.T) {
 	if err := repository.task.RequestCancel(generationTestNow.Add(5*time.Minute + 30*time.Second)); err != nil {
 		t.Fatalf("RequestCancel() error = %v", err)
 	}
-	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task)}
+	data := validGenerationJPEG(t)
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task, data), outputBytes: data}
 	worker := newResultWorker(t, repository, fetcher)
 
 	result, err := worker.RunOnce(context.Background(), repository.task.ID)
@@ -131,8 +155,8 @@ func TestResultWorkerSettlesCancellationBeforeFetchingOutput(t *testing.T) {
 	if result.Outcome != ResultOutcomeCanceled || result.View.Task.Status != StatusCanceled || result.View.Task.ResultAssetID != "" || result.View.Task.LeaseOwner != "" {
 		t.Fatalf("requested cancellation did not settle before fetch: %+v", result)
 	}
-	if fetcher.fetches != 0 {
-		t.Fatalf("canceled validating task fetched output %d times", fetcher.fetches)
+	if fetcher.fetches != 0 || fetcher.reads != 0 {
+		t.Fatalf("canceled validating task fetched output %d times and read bytes %d times", fetcher.fetches, fetcher.reads)
 	}
 }
 
@@ -147,6 +171,31 @@ func TestResultWorkerKeepsValidatingTaskOnFetchFailure(t *testing.T) {
 	}
 	if result.View.Task.Status != StatusValidating || result.View.Task.ResultAssetID != "" || result.View.Task.LeaseOwner != "" {
 		t.Fatalf("fetch failure changed task or retained lease: %+v", result.View.Task)
+	}
+}
+
+func TestResultWorkerKeepsValidatingTaskWhenOutputReadFails(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
+	data := validGenerationJPEG(t)
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task, data), outputBytes: data, readErr: errors.New("object store unavailable")}
+	worker := newResultWorker(t, repository, fetcher)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrGenerationOutputFetchUnknown) || result.View.Task.Status != StatusValidating || result.View.Task.LeaseOwner != "" {
+		t.Fatalf("read failure changed task or did not remain retryable: result=%+v err=%v", result, err)
+	}
+}
+
+func TestResultWorkerRejectsBytesThatDoNotMatchFetchedFact(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
+	claimedBytes := validGenerationJPEG(t)
+	storedBytes := validGenerationJPEGWithColor(t)
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task, claimedBytes), outputBytes: storedBytes}
+	worker := newResultWorker(t, repository, fetcher)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrInvalidGenerationOutput) || result.View.Task.Status != StatusValidating || result.View.Task.ResultAssetID != "" || result.View.Asset != nil {
+		t.Fatalf("mismatched output bytes were published: result=%+v err=%v", result, err)
 	}
 }
 
@@ -167,9 +216,9 @@ func TestResultWorkerRejectsWrongLineageOrFact(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
-			resultFact := fetchedImageResult(repository.task)
+			resultFact := fetchedImageResult(repository.task, validGenerationJPEG(t))
 			test.mutate(&resultFact)
-			fetcher := &resultWorkerFetcherStub{result: resultFact}
+			fetcher := &resultWorkerFetcherStub{result: resultFact, outputBytes: validGenerationJPEG(t)}
 			worker := newResultWorker(t, repository, fetcher)
 
 			result, err := worker.RunOnce(context.Background(), repository.task.ID)
@@ -185,7 +234,8 @@ func TestResultWorkerRejectsWrongLineageOrFact(t *testing.T) {
 
 func TestResultWorkerRejectsTaskBeforeValidating(t *testing.T) {
 	repository := &observationWorkerRepositoryStub{task: acceptedObservationTask(t)}
-	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task)}
+	data := validGenerationJPEG(t)
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task, data), outputBytes: data}
 	worker := newResultWorker(t, repository, fetcher)
 
 	result, err := worker.RunOnce(context.Background(), repository.task.ID)
@@ -197,10 +247,12 @@ func TestResultWorkerRejectsTaskBeforeValidating(t *testing.T) {
 	}
 }
 
-func fetchedImageResult(task Task) FetchedResult {
+func fetchedImageResult(task Task, data []byte) FetchedResult {
 	objectKey, _ := OutputObjectKey(task)
 	fact := imageOutputFact()
 	fact.ObjectKey = objectKey
+	fact.ByteSize = int64(len(data))
+	fact.SHA256 = sha256Sum(data)
 	return FetchedResult{
 		ExternalTaskID: task.ExternalTaskID,
 		TaskID:         task.ID,
@@ -210,4 +262,41 @@ func fetchedImageResult(task Task) FetchedResult {
 		Inputs:         cloneSnapshot(task.Inputs),
 		Fact:           fact,
 	}
+}
+
+func validGenerationJPEG(t *testing.T) []byte {
+	t.Helper()
+	data, err := NormalizeGenerationImage(testJPEG(t))
+	if err != nil {
+		t.Fatalf("NormalizeGenerationImage() error = %v", err)
+	}
+	return data
+}
+
+func validGenerationJPEGWithColor(t *testing.T) []byte {
+	t.Helper()
+	canvas := image.NewRGBA(image.Rect(0, 0, 8, 6))
+	for y := 0; y < 6; y++ {
+		for x := 0; x < 8; x++ {
+			canvas.SetRGBA(x, y, color.RGBA{R: uint8(x * 25), G: uint8(y * 30), B: 90, A: 255})
+		}
+	}
+	var source bytes.Buffer
+	if err := jpeg.Encode(&source, canvas, &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := NormalizeGenerationImage(source.Bytes())
+	if err != nil {
+		t.Fatalf("NormalizeGenerationImage() error = %v", err)
+	}
+	return data
+}
+
+func testJPEG(t *testing.T) []byte {
+	t.Helper()
+	var data bytes.Buffer
+	if err := jpeg.Encode(&data, image.NewRGBA(image.Rect(0, 0, 8, 6)), &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
 }

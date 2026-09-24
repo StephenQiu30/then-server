@@ -90,6 +90,12 @@ type FetchedResult struct {
 	Fact           OutputFact
 }
 
+// OutputVersionReader reads the exact private version returned by ResultFetcher.
+// The worker verifies the bytes independently before making the asset visible.
+type OutputVersionReader interface {
+	ReadOutputVersion(context.Context, string, string, int64) ([]byte, error)
+}
+
 // ResultFetcher is the only port needed by the provider-neutral output worker.
 // It is intentionally not wired into bootstrap while Provider/object-store
 // gates remain closed.
