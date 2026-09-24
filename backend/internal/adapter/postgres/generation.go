@@ -326,13 +326,17 @@ func generationJobRecordFromTask(task generationapp.Task) (generationJobRecord, 
 func generationTaskFromRecord(record generationJobRecord) (generationapp.Task, error) {
 	var inputs generationapp.InputSnapshot
 	var consent generationapp.ConsentReceipt
+	parameters, err := generationapp.CanonicalParameters(record.Parameters)
+	if err != nil {
+		return generationapp.Task{}, generationapp.ErrInvalidGenerationState
+	}
 	if err := json.Unmarshal(record.Inputs, &inputs); err != nil {
 		return generationapp.Task{}, generationapp.ErrInvalidGenerationState
 	}
 	if err := json.Unmarshal(record.Consent, &consent); err != nil {
 		return generationapp.Task{}, generationapp.ErrInvalidGenerationState
 	}
-	task := generationapp.Task{ID: record.ID, OwnerID: record.OwnerID, LookID: record.LookID, LookRevision: record.LookRevision, Purpose: generationapp.Purpose(record.Purpose), Provider: record.Provider, Model: record.Model, Parameters: append([]byte(nil), record.Parameters...), Inputs: inputs, Consent: consent, Cost: generationapp.CostEstimate{Currency: record.Currency, EstimatedMinorUnits: record.EstimatedMinorUnits, ReservedQuotaUnits: record.ReservedQuotaUnits}, IdempotencyKeyHash: record.IdempotencyKeyHash, DedupeKey: record.DedupeKey, Status: generationapp.Status(record.Status), StatusRevision: record.StatusRevision, SubmissionState: generationapp.SubmissionState(record.SubmissionState), SubmissionAttempt: record.SubmissionAttempt, SubmissionStartedAt: record.SubmissionStartedAt, SubmissionUnknownAt: record.SubmissionUnknownAt, CancelRequestedAt: record.CancelRequestedAt, ExternalTaskID: record.ExternalTaskID, ResultAssetID: record.ResultAssetID, FailureCode: record.FailureCode, LeaseOwner: record.LeaseOwner, FencingToken: record.FencingToken, LeaseAttempt: record.LeaseAttempt, LeaseUntil: record.LeaseUntil, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+	task := generationapp.Task{ID: record.ID, OwnerID: record.OwnerID, LookID: record.LookID, LookRevision: record.LookRevision, Purpose: generationapp.Purpose(record.Purpose), Provider: record.Provider, Model: record.Model, Parameters: parameters, Inputs: inputs, Consent: consent, Cost: generationapp.CostEstimate{Currency: record.Currency, EstimatedMinorUnits: record.EstimatedMinorUnits, ReservedQuotaUnits: record.ReservedQuotaUnits}, IdempotencyKeyHash: record.IdempotencyKeyHash, DedupeKey: record.DedupeKey, Status: generationapp.Status(record.Status), StatusRevision: record.StatusRevision, SubmissionState: generationapp.SubmissionState(record.SubmissionState), SubmissionAttempt: record.SubmissionAttempt, SubmissionStartedAt: record.SubmissionStartedAt, SubmissionUnknownAt: record.SubmissionUnknownAt, CancelRequestedAt: record.CancelRequestedAt, ExternalTaskID: record.ExternalTaskID, ResultAssetID: record.ResultAssetID, FailureCode: record.FailureCode, LeaseOwner: record.LeaseOwner, FencingToken: record.FencingToken, LeaseAttempt: record.LeaseAttempt, LeaseUntil: record.LeaseUntil, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
 	if err := task.Validate(); err != nil {
 		return generationapp.Task{}, err
 	}
