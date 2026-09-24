@@ -12,6 +12,21 @@ import (
 	"time"
 )
 
+// GenerationConfig is the single process-level policy for the optional image
+// and model generation path. Provider calls remain disabled until the
+// documented GATE/POC/worker work is complete.
+type GenerationConfig struct {
+	Enabled               bool
+	ProviderCallsEnabled  bool
+	Currency              string
+	MaxConcurrentTasks    int
+	MaxQuotaUnits         int
+	MaxBudgetMinorUnits   int64
+	MaxSubmissionAttempts int
+	ProviderTimeout       time.Duration
+	Retention             time.Duration
+}
+
 type Config struct {
 	Role                    string
 	HTTPAddr                string
@@ -32,6 +47,7 @@ type Config struct {
 	MinIOSecure             bool
 	KafkaBrokers            []string
 	KafkaTopicPrefix        string
+	Generation              GenerationConfig
 	MaxOpenConns            int
 	MaxIdleConns            int
 	ConnMaxLifetime         time.Duration
@@ -63,6 +79,11 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		KafkaBrokers:     strings.Split(get("KAFKA_BROKERS", "127.0.0.1:9092"), ","),
 		KafkaTopicPrefix: get("KAFKA_TOPIC_PREFIX", "then"),
 	}
+	generation, err := loadGenerationConfig(get)
+	if err != nil {
+		return Config{}, err
+	}
+	c.Generation = generation
 	if c.Role != "api" && c.Role != "worker" && c.Role != "all" {
 		return Config{}, fmt.Errorf("APP_ROLE: expected api, worker or all")
 	}
@@ -200,6 +221,116 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		*field.dest = v
 	}
 	return c, nil
+}
+
+func loadGenerationConfig(get func(string, string) string) (GenerationConfig, error) {
+	enabled, err := parseBool("GENERATION_ENABLED", get("GENERATION_ENABLED", "false"))
+	if err != nil {
+		return GenerationConfig{}, err
+	}
+	providerCalls, err := parseBool("GENERATION_PROVIDER_CALLS_ENABLED", get("GENERATION_PROVIDER_CALLS_ENABLED", "false"))
+	if err != nil {
+		return GenerationConfig{}, err
+	}
+	maxConcurrentTasks, err := parseOptionalInt("GENERATION_MAX_CONCURRENT_TASKS", get("GENERATION_MAX_CONCURRENT_TASKS", "0"))
+	if err != nil {
+		return GenerationConfig{}, err
+	}
+	maxQuotaUnits, err := parseOptionalInt("GENERATION_MAX_QUOTA_UNITS", get("GENERATION_MAX_QUOTA_UNITS", "0"))
+	if err != nil {
+		return GenerationConfig{}, err
+	}
+	maxBudgetMinorUnits, err := parseOptionalInt64("GENERATION_MAX_BUDGET_MINOR_UNITS", get("GENERATION_MAX_BUDGET_MINOR_UNITS", "0"))
+	if err != nil {
+		return GenerationConfig{}, err
+	}
+	maxSubmissionAttempts, err := parseOptionalInt("GENERATION_MAX_SUBMISSION_ATTEMPTS", get("GENERATION_MAX_SUBMISSION_ATTEMPTS", "0"))
+	if err != nil {
+		return GenerationConfig{}, err
+	}
+	providerTimeout, err := parseOptionalDuration("GENERATION_PROVIDER_TIMEOUT", get("GENERATION_PROVIDER_TIMEOUT", "0s"))
+	if err != nil {
+		return GenerationConfig{}, err
+	}
+	retention, err := parseOptionalDuration("GENERATION_RETENTION", get("GENERATION_RETENTION", "0s"))
+	if err != nil {
+		return GenerationConfig{}, err
+	}
+	configuration := GenerationConfig{
+		Enabled:               enabled,
+		ProviderCallsEnabled:  providerCalls,
+		Currency:              get("GENERATION_CURRENCY", ""),
+		MaxConcurrentTasks:    maxConcurrentTasks,
+		MaxQuotaUnits:         maxQuotaUnits,
+		MaxBudgetMinorUnits:   maxBudgetMinorUnits,
+		MaxSubmissionAttempts: maxSubmissionAttempts,
+		ProviderTimeout:       providerTimeout,
+		Retention:             retention,
+	}
+	if err := validateGenerationConfig(configuration); err != nil {
+		return GenerationConfig{}, err
+	}
+	return configuration, nil
+}
+
+func validateGenerationConfig(configuration GenerationConfig) error {
+	if configuration.ProviderCallsEnabled {
+		return fmt.Errorf("GENERATION_PROVIDER_CALLS_ENABLED: provider calls remain disabled until 14-01 GATE/POC/WORKER completion")
+	}
+	if !configuration.Enabled {
+		return nil
+	}
+	if !validCurrency(configuration.Currency) || configuration.MaxConcurrentTasks < 1 || configuration.MaxConcurrentTasks > 1000 || configuration.MaxQuotaUnits < 1 || configuration.MaxQuotaUnits > 1_000_000 || configuration.MaxBudgetMinorUnits < 1 || configuration.MaxBudgetMinorUnits > 10_000_000_000 || configuration.MaxSubmissionAttempts < 1 || configuration.MaxSubmissionAttempts > 10 || configuration.ProviderTimeout <= 0 || configuration.ProviderTimeout > 10*time.Minute || configuration.Retention <= 0 || configuration.Retention > 365*24*time.Hour {
+		return fmt.Errorf("GENERATION_*: enabled mode requires bounded currency, budget, quota, attempts, timeout and retention")
+	}
+	return nil
+}
+
+func parseBool(key, value string) (bool, error) {
+	switch value {
+	case "false":
+		return false, nil
+	case "true":
+		return true, nil
+	default:
+		return false, fmt.Errorf("%s: expected true or false", key)
+	}
+}
+
+func parseOptionalInt(key, value string) (int, error) {
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		return 0, fmt.Errorf("%s: expected a non-negative integer", key)
+	}
+	return parsed, nil
+}
+
+func parseOptionalInt64(key, value string) (int64, error) {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 0 {
+		return 0, fmt.Errorf("%s: expected a non-negative integer", key)
+	}
+	return parsed, nil
+}
+
+func parseOptionalDuration(key, value string) (time.Duration, error) {
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed < 0 {
+		return 0, fmt.Errorf("%s: expected a non-negative duration", key)
+	}
+	return parsed, nil
+}
+
+func validCurrency(value string) bool {
+	if len(value) != 3 {
+		return false
+	}
+	for _, character := range value {
+		if character < 'A' || character > 'Z' {
+			return false
+		}
+	}
+	return true
 }
 
 func validateKafka(brokers []string, prefix string) error {

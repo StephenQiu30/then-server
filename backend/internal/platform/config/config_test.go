@@ -95,6 +95,73 @@ func TestConfigurationBoundaries(t *testing.T) {
 	}
 }
 
+func TestGenerationConfigurationDefaultsClosedWithoutProviderCost(t *testing.T) {
+	environment := map[string]string{
+		"DATABASE_URL": "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable",
+	}
+	configuration, err := Load(func(key string) (string, bool) { value, exists := environment[key]; return value, exists })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configuration.Generation.Enabled || configuration.Generation.ProviderCallsEnabled || configuration.Generation.MaxBudgetMinorUnits != 0 {
+		t.Fatalf("generation defaults can open a paid path: %+v", configuration.Generation)
+	}
+}
+
+func TestGenerationConfigurationRequiresExplicitBoundedPolicy(t *testing.T) {
+	base := map[string]string{
+		"DATABASE_URL":                       "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable",
+		"GENERATION_ENABLED":                 "true",
+		"GENERATION_CURRENCY":                "USD",
+		"GENERATION_MAX_CONCURRENT_TASKS":    "1",
+		"GENERATION_MAX_QUOTA_UNITS":         "10",
+		"GENERATION_MAX_BUDGET_MINOR_UNITS":  "500",
+		"GENERATION_MAX_SUBMISSION_ATTEMPTS": "2",
+		"GENERATION_PROVIDER_TIMEOUT":        "30s",
+		"GENERATION_RETENTION":               "24h",
+	}
+	valid, err := Load(func(key string) (string, bool) { value, exists := base[key]; return value, exists })
+	if err != nil {
+		t.Fatalf("valid generation policy rejected: %v", err)
+	}
+	if !valid.Generation.Enabled || valid.Generation.ProviderCallsEnabled || valid.Generation.MaxBudgetMinorUnits != 500 {
+		t.Fatalf("unexpected generation policy: %+v", valid.Generation)
+	}
+
+	for _, test := range []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{"missing budget", "GENERATION_MAX_BUDGET_MINOR_UNITS", "0"},
+		{"invalid currency", "GENERATION_CURRENCY", "US D"},
+		{"negative quota", "GENERATION_MAX_QUOTA_UNITS", "-1"},
+		{"unbounded timeout", "GENERATION_PROVIDER_TIMEOUT", "11m"},
+		{"invalid enable flag", "GENERATION_ENABLED", "yes"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			environment := make(map[string]string, len(base))
+			for key, value := range base {
+				environment[key] = value
+			}
+			environment[test.key] = test.value
+			if _, err := Load(func(key string) (string, bool) { value, exists := environment[key]; return value, exists }); err == nil {
+				t.Fatal("invalid generation policy was accepted")
+			}
+		})
+	}
+}
+
+func TestGenerationProviderCallsRemainClosedUntilGates(t *testing.T) {
+	environment := map[string]string{
+		"DATABASE_URL":                      "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable",
+		"GENERATION_PROVIDER_CALLS_ENABLED": "true",
+	}
+	if _, err := Load(func(key string) (string, bool) { value, exists := environment[key]; return value, exists }); err == nil || !strings.Contains(err.Error(), "GATE/POC/WORKER") {
+		t.Fatalf("provider calls were not fail-closed: %v", err)
+	}
+}
+
 func TestSessionCookieConfiguration(t *testing.T) {
 	const databaseURL = "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable"
 	for _, test := range []struct {
