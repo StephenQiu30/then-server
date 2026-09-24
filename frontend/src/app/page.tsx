@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/button'
 export default function HomePage() {
   return (
     <PageShell>
-      <header className="flex flex-col items-start gap-6">
-        <Badge variant="secondary">Web 账户预览</Badge>
-        <h1 className="page-title">于是 OOTD</h1>
+      <header className="home-hero flex flex-col items-start gap-6 rounded-lg border border-border px-6 py-12 min-[641px]:px-12 min-[641px]:py-16">
+        <Badge variant="secondary">于是 OOTD</Badge>
+        <h1 className="home-title font-semibold">让每天的穿搭，有迹可循。</h1>
         <p className="max-w-xl text-muted-foreground">
-          让每天的穿搭，有迹可循。
+          整理你的衣橱，计划想穿的搭配，记录真实的一天。
         </p>
         <div className="flex flex-wrap gap-3">
           <Button asChild>
@@ -42,7 +42,7 @@ export default function HomePage() {
         aria-labelledby="about-title"
         className="flex scroll-mt-8 flex-col gap-4"
       >
-        <h2 id="about-title" className="font-display text-xl font-semibold">
+        <h2 id="about-title" className="text-xl font-semibold tracking-tight">
           从你的衣橱，走进每一天。
         </h2>
         <p className="max-w-2xl text-muted-foreground">

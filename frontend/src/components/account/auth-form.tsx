@@ -261,7 +261,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       <p className="mt-6 text-muted-foreground">
         {registering ? '已有账户？' : '还没有账户？'}{' '}
         <Link
-          className="text-primary underline underline-offset-4"
+          className="text-link underline underline-offset-4"
           href={registering ? '/login' : '/register'}
         >
           {registering ? '登录' : '创建账户'}

@@ -4,22 +4,22 @@ import { cn } from '@/lib/utils'
 import { Slot } from 'radix-ui'
 
 const buttonVariants = cva(
-  "group/button inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full border border-transparent bg-clip-padding text-body font-normal whitespace-normal text-center transition-colors select-none disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-sm border border-transparent bg-clip-padding text-sm font-medium whitespace-normal text-center transition-colors select-none disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground',
-        outline: 'border-input bg-background text-primary',
+        outline: 'border-input bg-card text-foreground',
         secondary: 'bg-secondary text-secondary-foreground',
-        ghost: 'bg-transparent text-primary',
+        ghost: 'bg-transparent text-foreground',
         destructive: 'bg-destructive text-destructive-foreground',
-        link: 'text-primary underline underline-offset-4',
+        link: 'text-link underline underline-offset-4',
       },
       size: {
-        default: 'px-[1.375rem] py-[0.6875rem]',
+        default: 'px-4 py-2',
         xs: 'px-3 py-2 text-caption',
         sm: 'px-4 py-2 text-caption',
-        lg: 'px-7 py-3.5',
+        lg: 'px-6 py-3 text-base',
         icon: 'size-11',
         'icon-xs': 'size-11',
         'icon-sm': 'size-11',

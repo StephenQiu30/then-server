@@ -18,7 +18,7 @@ export function AccountShell({
         <header className="flex flex-col items-start gap-5">
           <Link
             href="/"
-            className="text-primary underline-offset-4 hover:underline"
+            className="text-link underline-offset-4 hover:underline"
           >
             于是 OOTD
           </Link>

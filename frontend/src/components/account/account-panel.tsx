@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { AccountShell } from '@/components/account/account-shell'
 import {
   AlertDialog,
@@ -55,7 +56,6 @@ export function AccountPanel() {
     null,
   )
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   const [nameError, setNameError] = useState<string | null>(null)
   const [emailError, setEmailError] = useState<string | null>(null)
   const [deletion, setDeletion] = useState<API.AccountDeletionResponse | null>(
@@ -93,7 +93,6 @@ export function AccountPanel() {
     }
     setPending('update')
     setError(null)
-    setNotice(null)
     setNameError(null)
     setEmailError(null)
     try {
@@ -102,7 +101,7 @@ export function AccountPanel() {
         email: email.trim(),
         expected_revision: user.revision,
       })
-      setNotice('账户资料已保存。')
+      toast('账户资料已保存。')
     } catch (cause) {
       if (accountStatus(cause) === 401) {
         actions.clearCurrent()
@@ -281,12 +280,6 @@ export function AccountPanel() {
                       )}
                     </Field>
                   </FieldGroup>
-                  {notice && (
-                    <Alert role="status">
-                      <AlertTitle>已保存</AlertTitle>
-                      <AlertDescription>{notice}</AlertDescription>
-                    </Alert>
-                  )}
                   {error && (
                     <Alert variant="destructive" role="alert">
                       <AlertTitle>操作未完成</AlertTitle>
@@ -306,7 +299,6 @@ export function AccountPanel() {
                       disabled={pending !== null}
                       onClick={() => {
                         setError(null)
-                        setNotice(null)
                         setNameError(null)
                         setEmailError(null)
                         void currentUser.refetch()

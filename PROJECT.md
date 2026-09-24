@@ -63,11 +63,11 @@ shadcn/ui 提供项目内可维护的组件源码，Radix Primitives 提供交�
 
 ### 4.1 视觉与 token
 
-1. 遵循 `DESIGN.md` 的内容/影像优先、留白、单一品牌行动色与轻量层级。页面结构按 Then 的功能设计组织，不能照搬参考站点的品牌、营销导航或电商文案。
+1. 遵循 `DESIGN.md` 的黑白画布、真实内容优先、Geist 排版、细边界和轻量层级。页面结构按 Then 的功能设计组织，不能照搬参考站点的品牌、营销导航或开发者术语。
 2. 颜色、字体、间距、圆角和焦点样式在 `src/app/globals.css` 集中映射；Tailwind v4 使用 `@theme inline`。组件消费 `bg-background`、`text-foreground`、`text-muted-foreground` 等语义类，不在页面写十六进制、原始色阶或逐组件 `dark:` 色彩覆盖。[shadcn 主题规范](https://ui.shadcn.com/docs/theming)
 3. 默认浅色。暗色目前缺少完整设计验收，不因 shadcn 默认模板而自动增加切换入口；启用前在同一 token 体系补齐状态并验收。
-4. 先使用组件已有 `variant`/`size`；新增视觉变体归组件定义，调用方 `className` 用于布局。表面以间距、排版和背景区分，不把每个区块都套 Card，不加装饰性渐变和阴影。
-5. 字体沿用 `DESIGN.md` 的系统字体回退；不为了套用 Vercel 示例改成另一套品牌字体。加载自有字体时使用 `next/font` 并控制字体体积。
+4. 先使用组件已有 `variant`/`size`；新增视觉变体归组件定义，调用方 `className` 用于布局。业务表面以间距、排版、细边界和轻阴影区分；大面积氛围渐变只用于首页。
+5. Web 加载 OFL 授权 Geist Sans/Mono，中文使用系统字体回退；不只在 CSS 声明未加载的字体。iOS 保留动态字号与平台语义。
 6. 使用 `flex/grid` 与 `gap-*`，不使用 `space-x-*`/`space-y-*`；等宽高用 `size-*`，省略文本用 `truncate`，条件类使用统一 `cn()`。
 
 基础语义映射固定如下，具体值从 `DESIGN.md` 取得：
