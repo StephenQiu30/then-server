@@ -125,9 +125,14 @@ func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Leas
 		}
 		return ResultWorkerResult{View: canceled, Outcome: ResultOutcomeCanceled}, nil
 	}
+	objectKey, err := OutputObjectKey(view.Task)
+	if err != nil {
+		return w.releaseWithError(ctx, lease, view, err)
+	}
 	request := FetchRequest{
 		TaskID:         view.Task.ID,
 		ExternalTaskID: view.Task.ExternalTaskID,
+		ObjectKey:      objectKey,
 		Purpose:        view.Task.Purpose,
 		LookID:         view.Task.LookID,
 		LookRevision:   view.Task.LookRevision,
@@ -158,7 +163,7 @@ func fetchedResultMatches(task Task, fetched FetchedResult) bool {
 	return validID(fetched.TaskID) && fetched.TaskID == task.ID &&
 		fetched.ExternalTaskID == task.ExternalTaskID && validToken(fetched.ExternalTaskID, 256) &&
 		fetched.Purpose == task.Purpose && fetched.LookID == task.LookID && fetched.LookRevision == task.LookRevision &&
-		inputSnapshotsEqual(task.Inputs, fetched.Inputs)
+		inputSnapshotsEqual(task.Inputs, fetched.Inputs) && validOutputObjectKey(task, fetched.Fact.ObjectKey)
 }
 
 func inputSnapshotsEqual(left, right InputSnapshot) bool {

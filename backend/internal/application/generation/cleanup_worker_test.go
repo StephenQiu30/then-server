@@ -63,7 +63,7 @@ func cleanupWorkerRequest(at time.Time) CleanupRequest {
 
 func TestCleanupWorkerExecutesAllTargetsBeforeCompletion(t *testing.T) {
 	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	repository := &cleanupWorkerRepositoryStub{request: cleanupWorkerRequest(at), found: true, targets: []CleanupTarget{{Kind: CleanupTargetObject, ID: "asset", ObjectVersionID: "version"}, {Kind: CleanupTargetProvider, ID: "provider-task"}}}
+	repository := &cleanupWorkerRepositoryStub{request: cleanupWorkerRequest(at), found: true, targets: []CleanupTarget{{Kind: CleanupTargetObject, ID: "asset", ObjectKey: "owners/00000000-0000-4000-8000-000000000002/generation/00000000-0000-4000-8000-000000000003/output.jpg", ObjectVersionID: "version"}, {Kind: CleanupTargetProvider, ID: "provider-task"}}}
 	executor := &cleanupWorkerExecutorStub{}
 	worker, err := NewCleanupWorker(repository, executor, CleanupRetryPolicy{LeaseTTL: time.Minute, BaseDelay: 10 * time.Second, MaxDelay: time.Minute})
 	if err != nil {
@@ -82,7 +82,7 @@ func TestCleanupWorkerExecutesAllTargetsBeforeCompletion(t *testing.T) {
 
 func TestCleanupWorkerRecordsBoundedRetryWithoutCompleting(t *testing.T) {
 	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	repository := &cleanupWorkerRepositoryStub{request: cleanupWorkerRequest(at), found: true, targets: []CleanupTarget{{Kind: CleanupTargetObject, ID: "asset", ObjectVersionID: "version"}}}
+	repository := &cleanupWorkerRepositoryStub{request: cleanupWorkerRequest(at), found: true, targets: []CleanupTarget{{Kind: CleanupTargetObject, ID: "asset", ObjectKey: "owners/00000000-0000-4000-8000-000000000002/generation/00000000-0000-4000-8000-000000000003/output.jpg", ObjectVersionID: "version"}}}
 	executor := &cleanupWorkerExecutorStub{err: &CleanupTargetError{Code: "object_unavailable", Err: errors.New("transport detail")}}
 	worker, err := NewCleanupWorker(repository, executor, CleanupRetryPolicy{LeaseTTL: time.Minute, BaseDelay: 10 * time.Second, MaxDelay: time.Minute})
 	if err != nil {
@@ -101,7 +101,7 @@ func TestCleanupWorkerRecordsBoundedRetryWithoutCompleting(t *testing.T) {
 
 func TestCleanupWorkerNormalizesUnknownTargetErrors(t *testing.T) {
 	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	repository := &cleanupWorkerRepositoryStub{request: cleanupWorkerRequest(at), found: true, targets: []CleanupTarget{{Kind: CleanupTargetObject, ID: "asset", ObjectVersionID: "version"}}}
+	repository := &cleanupWorkerRepositoryStub{request: cleanupWorkerRequest(at), found: true, targets: []CleanupTarget{{Kind: CleanupTargetObject, ID: "asset", ObjectKey: "owners/00000000-0000-4000-8000-000000000002/generation/00000000-0000-4000-8000-000000000003/output.jpg", ObjectVersionID: "version"}}}
 	executor := &cleanupWorkerExecutorStub{err: errors.New("secret provider response")}
 	worker, err := NewCleanupWorker(repository, executor, CleanupRetryPolicy{LeaseTTL: time.Minute, BaseDelay: time.Second, MaxDelay: time.Second})
 	if err != nil {
@@ -113,6 +113,22 @@ func TestCleanupWorkerNormalizesUnknownTargetErrors(t *testing.T) {
 	}
 	if repository.failureCode != "target_delete_failed" {
 		t.Fatalf("unknown target error leaked or used unstable code: %q", repository.failureCode)
+	}
+}
+
+func TestCleanupWorkerDoesNotCompleteLegacyObjectTargetWithoutKey(t *testing.T) {
+	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	repository := &cleanupWorkerRepositoryStub{request: cleanupWorkerRequest(at), found: true, targets: []CleanupTarget{{Kind: CleanupTargetObject, ID: "legacy-asset", ObjectVersionID: "version"}}}
+	executor := &cleanupWorkerExecutorStub{}
+	worker, err := NewCleanupWorker(repository, executor, CleanupRetryPolicy{LeaseTTL: time.Minute, BaseDelay: time.Second, MaxDelay: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker.now = func() time.Time { return at }
+
+	found, err := worker.RunOnce(context.Background())
+	if err != nil || !found || repository.completed || repository.failureCode != "object_key_unavailable" || len(executor.objects) != 0 {
+		t.Fatalf("legacy object target was deleted or completed without a key: found=%v completed=%v failure=%q objects=%+v err=%v", found, repository.completed, repository.failureCode, executor.objects, err)
 	}
 }
 

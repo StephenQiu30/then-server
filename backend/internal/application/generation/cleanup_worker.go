@@ -116,7 +116,7 @@ func (w *CleanupWorker) RunOnce(ctx context.Context) (bool, error) {
 		return found, err
 	}
 	for _, target := range targets {
-		if err := w.deleteTarget(ctx, target); err != nil {
+		if err := w.deleteTarget(ctx, request.OwnerID, request.TaskID, target); err != nil {
 			failureCode := cleanupFailureCode(err)
 			retryAt, retryErr := w.policy.RetryAt(w.now().UTC(), request.Attempts)
 			if retryErr != nil {
@@ -132,9 +132,15 @@ func (w *CleanupWorker) RunOnce(ctx context.Context) (bool, error) {
 	return true, err
 }
 
-func (w *CleanupWorker) deleteTarget(ctx context.Context, target CleanupTarget) error {
+func (w *CleanupWorker) deleteTarget(ctx context.Context, ownerID, taskID string, target CleanupTarget) error {
+	if err := target.validateForTask(ownerID, taskID); err != nil {
+		return &CleanupTargetError{Code: "invalid_target", Err: err}
+	}
 	switch target.Kind {
 	case CleanupTargetObject:
+		if target.ObjectKey == "" {
+			return &CleanupTargetError{Code: "object_key_unavailable", Err: ErrGenerationCleanupTarget}
+		}
 		return w.executor.DeleteObject(ctx, target)
 	case CleanupTargetProvider:
 		return w.executor.DeleteProviderTask(ctx, target)

@@ -234,6 +234,7 @@ func generationOutputRecordFromDomain(asset generationapp.OutputAsset, task gene
 		ContentType:        asset.ContentType,
 		ByteSize:           asset.ByteSize,
 		SHA256:             asset.SHA256,
+		ObjectKey:          asset.ObjectKey,
 		ObjectVersionID:    asset.ObjectVersionID,
 		PublishedAt:        asset.PublishedAt,
 	}, nil
@@ -245,6 +246,7 @@ func sameGenerationOutput(left, right generationapp.OutputAsset) bool {
 		left.ContentType == right.ContentType &&
 		left.ByteSize == right.ByteSize &&
 		left.SHA256 == right.SHA256 &&
+		left.ObjectKey == right.ObjectKey &&
 		left.ObjectVersionID == right.ObjectVersionID &&
 		left.PublishedAt.Equal(right.PublishedAt)
 }

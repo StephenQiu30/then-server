@@ -2,6 +2,7 @@ package generation
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -12,11 +13,10 @@ const (
 	OutputContentTypeGLB  = "model/gltf-binary"
 )
 
-// OutputFact is the verified object-store fact supplied by the worker after
-// it has downloaded and validated a provider result. Object keys and provider
-// URLs stay in adapters; only the immutable version and content metadata cross
-// into the application domain.
+// OutputFact is the verified private object-store fact supplied by a worker.
+// The private key is persisted for deletion, but is never part of an HTTP DTO.
 type OutputFact struct {
+	ObjectKey       string
 	ContentType     string
 	ByteSize        int64
 	SHA256          string
@@ -45,6 +45,7 @@ type OutputAsset struct {
 	ContentType     string
 	ByteSize        int64
 	SHA256          string
+	ObjectKey       string
 	ObjectVersionID string
 	PublishedAt     time.Time
 }
@@ -59,13 +60,23 @@ func (a OutputAsset) ValidateFor(task Task) error {
 	return nil
 }
 
+// ValidatePersistedFor permits a blank key on records created before private
+// output keys were tracked. Such records remain readable but cannot be newly
+// published or physically cleaned without a verified key.
+func (a OutputAsset) ValidatePersistedFor(task Task) error {
+	if !task.validTaskFacts() || !validPersistedOutputAsset(task, a) {
+		return ErrInvalidGenerationOutput
+	}
+	return nil
+}
+
 // NewOutputAsset binds a validated object version to the task that produced
 // it. A task must be in validating state so the caller can commit this asset
 // and the succeeding task transition in one short database transaction.
 func NewOutputAsset(id string, task Task, fact OutputFact, at time.Time) (OutputAsset, error) {
 	if !task.validTaskCoreFacts() || !validID(id) || !validID(task.ID) || !validID(task.OwnerID) || !validID(task.LookID) ||
 		task.LookRevision < 1 || !task.Purpose.valid() || task.Status != StatusValidating || task.AccessRevokedAt != nil ||
-		!validOutputFact(task.Purpose, fact) || at.IsZero() {
+		!validOutputFact(task.Purpose, fact) || !validOutputObjectKey(task, fact.ObjectKey) || at.IsZero() {
 		return OutputAsset{}, ErrInvalidGenerationOutput
 	}
 	if !task.UpdatedAt.IsZero() && at.Before(task.UpdatedAt) {
@@ -89,9 +100,57 @@ func NewOutputAsset(id string, task Task, fact OutputFact, at time.Time) (Output
 		ContentType:     fact.ContentType,
 		ByteSize:        fact.ByteSize,
 		SHA256:          fact.SHA256,
+		ObjectKey:       fact.ObjectKey,
 		ObjectVersionID: fact.ObjectVersionID,
 		PublishedAt:     at,
 	}, nil
+}
+
+// OutputObjectKey returns the task-bound private destination for a validated
+// generation result. IDs must be single safe path segments before composing
+// the object key.
+func OutputObjectKey(task Task) (string, error) {
+	if !validObjectKeySegment(task.OwnerID) || !validObjectKeySegment(task.ID) || !task.Purpose.valid() {
+		return "", ErrInvalidGenerationOutput
+	}
+	extension := "jpg"
+	if task.Purpose == PurposeModel {
+		extension = "glb"
+	}
+	return "owners/" + task.OwnerID + "/generation/" + task.ID + "/output." + extension, nil
+}
+
+func validOutputObjectKey(task Task, key string) bool {
+	expected, err := OutputObjectKey(task)
+	return err == nil && key == expected
+}
+
+func validGenerationOutputObjectKey(key string) bool {
+	parts := strings.Split(key, "/")
+	return len(parts) == 5 && parts[0] == "owners" && validObjectKeySegment(parts[1]) &&
+		parts[2] == "generation" && validObjectKeySegment(parts[3]) &&
+		(parts[4] == "output.jpg" || parts[4] == "output.glb")
+}
+
+func validGenerationOutputObjectKeyForTask(ownerID, taskID, key string) bool {
+	if !validGenerationOutputObjectKey(key) {
+		return false
+	}
+	parts := strings.Split(key, "/")
+	return parts[1] == ownerID && parts[3] == taskID
+}
+
+func validObjectKeySegment(value string) bool {
+	if !validID(value) {
+		return false
+	}
+	for _, char := range value {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') &&
+			(char < '0' || char > '9') && char != '-' && char != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func validOutputFact(purpose Purpose, fact OutputFact) bool {
