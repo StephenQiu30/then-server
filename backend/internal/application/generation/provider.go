@@ -13,6 +13,10 @@ var (
 	// ErrInvalidProviderReceipt is returned when an adapter claims success but
 	// omits the remote identity required for later reconciliation.
 	ErrInvalidProviderReceipt = errors.New("provider returned an invalid generation receipt")
+	// ErrInvalidProviderObservation marks a provider response that cannot be
+	// mapped to the task identified by the worker. The task remains leased
+	// until the worker releases it, and no state transition is attempted.
+	ErrInvalidProviderObservation = errors.New("provider returned an invalid generation observation")
 )
 
 // Provider is the only application port a future provider adapter may satisfy.
@@ -46,4 +50,8 @@ type Receipt struct {
 type RemoteTask struct {
 	ExternalTaskID string
 	State          Status
+	// FailureCode is required for a failed terminal observation and must be
+	// empty for all other states. Adapters map provider-specific errors to this
+	// stable, bounded code before returning it to the application layer.
+	FailureCode string
 }
