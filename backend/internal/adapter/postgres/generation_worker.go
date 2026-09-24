@@ -306,8 +306,10 @@ func (r *GenerationRepository) ScheduleSubmissionRetry(ctx context.Context, leas
 // may retain a late identity for cleanup, but the fencing token must still
 // match the worker attempt that submitted it.
 func (r *GenerationRepository) RecordExternalTaskID(ctx context.Context, lease generationapp.Lease, externalID string, at time.Time) (generationapp.TaskView, error) {
-	return r.mutateLeasedTask(ctx, lease, at, func(task *generationapp.Task) error {
+	return r.mutateLeasedTaskWithHook(ctx, lease, at, func(task *generationapp.Task) error {
 		return task.RecordExternalTaskID(externalID, at)
+	}, func(tx *gorm.DB, task generationapp.Task, mutationAt time.Time) error {
+		return syncGenerationCleanupTargetsInTx(tx, task, mutationAt)
 	})
 }
 
@@ -321,6 +323,10 @@ func (r *GenerationRepository) ApplyProviderState(ctx context.Context, lease gen
 }
 
 func (r *GenerationRepository) mutateLeasedTask(ctx context.Context, lease generationapp.Lease, at time.Time, mutate func(*generationapp.Task) error) (generationapp.TaskView, error) {
+	return r.mutateLeasedTaskWithHook(ctx, lease, at, mutate, nil)
+}
+
+func (r *GenerationRepository) mutateLeasedTaskWithHook(ctx context.Context, lease generationapp.Lease, at time.Time, mutate func(*generationapp.Task) error, after func(*gorm.DB, generationapp.Task, time.Time) error) (generationapp.TaskView, error) {
 	if r == nil || r.database == nil {
 		return generationapp.TaskView{}, generationapp.ErrGenerationUnavailable
 	}
@@ -349,6 +355,11 @@ func (r *GenerationRepository) mutateLeasedTask(ctx context.Context, lease gener
 		}
 		if err := updateGenerationTask(tx, task, previousRevision); err != nil {
 			return err
+		}
+		if after != nil {
+			if err := after(tx, task, at); err != nil {
+				return err
+			}
 		}
 		persisted, err := generationTaskByID(tx, lease.TaskID)
 		if err != nil {

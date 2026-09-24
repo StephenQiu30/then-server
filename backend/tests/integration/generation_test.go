@@ -53,6 +53,10 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register second generation owner: %v", err)
 	}
+	third, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "generation-third@example.test", DisplayName: "Generation Third", Password: "correct-password-generation-third"})
+	if err != nil {
+		t.Fatalf("register third generation owner: %v", err)
+	}
 
 	policy := generationapp.AdmissionPolicy{Enabled: true, ZeroCost: true, MaxConcurrentTasks: 4, MaxQuotaUnits: 4}
 	generations, err := generationapp.NewService(accounts, store.NewGenerationRepository(database), policy)
@@ -595,4 +599,57 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if completedAccountDeletion.Status != accountapp.AccountDeletionComplete || completedAccountDeletion.RemainingGenerationCount != 0 || completedAccountDeletion.Phase != "complete" {
 		t.Fatalf("account deletion did not complete after generation cleanup: %+v", completedAccountDeletion)
 	}
+
+	lateInput := input
+	lateInput.IdempotencyKey = "generation-late-acceptance-cleanup"
+	lateInput.Parameters = []byte(`{"seed":"late-cleanup"}`)
+	lateCreated, err := generations.Create(ctx, third.Token, lateInput)
+	if err != nil {
+		t.Fatalf("accept late generation task: %v", err)
+	}
+	lateLeaseAt := lateCreated.View.Task.UpdatedAt.Add(time.Minute)
+	_, lateLease, err := workerRepository.AcquireLease(ctx, lateCreated.View.Task.ID, "worker-late-submit", lateLeaseAt, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("acquire late generation lease: %v", err)
+	}
+	if _, _, err := workerRepository.BeginSubmission(ctx, lateLease, lateLeaseAt); err != nil {
+		t.Fatalf("begin late generation submission: %v", err)
+	}
+	lateDelete, err := generations.Delete(ctx, third.Token, lateCreated.View.Task.ID)
+	if err != nil {
+		t.Fatalf("request cleanup before late provider acceptance: %v", err)
+	}
+	lateDeleted, lateCleanup := lateDelete.View, lateDelete.Cleanup
+	if lateCleanup.Status != generationapp.CleanupPending || len(lateCleanup.Targets) != 0 || lateDeleted.Task.AccessRevokedAt == nil {
+		t.Fatalf("late acceptance cleanup started with unexpected manifest: view=%+v cleanup=%+v", lateDeleted, lateCleanup)
+	}
+	claimedLate, lateTargets, err := workerRepository.BeginTaskCleanup(ctx, lateCleanup.ID, lateCleanup.UpdatedAt.Add(time.Minute))
+	if err != nil || len(lateTargets) != 0 {
+		t.Fatalf("claim empty late acceptance cleanup: request=%+v targets=%+v err=%v", claimedLate, lateTargets, err)
+	}
+	lateAccepted, err := workerRepository.RecordExternalTaskID(ctx, lateLease, "provider-late-cleanup", claimedLate.UpdatedAt.Add(time.Minute))
+	if err != nil || lateAccepted.Task.ExternalTaskID != "provider-late-cleanup" {
+		t.Fatalf("late provider acceptance was not retained: view=%+v err=%v", lateAccepted, err)
+	}
+	if _, err := workerRepository.CompleteTaskCleanup(ctx, claimedLate, lateAccepted.Task.UpdatedAt.Add(time.Minute)); !errors.Is(err, generationapp.ErrGenerationCleanupClaim) {
+		t.Fatalf("stale cleanup worker completed after late target insertion: %v", err)
+	}
+	lateReloaded, err := generations.Get(ctx, third.Token, lateCreated.View.Task.ID)
+	if err != nil {
+		t.Fatalf("reload late acceptance cleanup: %v", err)
+	}
+	if lateReloaded.Cleanup == nil || lateReloaded.Cleanup.Status != generationapp.CleanupPending || len(lateReloaded.Cleanup.Targets) != 1 || lateReloaded.Cleanup.Targets[0].Kind != generationapp.CleanupTargetProvider || lateReloaded.Cleanup.Targets[0].ID != "provider-late-cleanup" {
+		t.Fatalf("late provider identity was not added to cleanup manifest: %+v", lateReloaded)
+	}
+	reclaimedLate, lateTargets, err := workerRepository.BeginTaskCleanup(ctx, lateReloaded.Cleanup.ID, lateReloaded.Cleanup.UpdatedAt.Add(time.Minute))
+	if err != nil || len(lateTargets) != 1 || lateTargets[0].Kind != generationapp.CleanupTargetProvider || lateTargets[0].ID != "provider-late-cleanup" {
+		t.Fatalf("reopened late acceptance cleanup lost provider target: request=%+v targets=%+v err=%v", reclaimedLate, lateTargets, err)
+	}
+	if _, err := workerRepository.CompleteTaskCleanup(ctx, reclaimedLate, reclaimedLate.UpdatedAt.Add(time.Minute)); err != nil {
+		t.Fatalf("complete reopened late acceptance cleanup: %v", err)
+	}
+	if _, err := workerRepository.ReleaseLease(ctx, lateLease, lateAccepted.Task.UpdatedAt.Add(time.Minute)); err != nil {
+		t.Fatalf("release late acceptance lease: %v", err)
+	}
+
 }

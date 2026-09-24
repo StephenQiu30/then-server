@@ -142,6 +142,67 @@ func generationCleanupTargets(database *gorm.DB, task generationapp.Task) ([]gen
 	return targets, nil
 }
 
+// syncGenerationCleanupTargetsInTx closes the late-acceptance gap between a
+// task cleanup request and a provider submission that was already in flight.
+// The task row and every cleanup request are locked by the same transaction;
+// adding a newly discovered target reopens a running or completed request so
+// an older worker cannot complete over the new target.
+func syncGenerationCleanupTargetsInTx(tx *gorm.DB, task generationapp.Task, at time.Time) error {
+	if task.AccessRevokedAt == nil || task.ExternalTaskID == "" {
+		return nil
+	}
+	targets, err := generationCleanupTargets(tx, task)
+	if err != nil {
+		return err
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	var records []generationCleanupRequestRecord
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id = ?", task.ID).Order("created_at ASC").Find(&records).Error; err != nil {
+		return err
+	}
+	for _, record := range records {
+		request, err := generationCleanupFromRecord(record)
+		if err != nil {
+			return err
+		}
+		mutationAt := at
+		if mutationAt.Before(task.UpdatedAt) {
+			mutationAt = task.UpdatedAt
+		}
+		if mutationAt.Before(request.UpdatedAt) {
+			mutationAt = request.UpdatedAt
+		}
+		changed := false
+		for _, target := range targets {
+			if generationCleanupTargetExists(request.Targets, target) {
+				continue
+			}
+			if err := request.AddTarget(target, mutationAt); err != nil {
+				return err
+			}
+			changed = true
+		}
+		if !changed {
+			continue
+		}
+		if err := updateGenerationCleanup(tx, request, record.Status, record.Attempts, record.UpdatedAt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func generationCleanupTargetExists(targets []generationapp.CleanupTarget, target generationapp.CleanupTarget) bool {
+	for _, existing := range targets {
+		if existing.Kind == target.Kind && existing.ID == target.ID {
+			return true
+		}
+	}
+	return false
+}
+
 // requestGenerationSourceCleanupInTx revokes every task that captured a
 // source media reference. It is called from the media deletion transaction so
 // the source read right and all dependent generation reads close together.
