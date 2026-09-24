@@ -214,7 +214,7 @@ func (r *CleanupRequest) Fail(at time.Time, stableError string, retryAt time.Tim
 // target invalidates any running or completed claim and puts the request back
 // into the durable pending state so the new target cannot be skipped.
 func (r *CleanupRequest) AddTarget(target CleanupTarget, at time.Time) error {
-	if r == nil || r.Validate() != nil || at.IsZero() || at.Before(r.UpdatedAt) {
+	if r == nil || r.Validate() != nil || at.IsZero() {
 		return ErrInvalidGenerationCleanup
 	}
 	if err := target.Validate(); err != nil {
@@ -224,6 +224,9 @@ func (r *CleanupRequest) AddTarget(target CleanupTarget, at time.Time) error {
 		if existing.Kind == target.Kind && existing.ID == target.ID {
 			return nil
 		}
+	}
+	if at.Before(r.UpdatedAt) {
+		return ErrInvalidGenerationCleanup
 	}
 	at = at.UTC()
 	r.Targets = append(r.Targets, target)

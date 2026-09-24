@@ -96,7 +96,7 @@ func TestCleanupRequestReopensWhenLateTargetArrives(t *testing.T) {
 	if _, err := request.Begin(lateAt); err != nil {
 		t.Fatalf("reopened cleanup was not claimable: %v", err)
 	}
-	if err := request.AddTarget(CleanupTarget{Kind: CleanupTargetProvider, ID: "provider-late-1"}, lateAt.Add(time.Minute)); err != nil {
+	if err := request.AddTarget(CleanupTarget{Kind: CleanupTargetProvider, ID: "provider-late-1"}, generationTestNow); err != nil {
 		t.Fatalf("replaying late target was not idempotent: %v", err)
 	}
 	if len(request.Targets) != 1 {
