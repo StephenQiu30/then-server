@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/httpapi"
+	"github.com/StephenQiu30/then-server/backend/internal/adapter/objectstore"
 	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
@@ -45,6 +46,123 @@ func (*generationRecoveryProviderStub) Query(context.Context, string) (generatio
 
 func (*generationRecoveryProviderStub) Cancel(context.Context, string) error {
 	return errors.New("cancel is not part of submission recovery")
+}
+
+type generationCleanupRepositoryStub struct {
+	request       generationapp.CleanupRequest
+	targets       []generationapp.CleanupTarget
+	completeCalls int
+	failureCode   string
+}
+
+func (r *generationCleanupRepositoryStub) ClaimNextCleanup(_ context.Context, at time.Time, _ time.Duration) (generationapp.CleanupRequest, []generationapp.CleanupTarget, bool, error) {
+	targets, err := r.request.Begin(at)
+	if err != nil {
+		return generationapp.CleanupRequest{}, nil, false, err
+	}
+	return r.request, targets, true, nil
+}
+
+func (r *generationCleanupRepositoryStub) CompleteTaskCleanup(_ context.Context, request generationapp.CleanupRequest, at time.Time) (generationapp.CleanupRequest, error) {
+	if request.ID != r.request.ID {
+		return generationapp.CleanupRequest{}, generationapp.ErrGenerationCleanupClaim
+	}
+	if err := r.request.Complete(at); err != nil {
+		return generationapp.CleanupRequest{}, err
+	}
+	r.completeCalls++
+	return r.request, nil
+}
+
+func (r *generationCleanupRepositoryStub) FailTaskCleanup(_ context.Context, request generationapp.CleanupRequest, at time.Time, code string, retryAt time.Time) (generationapp.CleanupRequest, error) {
+	if request.ID != r.request.ID {
+		return generationapp.CleanupRequest{}, generationapp.ErrGenerationCleanupClaim
+	}
+	if err := r.request.Fail(at, code, retryAt); err != nil {
+		return generationapp.CleanupRequest{}, err
+	}
+	r.failureCode = code
+	return r.request, nil
+}
+
+func TestGenerationCleanupWorkerDeletesExactMinIOVersionAndBlocksProviderCalls(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	password := rand.Text()
+	container := integrationContainer(t, ctx, testcontainers.ContainerRequest{
+		Image:        "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+		Cmd:          []string{"server", "/data"},
+		Env:          map[string]string{"MINIO_ROOT_USER": "then_test", "MINIO_ROOT_PASSWORD": password},
+		ExposedPorts: []string{"9000/tcp"},
+		WaitingFor:   wait.ForHTTP("/minio/health/live").WithPort("9000/tcp").WithStartupTimeout(time.Minute),
+	})
+	endpoint := mappedAddress(t, ctx, container, "9000/tcp")
+	objects, err := objectstore.Open(ctx, endpoint, "then_test", password, false)
+	if err != nil {
+		t.Fatalf("open isolated MinIO: %v", err)
+	}
+
+	ownerID := "00000000-0000-4000-8000-000000000911"
+	taskID := "00000000-0000-4000-8000-000000000912"
+	key := "owners/" + ownerID + "/generation/" + taskID + "/output.jpg"
+	firstVersion, err := objects.PutDerived(ctx, key, strings.NewReader("first-version"), int64(len("first-version")))
+	if err != nil || firstVersion == "" {
+		t.Fatalf("write first generation output version: version=%q err=%v", firstVersion, err)
+	}
+	latestBytes := "latest-version"
+	latestVersion, err := objects.PutDerived(ctx, key, strings.NewReader(latestBytes), int64(len(latestBytes)))
+	if err != nil || latestVersion == "" || latestVersion == firstVersion {
+		t.Fatalf("write later generation output version: first=%q latest=%q err=%v", firstVersion, latestVersion, err)
+	}
+
+	at := time.Now().UTC()
+	repository := &generationCleanupRepositoryStub{
+		request: generationapp.CleanupRequest{
+			ID:              "00000000-0000-4000-8000-000000000913",
+			OwnerID:         ownerID,
+			TaskID:          taskID,
+			Scope:           generationapp.CleanupScopeTask,
+			Status:          generationapp.CleanupPending,
+			AccessRevokedAt: at,
+			Targets: []generationapp.CleanupTarget{
+				{Kind: generationapp.CleanupTargetObject, ID: "00000000-0000-4000-8000-000000000914", ObjectKey: key, ObjectVersionID: firstVersion},
+				{Kind: generationapp.CleanupTargetProvider, ID: "fixture-external-task"},
+			},
+			CreatedAt: at,
+			UpdatedAt: at,
+		},
+	}
+	executor, err := objectstore.NewGenerationCleanupExecutor(objects)
+	if err != nil {
+		t.Fatalf("construct local generation cleanup executor: %v", err)
+	}
+	worker, err := generationapp.NewCleanupWorker(repository, executor, generationapp.CleanupRetryPolicy{LeaseTTL: time.Minute, BaseDelay: time.Second, MaxDelay: time.Minute})
+	if err != nil {
+		t.Fatalf("construct generation cleanup worker: %v", err)
+	}
+	found, err := worker.RunOnce(ctx)
+	if err != nil || !found {
+		t.Fatalf("run generation cleanup: found=%v err=%v", found, err)
+	}
+	if repository.failureCode != "provider_cleanup_unavailable" || repository.request.Status != generationapp.CleanupFailed || repository.completeCalls != 0 {
+		t.Fatalf("cleanup did not preserve the unavailable provider target: code=%q request=%+v completeCalls=%d", repository.failureCode, repository.request, repository.completeCalls)
+	}
+	if _, err := objects.OpenDerivedVersion(ctx, key, firstVersion); err == nil {
+		t.Fatal("cleanup left the targeted MinIO version in place")
+	}
+	if err := objects.DeleteVersion(ctx, objectstore.DerivedBucket, key, firstVersion); err != nil {
+		t.Fatalf("repeat targeted MinIO version deletion was not idempotent: %v", err)
+	}
+	latest, err := objects.OpenDerivedVersion(ctx, key, latestVersion)
+	if err != nil {
+		t.Fatalf("cleanup deleted an untargeted MinIO version: %v", err)
+	}
+	defer latest.Close()
+	latestData, err := io.ReadAll(latest)
+	if err != nil || string(latestData) != latestBytes {
+		t.Fatalf("read untargeted MinIO version: bytes=%q err=%v", latestData, err)
+	}
 }
 
 func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database *gorm.DB, service *generationapp.Service, ownerID, ownerToken, otherToken string) {
