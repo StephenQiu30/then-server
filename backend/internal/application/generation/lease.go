@@ -51,6 +51,9 @@ func (t *Task) AcquireLease(owner string, at time.Time, ttl time.Duration) (Leas
 	if t.LeaseUntil != nil && at.Before(*t.LeaseUntil) {
 		return Lease{}, ErrGenerationLeaseHeld
 	}
+	if t.NextAttemptAt != nil && at.Before(*t.NextAttemptAt) {
+		return Lease{}, ErrGenerationRetryNotReady
+	}
 	if t.FencingToken == ^uint64(0) || t.LeaseAttempt == int(^uint(0)>>1) {
 		return Lease{}, ErrInvalidGenerationLease
 	}

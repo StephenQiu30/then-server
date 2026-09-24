@@ -22,11 +22,52 @@ var (
 	ErrInvalidGenerationState   = errors.New("invalid generation state")
 	ErrGenerationNotCancellable = errors.New("generation job is not cancellable")
 	ErrGenerationNotSubmittable = errors.New("generation job is not submittable")
+	ErrGenerationRetryNotReady  = errors.New("generation retry is not ready")
+	ErrGenerationRetryExhausted = errors.New("generation submission retries exhausted")
 	ErrSubmissionInProgress     = errors.New("generation submission is already in progress")
 	ErrSubmissionOutcomeUnknown = errors.New("generation submission outcome is unknown")
 	ErrExternalTaskConflict     = errors.New("external generation task conflict")
 	ErrGenerationOutputRequired = errors.New("validated generation output is required before success")
 )
+
+// RetryPolicy bounds safe, known-not-accepted submission retries. The policy
+// is deliberately provider-neutral; a worker supplies the process-level
+// limits after it has reconciled an unknown submission.
+type RetryPolicy struct {
+	MaxAttempts int
+	BaseDelay   time.Duration
+	MaxDelay    time.Duration
+}
+
+func (p RetryPolicy) Validate() error {
+	if p.MaxAttempts < 1 || p.MaxAttempts > 10 || p.BaseDelay <= 0 || p.MaxDelay < p.BaseDelay {
+		return ErrInvalidGenerationInput
+	}
+	return nil
+}
+
+// DelayFor returns a capped exponential delay for the next attempt. attempt
+// is the number of the submission that already failed, so attempt 1 receives
+// the base delay before the first retry.
+func (p RetryPolicy) DelayFor(attempt int) (time.Duration, error) {
+	if err := p.Validate(); err != nil {
+		return 0, err
+	}
+	if attempt < 1 || attempt >= p.MaxAttempts {
+		return 0, ErrGenerationRetryExhausted
+	}
+	delay := p.BaseDelay
+	for step := 1; step < attempt; step++ {
+		if delay >= p.MaxDelay || delay > time.Duration(1<<63-1)/2 {
+			return p.MaxDelay, nil
+		}
+		delay *= 2
+		if delay >= p.MaxDelay {
+			return p.MaxDelay, nil
+		}
+	}
+	return delay, nil
+}
 
 var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
@@ -193,6 +234,7 @@ type Task struct {
 	SubmissionAttempt   int
 	SubmissionStartedAt *time.Time
 	SubmissionUnknownAt *time.Time
+	NextAttemptAt       *time.Time
 	CancelRequestedAt   *time.Time
 	ExternalTaskID      string
 	ResultAssetID       string
@@ -220,7 +262,7 @@ func (t Task) Validate() error {
 // external ID or a non-idle submission state must be reconciled instead of
 // being submitted again.
 func (t Task) PrepareSubmission() (Submission, error) {
-	if !t.validTaskFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted {
+	if !t.validTaskFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted || t.NextAttemptAt != nil {
 		return Submission{}, ErrGenerationNotSubmittable
 	}
 	return t.submission(), nil
@@ -247,7 +289,7 @@ func (t Task) validTaskCoreFacts() bool {
 	if err != nil || !bytes.Equal(parameters, t.Parameters) {
 		return false
 	}
-	if !validTaskTime(t.SubmissionStartedAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.SubmissionUnknownAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.CancelRequestedAt, t.CreatedAt, t.UpdatedAt) {
+	if !validTaskTime(t.SubmissionStartedAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.SubmissionUnknownAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.CancelRequestedAt, t.CreatedAt, t.UpdatedAt) || !validRetryTime(t.NextAttemptAt, t.CreatedAt) {
 		return false
 	}
 	if t.ResultAssetID != "" && !validID(t.ResultAssetID) {
@@ -282,7 +324,7 @@ func (t Task) canAdvanceStatusRevision() bool {
 }
 
 func (t Task) validSubmissionFacts() bool {
-	if t.SubmissionAttempt < 0 || (t.SubmissionStartedAt != nil && t.SubmissionStartedAt.IsZero()) || (t.SubmissionUnknownAt != nil && t.SubmissionUnknownAt.IsZero()) {
+	if t.SubmissionAttempt < 0 || (t.SubmissionStartedAt != nil && t.SubmissionStartedAt.IsZero()) || (t.SubmissionUnknownAt != nil && t.SubmissionUnknownAt.IsZero()) || (t.NextAttemptAt != nil && t.NextAttemptAt.IsZero()) {
 		return false
 	}
 	if t.SubmissionStartedAt != nil && !t.UpdatedAt.IsZero() && t.SubmissionStartedAt.After(t.UpdatedAt) {
@@ -295,13 +337,13 @@ func (t Task) validSubmissionFacts() bool {
 	}
 	switch t.SubmissionState {
 	case SubmissionNotStarted:
-		return t.ExternalTaskID == "" && t.SubmissionUnknownAt == nil && ((t.SubmissionAttempt == 0 && t.SubmissionStartedAt == nil) || (t.SubmissionAttempt > 0 && t.SubmissionStartedAt != nil))
+		return t.ExternalTaskID == "" && t.SubmissionUnknownAt == nil && ((t.SubmissionAttempt == 0 && t.SubmissionStartedAt == nil && t.NextAttemptAt == nil) || (t.SubmissionAttempt > 0 && t.SubmissionStartedAt != nil))
 	case SubmissionInFlight:
-		return t.ExternalTaskID == "" && t.SubmissionAttempt > 0 && t.SubmissionStartedAt != nil && t.SubmissionUnknownAt == nil
+		return t.ExternalTaskID == "" && t.SubmissionAttempt > 0 && t.SubmissionStartedAt != nil && t.SubmissionUnknownAt == nil && t.NextAttemptAt == nil
 	case SubmissionUnknown:
-		return t.ExternalTaskID == "" && t.SubmissionAttempt > 0 && t.SubmissionStartedAt != nil && t.SubmissionUnknownAt != nil
+		return t.ExternalTaskID == "" && t.SubmissionAttempt > 0 && t.SubmissionStartedAt != nil && t.SubmissionUnknownAt != nil && t.NextAttemptAt == nil
 	case SubmissionAccepted:
-		return validToken(t.ExternalTaskID, 256) && t.SubmissionAttempt > 0 && t.SubmissionUnknownAt == nil
+		return validToken(t.ExternalTaskID, 256) && t.SubmissionAttempt > 0 && t.SubmissionUnknownAt == nil && t.NextAttemptAt == nil
 	default:
 		return false
 	}
@@ -309,6 +351,10 @@ func (t Task) validSubmissionFacts() bool {
 
 func validTaskTime(value *time.Time, createdAt, updatedAt time.Time) bool {
 	return value == nil || (!value.IsZero() && !value.Before(createdAt) && !value.After(updatedAt))
+}
+
+func validRetryTime(value *time.Time, createdAt time.Time) bool {
+	return value == nil || (!value.IsZero() && !value.Before(createdAt))
 }
 
 func (t Task) submission() Submission {
@@ -353,6 +399,9 @@ func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
 	if t.SubmissionAttempt == int(^uint(0)>>1) {
 		return Submission{}, ErrInvalidGenerationState
 	}
+	if t.NextAttemptAt != nil && at.Before(*t.NextAttemptAt) {
+		return Submission{}, ErrGenerationRetryNotReady
+	}
 	if !t.canAdvanceStatusRevision() {
 		return Submission{}, ErrInvalidGenerationState
 	}
@@ -362,7 +411,43 @@ func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
 	t.SubmissionStartedAt = timePtr(at)
 	t.StatusRevision++
 	t.UpdatedAt = at
+	t.NextAttemptAt = nil
 	return t.submission(), nil
+}
+
+// ScheduleSubmissionRetry records a bounded retry window after reconciliation
+// proved that the previous request was not accepted. The current lease stays
+// in place so the caller can persist and then release it with the same fencing
+// proof; a crashed worker is recovered after the lease expires.
+func (t *Task) ScheduleSubmissionRetry(at time.Time, policy RetryPolicy) error {
+	if t == nil || !t.validTaskFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted || t.SubmissionAttempt < 1 || at.IsZero() {
+		return ErrInvalidGenerationState
+	}
+	if err := policy.Validate(); err != nil {
+		return err
+	}
+	if err := t.validateActiveLeaseAt(at); err != nil {
+		return err
+	}
+	if !t.UpdatedAt.IsZero() && at.Before(t.UpdatedAt) {
+		return ErrInvalidGenerationState
+	}
+	if t.NextAttemptAt != nil {
+		return nil
+	}
+	delay, err := policy.DelayFor(t.SubmissionAttempt)
+	if err != nil {
+		return err
+	}
+	at = at.UTC()
+	next := at.Add(delay)
+	if next.Before(at) || next.IsZero() || !t.canAdvanceStatusRevision() {
+		return ErrInvalidGenerationState
+	}
+	t.NextAttemptAt = timePtr(next)
+	t.StatusRevision++
+	t.UpdatedAt = at
+	return nil
 }
 
 // MarkSubmissionUnknown records a transport outcome that cannot prove
@@ -490,6 +575,9 @@ func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 	t.StatusRevision++
 	t.UpdatedAt = at
 	t.FailureCode = ""
+	if next.terminal() {
+		t.NextAttemptAt = nil
+	}
 	if next != StatusSucceeded {
 		t.FailureCode = failureCode
 	}
@@ -533,6 +621,7 @@ func (t *Task) RecordExternalTaskID(externalID string, at time.Time) error {
 	t.ExternalTaskID = externalID
 	t.SubmissionState = SubmissionAccepted
 	t.SubmissionUnknownAt = nil
+	t.NextAttemptAt = nil
 	if t.SubmissionAttempt == 0 {
 		t.SubmissionAttempt = 1
 	}
@@ -614,6 +703,7 @@ func (t *Task) RequestCancel(at time.Time) error {
 		return ErrInvalidGenerationState
 	}
 	t.CancelRequestedAt = &at
+	t.NextAttemptAt = nil
 	t.StatusRevision++
 	t.UpdatedAt = at
 	return nil

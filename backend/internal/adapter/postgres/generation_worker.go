@@ -173,6 +173,15 @@ func (r *GenerationRepository) ReconcileSubmissionNotAccepted(ctx context.Contex
 	})
 }
 
+// ScheduleSubmissionRetry records a finite backoff after explicit
+// reconciliation proved that no external task was accepted. The worker can
+// release the returned lease afterwards; no provider call occurs here.
+func (r *GenerationRepository) ScheduleSubmissionRetry(ctx context.Context, lease generationapp.Lease, at time.Time, policy generationapp.RetryPolicy) (generationapp.TaskView, error) {
+	return r.mutateLeasedTask(ctx, lease, at, func(task *generationapp.Task) error {
+		return task.ScheduleSubmissionRetry(at, policy)
+	})
+}
+
 // RecordExternalTaskID attaches the first external identity. A terminal task
 // may retain a late identity for cleanup, but the fencing token must still
 // match the worker attempt that submitted it.
@@ -260,6 +269,7 @@ func updateGenerationTask(database *gorm.DB, task generationapp.Task, previousRe
 		"submission_attempt":    task.SubmissionAttempt,
 		"submission_started_at": task.SubmissionStartedAt,
 		"submission_unknown_at": task.SubmissionUnknownAt,
+		"next_attempt_at":       task.NextAttemptAt,
 		"cancel_requested_at":   task.CancelRequestedAt,
 		"external_task_id":      task.ExternalTaskID,
 		"result_asset_id":       task.ResultAssetID,
@@ -289,6 +299,8 @@ func generationWorkerError(err error) error {
 		errors.Is(err, generationapp.ErrInvalidQuotaReservation) ||
 		errors.Is(err, generationapp.ErrQuotaReservationClosed) ||
 		errors.Is(err, generationapp.ErrGenerationNotSubmittable) ||
+		errors.Is(err, generationapp.ErrGenerationRetryNotReady) ||
+		errors.Is(err, generationapp.ErrGenerationRetryExhausted) ||
 		errors.Is(err, generationapp.ErrSubmissionInProgress) ||
 		errors.Is(err, generationapp.ErrSubmissionOutcomeUnknown) ||
 		errors.Is(err, generationapp.ErrExternalTaskConflict) ||
