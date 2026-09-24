@@ -292,6 +292,96 @@ func TestSubmissionWorkerCancelsBeforeProviderSubmit(t *testing.T) {
 	}
 }
 
+func TestSubmissionWorkerReconcilesRecoveredInFlightSubmissionBeforeCancellation(t *testing.T) {
+	task := mustTask(validCreateInput())
+	lease, err := task.AcquireLease("previous-worker", generationTestNow.Add(time.Minute), 10*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := task.BeginSubmission(generationTestNow.Add(2 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.ReleaseLease(lease, generationTestNow.Add(2*time.Minute+time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.RequestCancel(generationTestNow.Add(3 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	provider := &submissionWorkerProviderStub{}
+	worker, repository, now := newSubmissionWorkerTest(t, provider, task, submissionWorkerPolicy())
+	*now = generationTestNow.Add(5 * time.Minute)
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrGenerationSubmissionUnknown) {
+		t.Fatalf("recovered in-flight cancellation error = %v", err)
+	}
+	if result.View.Task.Status == StatusCanceled || repository.task.Status == StatusCanceled {
+		t.Fatalf("recovered in-flight submission was finalized as canceled: result=%+v task=%+v", result, repository.task)
+	}
+	if repository.task.SubmissionState != SubmissionUnknown || repository.lease != nil || provider.calls != 0 {
+		t.Fatalf("recovered in-flight submission was not fenced and released: task=%+v lease=%+v calls=%d", repository.task, repository.lease, provider.calls)
+	}
+}
+
+func TestSubmissionWorkerReconcilesRecoveredInFlightSubmissionWithoutProviderRetry(t *testing.T) {
+	task := mustTask(validCreateInput())
+	lease, err := task.AcquireLease("previous-worker", generationTestNow.Add(time.Minute), 10*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := task.BeginSubmission(generationTestNow.Add(2 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.ReleaseLease(lease, generationTestNow.Add(2*time.Minute+time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	provider := &submissionWorkerProviderStub{}
+	worker, repository, now := newSubmissionWorkerTest(t, provider, task, submissionWorkerPolicy())
+	*now = generationTestNow.Add(5 * time.Minute)
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrGenerationSubmissionUnknown) {
+		t.Fatalf("recovered in-flight error = %v", err)
+	}
+	if result.View.Task.SubmissionState != SubmissionUnknown || repository.task.SubmissionState != SubmissionUnknown || repository.lease != nil || provider.calls != 0 {
+		t.Fatalf("recovered in-flight submission was not fenced: result=%+v task=%+v lease=%+v calls=%d", result, repository.task, repository.lease, provider.calls)
+	}
+}
+
+func TestSubmissionWorkerKeepsUnknownCancellationPendingReconciliation(t *testing.T) {
+	task := mustTask(validCreateInput())
+	lease, err := task.AcquireLease("previous-worker", generationTestNow.Add(time.Minute), 10*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := task.BeginSubmission(generationTestNow.Add(2 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.MarkSubmissionUnknown(generationTestNow.Add(3 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.ReleaseLease(lease, generationTestNow.Add(3*time.Minute+time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.RequestCancel(generationTestNow.Add(4 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	provider := &submissionWorkerProviderStub{}
+	worker, repository, now := newSubmissionWorkerTest(t, provider, task, submissionWorkerPolicy())
+	*now = generationTestNow.Add(5 * time.Minute)
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrGenerationSubmissionUnknown) {
+		t.Fatalf("unknown cancellation error = %v", err)
+	}
+	if result.View.Task.Status == StatusCanceled || repository.task.Status == StatusCanceled {
+		t.Fatalf("unknown cancellation was finalized: result=%+v task=%+v", result, repository.task)
+	}
+	if repository.task.SubmissionState != SubmissionUnknown || repository.lease != nil || provider.calls != 0 {
+		t.Fatalf("unknown cancellation changed reconciliation state: task=%+v lease=%+v calls=%d", repository.task, repository.lease, provider.calls)
+	}
+}
+
 func TestSubmissionWorkerExhaustedNotAcceptedAttemptsFailTask(t *testing.T) {
 	provider := &submissionWorkerProviderStub{results: []struct {
 		receipt Receipt
