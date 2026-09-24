@@ -84,6 +84,27 @@ func TestPrepareAcceptanceContentDedupeReturnsExistingTask(t *testing.T) {
 	}
 }
 
+func TestPrepareAcceptanceCreatesNewTaskWhenConsentPolicyChanges(t *testing.T) {
+	existingInput := validCreateInput()
+	existing, err := NewTask(existingInput, generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newInput := existingInput
+	newInput.ID = "job-policy-v2"
+	newInput.IdempotencyKey = "request-policy-v2"
+	newInput.Consent.PolicyVersion = "generation-v2"
+	newInput.Cost = CostEstimate{Currency: "USD", EstimatedMinorUnits: 25, ReservedQuotaUnits: 2}
+	result, err := PrepareAcceptance(generationPolicy(), AdmissionUsage{}, []Task{existing}, newInput, "reservation-policy-v2", "outbox-policy-v2", generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("PrepareAcceptance() error = %v", err)
+	}
+	if result.Reused || result.Match != RequestMatchNone || result.Task.ID != newInput.ID || result.Task.Consent.PolicyVersion != newInput.Consent.PolicyVersion || result.Event.ID != "outbox-policy-v2" {
+		t.Fatalf("changed consent policy reused the prior acceptance: %+v", result)
+	}
+}
+
 func TestPrepareAcceptanceDoesNotReuseRevokedContentDuplicate(t *testing.T) {
 	existingInput := validCreateInput()
 	existing, err := NewTask(existingInput, generationTestNow)

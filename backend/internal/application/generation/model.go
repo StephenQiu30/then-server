@@ -755,13 +755,16 @@ func ClassifyRequest(existing Task, input CreateInput) (RequestMatch, error) {
 	if existing.OwnerID != input.OwnerID {
 		return RequestMatchNone, nil
 	}
+	// Consent policy versions qualify reuse without changing persisted content
+	// hashes, so existing tasks remain readable across this rule update.
 	if existing.IdempotencyKeyHash == idempotencyKeyHash {
-		if existing.DedupeKey == dedupeKey {
+		if existing.DedupeKey == dedupeKey && existing.Consent.PolicyVersion == input.Consent.PolicyVersion {
 			return RequestMatchIdempotentReplay, nil
 		}
 		return RequestMatchIdempotencyConflict, nil
 	}
-	if existing.AccessRevokedAt == nil && existing.DedupeKey == dedupeKey && dedupeEligible(existing.Status) {
+	if existing.AccessRevokedAt == nil && existing.DedupeKey == dedupeKey &&
+		existing.Consent.PolicyVersion == input.Consent.PolicyVersion && dedupeEligible(existing.Status) {
 		return RequestMatchContentDedupe, nil
 	}
 	return RequestMatchNone, nil
