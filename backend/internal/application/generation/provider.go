@@ -1,6 +1,19 @@
 package generation
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var (
+	// ErrProviderNotAccepted marks a submission response that proves the
+	// provider did not create a remote task. The worker may reconcile the
+	// in-flight state and schedule a bounded retry only for this error.
+	ErrProviderNotAccepted = errors.New("provider did not accept generation task")
+	// ErrInvalidProviderReceipt is returned when an adapter claims success but
+	// omits the remote identity required for later reconciliation.
+	ErrInvalidProviderReceipt = errors.New("provider returned an invalid generation receipt")
+)
 
 // Provider is the only application port a future provider adapter may satisfy.
 // It carries immutable metadata and never exposes HTTP or SDK types to the
