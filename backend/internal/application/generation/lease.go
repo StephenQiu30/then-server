@@ -120,6 +120,17 @@ func (t Task) ValidateLease(lease Lease, at time.Time) error {
 	return t.validateLease(lease, at)
 }
 
+// CurrentLease returns the persisted lease proof for a task. Repositories use
+// it after a write so callers receive the database-normalized expiry time and
+// fencing token instead of an in-memory value that may differ in timestamp
+// precision.
+func (t Task) CurrentLease() (Lease, error) {
+	if !t.validTaskFacts() || t.LeaseUntil == nil || t.LeaseOwner == "" {
+		return Lease{}, ErrInvalidGenerationLease
+	}
+	return t.currentLease(), nil
+}
+
 func (t Task) validateActiveLeaseAt(at time.Time) error {
 	if !t.validTaskFacts() || !t.validLeaseFacts() {
 		return ErrInvalidGenerationLease

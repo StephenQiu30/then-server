@@ -397,7 +397,7 @@ func generationLookupError(err error) error {
 }
 
 func generationGenerationError(err error) error {
-	if errors.Is(err, generationapp.ErrGenerationNotFound) || errors.Is(err, generationapp.ErrGenerationUnavailable) || errors.Is(err, generationapp.ErrInvalidGenerationInput) || errors.Is(err, generationapp.ErrGenerationDisabled) || errors.Is(err, generationapp.ErrGenerationQuotaExceeded) || errors.Is(err, generationapp.ErrGenerationBudgetExceeded) || errors.Is(err, generationapp.ErrGenerationConcurrency) || errors.Is(err, generationapp.ErrGenerationCurrency) || errors.Is(err, generationapp.ErrGenerationIdempotencyConflict) || errors.Is(err, generationapp.ErrGenerationNotCancellable) {
+	if errors.Is(err, generationapp.ErrGenerationNotFound) || errors.Is(err, generationapp.ErrGenerationUnavailable) || errors.Is(err, generationapp.ErrInvalidGenerationInput) || errors.Is(err, generationapp.ErrGenerationDisabled) || errors.Is(err, generationapp.ErrGenerationQuotaExceeded) || errors.Is(err, generationapp.ErrGenerationBudgetExceeded) || errors.Is(err, generationapp.ErrGenerationConcurrency) || errors.Is(err, generationapp.ErrGenerationCurrency) || errors.Is(err, generationapp.ErrGenerationIdempotencyConflict) || errors.Is(err, generationapp.ErrGenerationNotCancellable) || errors.Is(err, generationapp.ErrGenerationLeaseHeld) || errors.Is(err, generationapp.ErrGenerationLeaseExpired) || errors.Is(err, generationapp.ErrGenerationLeaseConflict) || errors.Is(err, generationapp.ErrInvalidGenerationLease) {
 		return err
 	}
 	return generationapp.ErrGenerationUnavailable
