@@ -165,6 +165,43 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("expected one active generation quota reservation, got %d", reservationCount)
 	}
 
+	workerRepository := store.NewGenerationRepository(database)
+	leaseAt := paidCreated.View.Task.UpdatedAt.Add(time.Minute)
+	leased, lease, err := workerRepository.AcquireLease(ctx, paidCreated.View.Task.ID, "worker-a", leaseAt, time.Minute)
+	if err != nil {
+		t.Fatalf("acquire generation lease: %v", err)
+	}
+	if leased.Task.Status != generationapp.StatusRunning || lease.Owner != "worker-a" || lease.FencingToken != 1 || lease.Attempt != 1 {
+		t.Fatalf("generation lease did not move task to running: task=%+v lease=%+v", leased.Task, lease)
+	}
+	if _, _, err := workerRepository.AcquireLease(ctx, paidCreated.View.Task.ID, "worker-b", leaseAt.Add(30*time.Second), time.Minute); !errors.Is(err, generationapp.ErrGenerationLeaseHeld) {
+		t.Fatalf("active generation lease was replaced early: %v", err)
+	}
+	renewedView, renewed, err := workerRepository.RenewLease(ctx, lease, leaseAt.Add(30*time.Second), 2*time.Minute)
+	if err != nil {
+		t.Fatalf("renew generation lease: %v", err)
+	}
+	if renewedView.Task.Status != generationapp.StatusRunning || renewed.FencingToken != lease.FencingToken || !renewed.ExpiresAt.After(lease.ExpiresAt) {
+		t.Fatalf("generation lease renewal changed fencing or expiry incorrectly: task=%+v lease=%+v", renewedView.Task, renewed)
+	}
+	recoveredView, recovered, err := workerRepository.AcquireLease(ctx, paidCreated.View.Task.ID, "worker-b", renewed.ExpiresAt, time.Minute)
+	if err != nil {
+		t.Fatalf("recover expired generation lease: %v", err)
+	}
+	if recoveredView.Task.Status != generationapp.StatusRunning || recovered.Owner != "worker-b" || recovered.FencingToken != lease.FencingToken+1 || recovered.Attempt != lease.Attempt+1 {
+		t.Fatalf("generation lease recovery did not fence the old worker: task=%+v lease=%+v", recoveredView.Task, recovered)
+	}
+	if _, _, err := workerRepository.RenewLease(ctx, renewed, renewed.ExpiresAt, time.Minute); !errors.Is(err, generationapp.ErrGenerationLeaseConflict) {
+		t.Fatalf("stale generation lease was accepted after recovery: %v", err)
+	}
+	released, err := workerRepository.ReleaseLease(ctx, recovered, recovered.ExpiresAt.Add(-time.Second))
+	if err != nil {
+		t.Fatalf("release generation lease: %v", err)
+	}
+	if released.Task.LeaseOwner != "" || released.Task.LeaseUntil != nil || released.Task.Status != generationapp.StatusRunning {
+		t.Fatalf("generation lease release left an active lease: %+v", released.Task)
+	}
+
 	canceled, err := generations.Cancel(ctx, first.Token, created.View.Task.ID)
 	if err != nil {
 		t.Fatalf("request generation cancellation: %v", err)
