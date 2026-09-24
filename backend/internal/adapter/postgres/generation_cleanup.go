@@ -297,21 +297,86 @@ func (r *GenerationRepository) BeginTaskCleanup(ctx context.Context, requestID s
 	return request, targets, nil
 }
 
+// ClaimNextCleanup atomically claims the oldest ready cleanup request. A
+// stale running request is first converted to a retryable failure inside the
+// same transaction; the optimistic status/attempt/timestamp predicate then
+// prevents the previous worker from completing over the new claim.
+func (r *GenerationRepository) ClaimNextCleanup(ctx context.Context, at time.Time, staleAfter time.Duration) (generationapp.CleanupRequest, []generationapp.CleanupTarget, bool, error) {
+	if r == nil || r.database == nil || at.IsZero() || staleAfter <= 0 {
+		return generationapp.CleanupRequest{}, nil, false, generationapp.ErrGenerationUnavailable
+	}
+	var request generationapp.CleanupRequest
+	var targets []generationapp.CleanupTarget
+	found := false
+	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record generationCleanupRequestRecord
+		readyBefore := at.Add(-staleAfter)
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("(status IN ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (status = ? AND updated_at <= ?)", []string{string(generationapp.CleanupPending), string(generationapp.CleanupFailed)}, at, string(generationapp.CleanupRunning), readyBefore).
+			Order("created_at ASC").Order("id ASC")
+		if err := query.First(&record).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		found = true
+		loaded, err := generationCleanupFromRecord(record)
+		if err != nil {
+			return err
+		}
+		if loaded.Status == generationapp.CleanupRunning {
+			previousStatus := string(loaded.Status)
+			previousAttempts := loaded.Attempts
+			previousUpdatedAt := loaded.UpdatedAt
+			if err := loaded.Fail(at, "worker_expired", at); err != nil {
+				return err
+			}
+			if err := updateGenerationCleanup(tx, loaded, previousStatus, previousAttempts, previousUpdatedAt); err != nil {
+				return err
+			}
+		}
+		previousStatus := string(loaded.Status)
+		previousAttempts := loaded.Attempts
+		previousUpdatedAt := loaded.UpdatedAt
+		targets, err = loaded.Begin(at)
+		if err != nil {
+			return err
+		}
+		if err := updateGenerationCleanup(tx, loaded, previousStatus, previousAttempts, previousUpdatedAt); err != nil {
+			return err
+		}
+		request = loaded
+		return nil
+	})
+	if err != nil {
+		return generationapp.CleanupRequest{}, nil, false, generationGenerationError(err)
+	}
+	return request, targets, found, nil
+}
+
 // CompleteTaskCleanup records a successful deletion and removes the output
-// metadata only after the worker has finished its external target work.
-func (r *GenerationRepository) CompleteTaskCleanup(ctx context.Context, requestID string, at time.Time) (generationapp.CleanupRequest, error) {
+// metadata only after the worker has finished its external target work. The
+// claimed attempts/timestamp act as a fencing proof after stale recovery.
+func (r *GenerationRepository) CompleteTaskCleanup(ctx context.Context, claimed generationapp.CleanupRequest, at time.Time) (generationapp.CleanupRequest, error) {
 	if r == nil || r.database == nil {
 		return generationapp.CleanupRequest{}, generationapp.ErrGenerationUnavailable
+	}
+	if err := claimed.Validate(); err != nil {
+		return generationapp.CleanupRequest{}, generationapp.ErrInvalidGenerationCleanup
 	}
 	var request generationapp.CleanupRequest
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var record generationCleanupRequestRecord
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", requestID).First(&record).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", claimed.ID).First(&record).Error; err != nil {
 			return generationLookupError(err)
 		}
 		loaded, err := generationCleanupFromRecord(record)
 		if err != nil {
 			return err
+		}
+		if !generationCleanupClaimMatches(loaded, claimed) {
+			return generationapp.ErrGenerationCleanupClaim
 		}
 		if err := loaded.Complete(at); err != nil {
 			return err
@@ -336,19 +401,25 @@ func (r *GenerationRepository) CompleteTaskCleanup(ctx context.Context, requestI
 	return request, nil
 }
 
-func (r *GenerationRepository) FailTaskCleanup(ctx context.Context, requestID string, at time.Time, stableError string, retryAt time.Time) (generationapp.CleanupRequest, error) {
+func (r *GenerationRepository) FailTaskCleanup(ctx context.Context, claimed generationapp.CleanupRequest, at time.Time, stableError string, retryAt time.Time) (generationapp.CleanupRequest, error) {
 	if r == nil || r.database == nil {
 		return generationapp.CleanupRequest{}, generationapp.ErrGenerationUnavailable
+	}
+	if err := claimed.Validate(); err != nil {
+		return generationapp.CleanupRequest{}, generationapp.ErrInvalidGenerationCleanup
 	}
 	var request generationapp.CleanupRequest
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var record generationCleanupRequestRecord
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", requestID).First(&record).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", claimed.ID).First(&record).Error; err != nil {
 			return generationLookupError(err)
 		}
 		loaded, err := generationCleanupFromRecord(record)
 		if err != nil {
 			return err
+		}
+		if !generationCleanupClaimMatches(loaded, claimed) {
+			return generationapp.ErrGenerationCleanupClaim
 		}
 		if err := loaded.Fail(at, stableError, retryAt); err != nil {
 			return err
@@ -363,6 +434,10 @@ func (r *GenerationRepository) FailTaskCleanup(ctx context.Context, requestID st
 		return generationapp.CleanupRequest{}, generationGenerationError(err)
 	}
 	return request, nil
+}
+
+func generationCleanupClaimMatches(current, claimed generationapp.CleanupRequest) bool {
+	return current.ID == claimed.ID && current.Status == generationapp.CleanupRunning && claimed.Status == generationapp.CleanupRunning && current.Attempts == claimed.Attempts && current.UpdatedAt.Equal(claimed.UpdatedAt)
 }
 
 func generationCleanupRecordFromDomain(request generationapp.CleanupRequest) (generationCleanupRequestRecord, error) {
