@@ -17,6 +17,10 @@ var (
 	// mapped to the task identified by the worker. The task remains leased
 	// until the worker releases it, and no state transition is attempted.
 	ErrInvalidProviderObservation = errors.New("provider returned an invalid generation observation")
+	// ErrGenerationOutputFetchUnknown means the result fetch did not produce a
+	// durable, validated object fact. The task remains validating and can be
+	// retried by a later output worker.
+	ErrGenerationOutputFetchUnknown = errors.New("generation output fetch requires retry")
 )
 
 // Provider is the only application port a future provider adapter may satisfy.
@@ -54,4 +58,29 @@ type RemoteTask struct {
 	// empty for all other states. Adapters map provider-specific errors to this
 	// stable, bounded code before returning it to the application layer.
 	FailureCode string
+}
+
+// FetchRequest contains only immutable task facts needed by a future result
+// adapter. It carries no provider SDK or object-store type.
+type FetchRequest struct {
+	TaskID         string
+	ExternalTaskID string
+	Purpose        Purpose
+	LookID         string
+	LookRevision   int
+}
+
+// FetchedResult is returned after an adapter has downloaded and validated the
+// provider bytes into a private object version. The application worker still
+// verifies the task lineage and commits the output atomically.
+type FetchedResult struct {
+	ExternalTaskID string
+	Fact           OutputFact
+}
+
+// ResultFetcher is the only port needed by the provider-neutral output worker.
+// It is intentionally not wired into bootstrap while Provider/object-store
+// gates remain closed.
+type ResultFetcher interface {
+	Fetch(context.Context, FetchRequest) (FetchedResult, error)
 }
