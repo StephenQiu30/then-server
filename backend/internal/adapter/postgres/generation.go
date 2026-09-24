@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
@@ -382,7 +383,7 @@ func generationReservationFromRecord(record generationQuotaReservationRecord) (g
 }
 
 func generationOutputFromRecord(record generationOutputRecord, task generationapp.Task) (generationapp.OutputAsset, error) {
-	asset := generationapp.OutputAsset{ID: record.ID, Lineage: generationapp.OutputLineage{TaskID: record.TaskID, OwnerID: record.OwnerID, LookID: record.LookID, LookRevision: record.LookRevision, Purpose: generationapp.Purpose(record.Purpose), SourceImageAssetID: record.SourceImageAssetID, SourceImageSHA256: record.SourceImageSHA256}, ContentType: record.ContentType, ByteSize: record.ByteSize, SHA256: record.SHA256, ObjectVersionID: record.ObjectVersionID, PublishedAt: record.PublishedAt}
+	asset := generationapp.OutputAsset{ID: record.ID, Lineage: generationapp.OutputLineage{TaskID: record.TaskID, OwnerID: record.OwnerID, LookID: record.LookID, LookRevision: record.LookRevision, Purpose: generationapp.Purpose(record.Purpose), SourceImageAssetID: record.SourceImageAssetID, SourceImageSHA256: strings.TrimSpace(record.SourceImageSHA256)}, ContentType: record.ContentType, ByteSize: record.ByteSize, SHA256: record.SHA256, ObjectVersionID: record.ObjectVersionID, PublishedAt: record.PublishedAt}
 	if err := asset.ValidateFor(task); err != nil {
 		return generationapp.OutputAsset{}, err
 	}

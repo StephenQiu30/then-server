@@ -256,6 +256,59 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("generation provider state observation was not persisted: %+v", observed.Task)
 	}
 
+	outputAt := workflowAt.Add(6 * time.Minute)
+	asset, err := generationapp.NewOutputAsset(
+		"00000000-0000-4000-8000-000000000401",
+		observed.Task,
+		generationapp.OutputFact{ContentType: generationapp.OutputContentTypeJPEG, ByteSize: 4096, SHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", ObjectVersionID: "local-object-v1"},
+		outputAt,
+	)
+	if err != nil {
+		t.Fatalf("build generation output asset: %v", err)
+	}
+	published, err := workerRepository.PublishOutput(ctx, workflowLease, asset, outputAt)
+	if err != nil {
+		t.Fatalf("publish generation output: %v", err)
+	}
+	if published.Task.Status != generationapp.StatusSucceeded || published.Task.ResultAssetID != asset.ID || published.Task.LeaseOwner != "" || published.Task.LeaseUntil != nil || published.Reservation == nil || published.Reservation.State != generationapp.ReservationConsumed || published.Asset == nil || published.Asset.ID != asset.ID {
+		t.Fatalf("generation output settlement was not atomic: %+v", published)
+	}
+	replayedOutput, err := workerRepository.PublishOutput(ctx, workflowLease, *published.Asset, outputAt)
+	if err != nil {
+		t.Fatalf("replay generation output settlement: %v", err)
+	}
+	if replayedOutput.Task.StatusRevision != published.Task.StatusRevision || replayedOutput.Task.ResultAssetID != published.Task.ResultAssetID || replayedOutput.Reservation == nil || replayedOutput.Reservation.State != generationapp.ReservationConsumed || replayedOutput.Asset == nil || replayedOutput.Asset.ID != published.Asset.ID {
+		t.Fatalf("generation output settlement replay was not idempotent: %+v", replayedOutput)
+	}
+
+	failureInput := paidInput
+	failureInput.IdempotencyKey = "generation-paid-failure"
+	failureInput.Parameters = []byte(`{"seed":"failure"}`)
+	failureCreated, err := paidGenerations.Create(ctx, second.Token, failureInput)
+	if err != nil {
+		t.Fatalf("accept failed generation task: %v", err)
+	}
+	failureLeaseAt := failureCreated.View.Task.UpdatedAt.Add(time.Minute)
+	_, failureLease, err := workerRepository.AcquireLease(ctx, failureCreated.View.Task.ID, "worker-failure", failureLeaseAt, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("acquire failed generation lease: %v", err)
+	}
+	failureAt := failureLeaseAt.Add(time.Minute)
+	finalized, err := workerRepository.FinalizeWithoutOutput(ctx, failureLease, generationapp.StatusFailed, "provider_error", failureAt)
+	if err != nil {
+		t.Fatalf("finalize failed generation task: %v", err)
+	}
+	if finalized.Task.Status != generationapp.StatusFailed || finalized.Task.FailureCode != "provider_error" || finalized.Task.LeaseOwner != "" || finalized.Task.LeaseUntil != nil || finalized.Reservation == nil || finalized.Reservation.State != generationapp.ReservationReleased || finalized.Asset != nil {
+		t.Fatalf("failed generation settlement was not atomic: %+v", finalized)
+	}
+	replayedFailure, err := workerRepository.FinalizeWithoutOutput(ctx, failureLease, generationapp.StatusFailed, "provider_error", failureAt.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("replay failed generation settlement: %v", err)
+	}
+	if replayedFailure.Task.StatusRevision != finalized.Task.StatusRevision || replayedFailure.Task.FailureCode != finalized.Task.FailureCode || replayedFailure.Reservation == nil || replayedFailure.Reservation.State != generationapp.ReservationReleased || replayedFailure.Asset != nil {
+		t.Fatalf("failed generation settlement replay was not idempotent: %+v", replayedFailure)
+	}
+
 	canceled, err := generations.Cancel(ctx, first.Token, created.View.Task.ID)
 	if err != nil {
 		t.Fatalf("request generation cancellation: %v", err)
