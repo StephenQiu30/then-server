@@ -12,6 +12,7 @@ import (
 )
 
 var _ generationapp.SubmissionWorkerRepository = (*GenerationRepository)(nil)
+var _ generationapp.ObservationWorkerRepository = (*GenerationRepository)(nil)
 
 // AcquireLease claims one active generation task for a bounded worker
 // interval. It contains no provider call; the lease only fences later worker
@@ -54,6 +55,54 @@ func (r *GenerationRepository) AcquireLease(ctx context.Context, taskID, owner s
 	})
 	if err != nil {
 		return generationapp.TaskView{}, generationapp.Lease{}, generationGenerationError(err)
+	}
+	return view, lease, nil
+}
+
+// AcquireObservationLease claims only a task that already has an accepted
+// provider identity. The query worker must not turn a queued task into
+// running merely because it was selected by a broad scheduler.
+func (r *GenerationRepository) AcquireObservationLease(ctx context.Context, taskID, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, error) {
+	if r == nil || r.database == nil {
+		return generationapp.TaskView{}, generationapp.Lease{}, generationapp.ErrGenerationUnavailable
+	}
+	if _, err := uuid.Parse(taskID); err != nil {
+		return generationapp.TaskView{}, generationapp.Lease{}, generationapp.ErrInvalidGenerationInput
+	}
+	var view generationapp.TaskView
+	var lease generationapp.Lease
+	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record generationJobRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", taskID).First(&record).Error; err != nil {
+			return generationLookupError(err)
+		}
+		task, err := generationTaskFromRecord(record)
+		if err != nil {
+			return err
+		}
+		if task.ExternalTaskID == "" || task.SubmissionState != generationapp.SubmissionAccepted {
+			return generationapp.ErrGenerationObservationUnavailable
+		}
+		previousRevision := task.StatusRevision
+		if _, err := task.AcquireLease(owner, at, ttl); err != nil {
+			return err
+		}
+		if err := updateGenerationTask(tx, task, previousRevision); err != nil {
+			return err
+		}
+		persisted, err := generationTaskByID(tx, taskID)
+		if err != nil {
+			return err
+		}
+		lease, err = persisted.CurrentLease()
+		if err != nil {
+			return err
+		}
+		view, err = r.readTaskView(tx, persisted)
+		return err
+	})
+	if err != nil {
+		return generationapp.TaskView{}, generationapp.Lease{}, generationWorkerError(err)
 	}
 	return view, lease, nil
 }
@@ -304,6 +353,7 @@ func generationWorkerError(err error) error {
 		errors.Is(err, generationapp.ErrGenerationNotSubmittable) ||
 		errors.Is(err, generationapp.ErrGenerationRetryNotReady) ||
 		errors.Is(err, generationapp.ErrGenerationRetryExhausted) ||
+		errors.Is(err, generationapp.ErrGenerationObservationUnavailable) ||
 		errors.Is(err, generationapp.ErrSubmissionInProgress) ||
 		errors.Is(err, generationapp.ErrSubmissionOutcomeUnknown) ||
 		errors.Is(err, generationapp.ErrExternalTaskConflict) ||
