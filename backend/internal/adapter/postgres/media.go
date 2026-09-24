@@ -100,6 +100,17 @@ type outboxEventRecord struct {
 
 func (outboxEventRecord) TableName() string { return "outbox_events" }
 
+// mediaWorkerOutboxEventTypes is the explicit ownership boundary for the
+// existing media/community worker. Generation requests share the outbox table
+// but require a separate worker with provider-neutral task orchestration; the
+// media relay must leave those events pending instead of publishing them to an
+// incompatible topic or dropping them.
+var mediaWorkerOutboxEventTypes = []string{
+	"media.uploaded",
+	"media.deletion_requested",
+	"community.notification_requested",
+}
+
 type inboxReceiptRecord struct {
 	EventID     string    `gorm:"column:event_id;type:uuid;primaryKey"`
 	HandlerName string    `gorm:"column:handler_name;type:text;primaryKey"`
@@ -376,7 +387,9 @@ func (r *MediaRepository) PendingOutbox(ctx context.Context, limit int) ([]media
 		return nil, mediaapp.ErrMediaUnavailable
 	}
 	var records []outboxEventRecord
-	if err := r.database.WithContext(ctx).Where("published_at IS NULL").Order("created_at ASC").Limit(limit).Find(&records).Error; err != nil {
+	if err := r.database.WithContext(ctx).
+		Where("published_at IS NULL AND event_type IN ?", mediaWorkerOutboxEventTypes).
+		Order("created_at ASC").Limit(limit).Find(&records).Error; err != nil {
 		return nil, mediaapp.ErrMediaUnavailable
 	}
 	events := make([]mediaapp.OutboxEvent, 0, len(records))

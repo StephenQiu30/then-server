@@ -98,6 +98,23 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if outbox.EventType != generationapp.GenerationRequestedEvent || outbox.AggregateID != created.View.Task.ID || len(outbox.Payload) == 0 {
 		t.Fatalf("invalid generation outbox event: %+v", outbox)
 	}
+	mediaOutbox := store.NewMediaRepository(database)
+	mediaEvents, err := mediaOutbox.PendingOutbox(ctx, 100)
+	if err != nil {
+		t.Fatalf("read media worker outbox: %v", err)
+	}
+	for _, event := range mediaEvents {
+		if event.EventType == generationapp.GenerationRequestedEvent {
+			t.Fatalf("media worker claimed generation outbox event: %+v", event)
+		}
+	}
+	var generationPublished int64
+	if err := database.WithContext(ctx).Table("outbox_events").Where("aggregate_id = ? AND published_at IS NOT NULL", created.View.Task.ID).Count(&generationPublished).Error; err != nil {
+		t.Fatalf("read generation outbox publication state: %v", err)
+	}
+	if generationPublished != 0 {
+		t.Fatal("generation outbox event was marked published by the media worker")
+	}
 
 	replayed, err := generations.Create(ctx, first.Token, input)
 	if err != nil {
