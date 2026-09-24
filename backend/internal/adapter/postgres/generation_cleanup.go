@@ -196,7 +196,7 @@ func syncGenerationCleanupTargetsInTx(tx *gorm.DB, task generationapp.Task, at t
 
 func generationCleanupTargetExists(targets []generationapp.CleanupTarget, target generationapp.CleanupTarget) bool {
 	for _, existing := range targets {
-		if existing.Kind == target.Kind && existing.ID == target.ID {
+		if generationapp.SameCleanupTarget(existing, target) {
 			return true
 		}
 	}
