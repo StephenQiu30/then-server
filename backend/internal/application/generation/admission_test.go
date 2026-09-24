@@ -28,11 +28,11 @@ func TestAdmissionPolicyFailsClosedWhenDisabled(t *testing.T) {
 func TestAdmissionPolicyAcceptsWithinLimitsWithoutMutation(t *testing.T) {
 	policy := validAdmissionPolicy()
 	cost := CostEstimate{Currency: "USD", EstimatedMinorUnits: 250, ReservedQuotaUnits: 2}
-	usage := AdmissionUsage{ActiveTasks: 1, ReservedMinorUnits: 400, ReservedQuotaUnits: 3}
+	usage := AdmissionUsage{ActiveTasks: 1, ReservedMinorUnits: 400, UsedQuotaUnits: 3}
 	if err := policy.Check(cost, usage); err != nil {
 		t.Fatalf("admission check error = %v", err)
 	}
-	if usage != (AdmissionUsage{ActiveTasks: 1, ReservedMinorUnits: 400, ReservedQuotaUnits: 3}) {
+	if usage != (AdmissionUsage{ActiveTasks: 1, ReservedMinorUnits: 400, UsedQuotaUnits: 3}) {
 		t.Fatalf("admission check mutated usage: %+v", usage)
 	}
 }
@@ -53,13 +53,13 @@ func TestAdmissionPolicyRejectsEachLimitAndInvalidCost(t *testing.T) {
 		{
 			name:  "quota",
 			cost:  CostEstimate{Currency: "USD", EstimatedMinorUnits: 1, ReservedQuotaUnits: 8},
-			usage: AdmissionUsage{ReservedQuotaUnits: 3},
+			usage: AdmissionUsage{UsedQuotaUnits: 3},
 			want:  ErrGenerationQuotaExceeded,
 		},
 		{
 			name:  "quota already over limit",
 			cost:  CostEstimate{Currency: "USD", EstimatedMinorUnits: 1, ReservedQuotaUnits: 1},
-			usage: AdmissionUsage{ReservedQuotaUnits: 11},
+			usage: AdmissionUsage{UsedQuotaUnits: 11},
 			want:  ErrGenerationQuotaExceeded,
 		},
 		{
@@ -101,7 +101,7 @@ func TestAdmissionPolicyRejectsEachLimitAndInvalidCost(t *testing.T) {
 		{
 			name:  "negative usage",
 			cost:  CostEstimate{Currency: "USD", EstimatedMinorUnits: 1, ReservedQuotaUnits: 1},
-			usage: AdmissionUsage{ReservedMinorUnits: -1},
+			usage: AdmissionUsage{UsedQuotaUnits: -1, ReservedMinorUnits: -1},
 			want:  ErrInvalidGenerationInput,
 		},
 	}

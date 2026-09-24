@@ -123,7 +123,7 @@ func (r *GenerationRepository) Accept(ctx context.Context, input generationapp.C
 			}
 			existing = append(existing, task)
 		}
-		usage, err := generationUsage(tx, input.OwnerID)
+		usage, err := generationUsage(tx, input.OwnerID, input.Purpose)
 		if err != nil {
 			return err
 		}
@@ -344,20 +344,29 @@ func (r *GenerationRepository) RequestCancel(ctx context.Context, ownerID, taskI
 
 type generationUsageSnapshot struct {
 	ActiveTasks        int
-	ReservedQuotaUnits int
+	UsedQuotaUnits     int
 	ReservedMinorUnits int64
 }
 
-func generationUsage(tx *gorm.DB, ownerID string) (generationapp.AdmissionUsage, error) {
+func generationUsage(tx *gorm.DB, ownerID string, purpose generationapp.Purpose) (generationapp.AdmissionUsage, error) {
 	var active int64
-	if err := tx.Model(&generationJobRecord{}).Where("owner_id = ? AND status IN ?", ownerID, []string{"queued", "running", "validating"}).Count(&active).Error; err != nil {
+	if err := tx.Model(&generationJobRecord{}).Where("owner_id = ? AND purpose = ? AND status IN ?", ownerID, string(purpose), []string{"queued", "running", "validating"}).Count(&active).Error; err != nil {
 		return generationapp.AdmissionUsage{}, err
 	}
-	var reserved generationUsageSnapshot
-	if err := tx.Model(&generationQuotaReservationRecord{}).Select("COALESCE(SUM(reserved_quota_units), 0) AS reserved_quota_units, COALESCE(SUM(estimated_minor_units), 0) AS reserved_minor_units").Where("owner_id = ? AND state = ?", ownerID, string(generationapp.ReservationReserved)).Scan(&reserved).Error; err != nil {
+	var usage generationUsageSnapshot
+	if err := tx.Model(&generationQuotaReservationRecord{}).
+		Select("COALESCE(SUM(reserved_quota_units), 0)").
+		Where("owner_id = ? AND purpose = ? AND state IN ?", ownerID, string(purpose), []string{string(generationapp.ReservationReserved), string(generationapp.ReservationConsumed)}).
+		Scan(&usage.UsedQuotaUnits).Error; err != nil {
 		return generationapp.AdmissionUsage{}, err
 	}
-	return generationapp.AdmissionUsage{ActiveTasks: int(active), ReservedQuotaUnits: reserved.ReservedQuotaUnits, ReservedMinorUnits: reserved.ReservedMinorUnits}, nil
+	if err := tx.Model(&generationQuotaReservationRecord{}).
+		Select("COALESCE(SUM(estimated_minor_units), 0)").
+		Where("owner_id = ? AND purpose = ? AND state = ?", ownerID, string(purpose), string(generationapp.ReservationReserved)).
+		Scan(&usage.ReservedMinorUnits).Error; err != nil {
+		return generationapp.AdmissionUsage{}, err
+	}
+	return generationapp.AdmissionUsage{ActiveTasks: int(active), UsedQuotaUnits: usage.UsedQuotaUnits, ReservedMinorUnits: usage.ReservedMinorUnits}, nil
 }
 
 func (r *GenerationRepository) readTaskView(database *gorm.DB, task generationapp.Task) (generationapp.TaskView, error) {

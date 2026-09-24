@@ -663,6 +663,29 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if replayedOutput.Task.StatusRevision != published.Task.StatusRevision || replayedOutput.Task.ResultAssetID != published.Task.ResultAssetID || replayedOutput.Reservation == nil || replayedOutput.Reservation.State != generationapp.ReservationConsumed || replayedOutput.Asset == nil || replayedOutput.Asset.ID != published.Asset.ID {
 		t.Fatalf("generation output settlement replay was not idempotent: %+v", replayedOutput)
 	}
+	usedQuotaPolicy := paidPolicy
+	usedQuotaPolicy.MaxQuotaUnits = 3
+	usedQuotaGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database), usedQuotaPolicy, paidEstimator)
+	if err != nil {
+		t.Fatalf("construct used quota generation service: %v", err)
+	}
+	usedQuotaInput := paidInput
+	usedQuotaInput.IdempotencyKey = "generation-after-consumed-quota"
+	usedQuotaInput.Parameters = []byte(`{"seed":"after-consumed-quota"}`)
+	var jobsBeforeQuotaRejection int64
+	if err := database.WithContext(ctx).Table("generation_jobs").Where("owner_id = ? AND purpose = ?", second.User.ID, string(generationapp.PurposeImage)).Count(&jobsBeforeQuotaRejection).Error; err != nil {
+		t.Fatalf("count image tasks before consumed-quota rejection: %v", err)
+	}
+	if _, err := usedQuotaGenerations.Create(ctx, second.Token, usedQuotaInput); !errors.Is(err, generationapp.ErrGenerationQuotaExceeded) {
+		t.Fatalf("successful image quota was not charged against the next request: %v", err)
+	}
+	var jobsAfterQuotaRejection int64
+	if err := database.WithContext(ctx).Table("generation_jobs").Where("owner_id = ? AND purpose = ?", second.User.ID, string(generationapp.PurposeImage)).Count(&jobsAfterQuotaRejection).Error; err != nil {
+		t.Fatalf("count image tasks after consumed-quota rejection: %v", err)
+	}
+	if jobsAfterQuotaRejection != jobsBeforeQuotaRejection {
+		t.Fatalf("quota-rejected request persisted an image task: before=%d after=%d", jobsBeforeQuotaRejection, jobsAfterQuotaRejection)
+	}
 
 	cancelInput := paidInput
 	cancelInput.IdempotencyKey = "generation-cancel-after-acceptance"
@@ -742,9 +765,49 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if _, err := paidGenerations.Create(ctx, second.Token, invalidSource); !errors.Is(err, generationapp.ErrGenerationSourceUnavailable) {
 		t.Fatalf("model source hash mismatch was accepted with error %v", err)
 	}
-	modelCreated, err := paidGenerations.Create(ctx, second.Token, modelInput)
+	purposePolicy := generationapp.AdmissionPolicy{Enabled: true, Currency: "USD", MaxConcurrentTasks: 1, MaxQuotaUnits: 5, MaxBudgetMinorUnits: 100}
+	purposeEstimator := generationapp.CostEstimatorFunc(func(generationapp.Purpose, string, string, []byte) (generationapp.CostEstimate, error) {
+		return generationapp.CostEstimate{Currency: "USD", EstimatedMinorUnits: 60, ReservedQuotaUnits: 3}, nil
+	})
+	purposeGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database), purposePolicy, purposeEstimator)
 	if err != nil {
-		t.Fatalf("accept dependent model task: %v", err)
+		t.Fatalf("construct purpose-scoped generation service: %v", err)
+	}
+	purposeImageInput := paidInput
+	purposeImageInput.IdempotencyKey = "generation-purpose-scoped-image"
+	purposeImageInput.Parameters = []byte(`{"seed":"purpose-scoped-image"}`)
+	purposeImageInput.Inputs.References = []generationapp.InputReference{
+		{MediaID: "00000000-0000-4000-8000-000000000211", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+		{MediaID: "00000000-0000-4000-8000-000000000212", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 1, SHA256: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"},
+	}
+	purposeImage, err := purposeGenerations.Create(ctx, second.Token, purposeImageInput)
+	if err != nil {
+		t.Fatalf("accept image task with purpose-scoped quota: %v", err)
+	}
+	if purposeImage.View.Task.Status != generationapp.StatusQueued || purposeImage.View.Reservation == nil || purposeImage.View.Reservation.Purpose != generationapp.PurposeImage || purposeImage.View.Reservation.EstimatedMinorUnits != 60 || purposeImage.View.Reservation.ReservedQuotaUnits != 3 {
+		t.Fatalf("image purpose reservation was not persisted: %+v", purposeImage)
+	}
+	modelCreated, err := purposeGenerations.Create(ctx, second.Token, modelInput)
+	if err != nil {
+		t.Fatalf("accept model task with independent purpose limits: %v", err)
+	}
+	if modelCreated.View.Task.Status != generationapp.StatusQueued || modelCreated.View.Reservation == nil || modelCreated.View.Reservation.Purpose != generationapp.PurposeModel || modelCreated.View.Reservation.EstimatedMinorUnits != 60 || modelCreated.View.Reservation.ReservedQuotaUnits != 3 {
+		t.Fatalf("model purpose reservation was not persisted independently: %+v", modelCreated)
+	}
+	purposeImageLeaseAt := purposeImage.View.Task.UpdatedAt.Add(time.Minute)
+	_, purposeImageLease, err := workerRepository.AcquireLease(ctx, purposeImage.View.Task.ID, "worker-purpose-image", purposeImageLeaseAt, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("acquire synthetic purpose image lease: %v", err)
+	}
+	purposeImageFailure, err := workerRepository.FinalizeWithoutOutput(ctx, purposeImageLease, generationapp.StatusFailed, "provider_error", purposeImageLeaseAt.Add(time.Minute))
+	if err != nil || purposeImageFailure.Reservation == nil || purposeImageFailure.Reservation.State != generationapp.ReservationReleased {
+		t.Fatalf("settle synthetic purpose image task: view=%+v err=%v", purposeImageFailure, err)
+	}
+	workflowPolicy := paidPolicy
+	workflowPolicy.MaxQuotaUnits = 10
+	paidGenerations, err = generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database), workflowPolicy, paidEstimator)
+	if err != nil {
+		t.Fatalf("construct generation service for remaining lifecycle checks: %v", err)
 	}
 	deletionAt := published.Task.UpdatedAt.Add(time.Minute)
 	workerRepository = store.NewGenerationRepository(database)
@@ -758,6 +821,9 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 	if dependentModel.Cleanup == nil || dependentModel.Cleanup.Scope != generationapp.CleanupScopeTask || dependentModel.Cleanup.Status != generationapp.CleanupPending || dependentModel.Task.CancelRequestedAt == nil {
 		t.Fatalf("source cleanup did not cascade to dependent model: %+v", dependentModel)
+	}
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("task_id = ? AND scope = ?", modelCreated.View.Task.ID, string(generationapp.CleanupScopeTask)).Update("next_attempt_at", time.Now().UTC().Add(time.Hour)).Error; err != nil {
+		t.Fatalf("delay dependent model cleanup outside queue-claim assertions: %v", err)
 	}
 	revokedModelInput := modelInput
 	revokedModelInput.IdempotencyKey = "generation-model-after-source-revocation"
