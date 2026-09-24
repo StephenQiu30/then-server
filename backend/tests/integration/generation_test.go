@@ -289,6 +289,51 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("generation output settlement replay was not idempotent: %+v", replayedOutput)
 	}
 
+	deletionAt := published.Task.UpdatedAt.Add(time.Minute)
+	workerRepository = store.NewGenerationRepository(database)
+	deletedView, deletedCleanup, err := workerRepository.RequestTaskCleanup(ctx, second.User.ID, paidCreated.View.Task.ID, deletionAt)
+	if err != nil {
+		t.Fatalf("request generation cleanup: %v", err)
+	}
+	if deletedView.Task.AccessRevokedAt == nil || deletedView.Asset != nil || deletedCleanup.Status != generationapp.CleanupPending || len(deletedCleanup.Targets) != 2 {
+		t.Fatalf("generation cleanup did not revoke access or retain targets: view=%+v cleanup=%+v", deletedView, deletedCleanup)
+	}
+	claimedCleanup, targets, err := workerRepository.BeginTaskCleanup(ctx, deletedCleanup.ID, deletedCleanup.AccessRevokedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("begin generation cleanup: %v", err)
+	}
+	if claimedCleanup.Status != generationapp.CleanupRunning || len(targets) != 2 || targets[0].Kind != generationapp.CleanupTargetObject || targets[1].Kind != generationapp.CleanupTargetProvider {
+		t.Fatalf("generation cleanup claim lost its target snapshot: request=%+v targets=%+v", claimedCleanup, targets)
+	}
+	completedCleanup, err := workerRepository.CompleteTaskCleanup(ctx, deletedCleanup.ID, claimedCleanup.UpdatedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("complete generation cleanup: %v", err)
+	}
+	if completedCleanup.Status != generationapp.CleanupComplete || completedCleanup.CompletedAt == nil {
+		t.Fatalf("generation cleanup did not complete: %+v", completedCleanup)
+	}
+	loadedDeleted, err := workerRepository.Get(ctx, second.User.ID, paidCreated.View.Task.ID)
+	if err != nil {
+		t.Fatalf("reload revoked generation task: %v", err)
+	}
+	if loadedDeleted.Task.AccessRevokedAt == nil || loadedDeleted.Asset != nil {
+		t.Fatalf("revoked generation output became visible again: %+v", loadedDeleted)
+	}
+	var outputCount int64
+	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", paidCreated.View.Task.ID).Count(&outputCount).Error; err != nil {
+		t.Fatalf("count cleaned generation output: %v", err)
+	}
+	if outputCount != 0 {
+		t.Fatalf("generation output metadata remained after cleanup: %d", outputCount)
+	}
+	deletedViewAgain, deletedCleanupAgain, err := workerRepository.RequestTaskCleanup(ctx, second.User.ID, paidCreated.View.Task.ID, completedCleanup.CompletedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("repeat generation cleanup request: %v", err)
+	}
+	if deletedViewAgain.Task.AccessRevokedAt == nil || deletedCleanupAgain.Status != generationapp.CleanupComplete || deletedCleanupAgain.ID != deletedCleanup.ID {
+		t.Fatalf("repeat generation cleanup was not idempotent: view=%+v cleanup=%+v", deletedViewAgain, deletedCleanupAgain)
+	}
+
 	failureInput := paidInput
 	failureInput.IdempotencyKey = "generation-paid-failure"
 	failureInput.Parameters = []byte(`{"seed":"failure"}`)
@@ -345,5 +390,37 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 	if loaded.Task.CancelRequestedAt == nil || loaded.Task.StatusRevision != 2 {
 		t.Fatalf("canceled generation task was not durable: %+v", loaded.Task)
+	}
+	sourceRequests, err := workerRepository.RequestSourceCleanup(ctx, first.User.ID, "00000000-0000-4000-8000-000000000201", loaded.Task.UpdatedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("request source generation cleanup: %v", err)
+	}
+	if len(sourceRequests) != 1 || sourceRequests[0].Scope != generationapp.CleanupScopeSource || sourceRequests[0].SourceMediaID != "00000000-0000-4000-8000-000000000201" {
+		t.Fatalf("source cleanup did not retain the source relationship: %+v", sourceRequests)
+	}
+	accountDeletion, err := accounts.DeleteCurrentUser(ctx, first.Token)
+	if err != nil {
+		t.Fatalf("begin account deletion with generation cleanup: %v", err)
+	}
+	if accountDeletion.Status != accountapp.AccountDeletionPending || accountDeletion.GenerationCount != 1 || accountDeletion.RemainingGenerationCount != 1 || accountDeletion.Phase != "generation_cleanup" {
+		t.Fatalf("account deletion did not wait for generation cleanup: %+v", accountDeletion)
+	}
+	var accountCleanupID string
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("account_deletion_id = ?", accountDeletion.ID).Pluck("id", &accountCleanupID).Error; err != nil {
+		t.Fatalf("find account generation cleanup request: %v", err)
+	}
+	accountCleanup, _, err := workerRepository.BeginTaskCleanup(ctx, accountCleanupID, accountDeletion.RequestedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("begin account generation cleanup: %v", err)
+	}
+	if _, err := workerRepository.CompleteTaskCleanup(ctx, accountCleanupID, accountCleanup.UpdatedAt.Add(time.Minute)); err != nil {
+		t.Fatalf("complete account generation cleanup: %v", err)
+	}
+	completedAccountDeletion, err := accounts.GetDeletionReceipt(ctx, accountDeletion.ID, accountDeletion.ReceiptToken)
+	if err != nil {
+		t.Fatalf("read completed account deletion receipt: %v", err)
+	}
+	if completedAccountDeletion.Status != accountapp.AccountDeletionComplete || completedAccountDeletion.RemainingGenerationCount != 0 || completedAccountDeletion.Phase != "complete" {
+		t.Fatalf("account deletion did not complete after generation cleanup: %+v", completedAccountDeletion)
 	}
 }

@@ -271,6 +271,7 @@ func updateGenerationTask(database *gorm.DB, task generationapp.Task, previousRe
 		"submission_unknown_at": task.SubmissionUnknownAt,
 		"next_attempt_at":       task.NextAttemptAt,
 		"cancel_requested_at":   task.CancelRequestedAt,
+		"access_revoked_at":     task.AccessRevokedAt,
 		"external_task_id":      task.ExternalTaskID,
 		"result_asset_id":       task.ResultAssetID,
 		"failure_code":          task.FailureCode,

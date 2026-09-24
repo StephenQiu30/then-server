@@ -88,18 +88,20 @@ const (
 )
 
 type AccountDeletionRequest struct {
-	ID                  string
-	Status              AccountDeletionStatus
-	MediaCount          int
-	RemainingMediaCount int
-	RetryObserved       bool
-	AccessClosed        bool
-	Phase               string
-	RequestedAt         time.Time
-	UpdatedAt           time.Time
-	CompletedAt         *time.Time
-	ReceiptToken        string
-	ReceiptExpiresAt    time.Time
+	ID                       string
+	Status                   AccountDeletionStatus
+	MediaCount               int
+	RemainingMediaCount      int
+	GenerationCount          int
+	RemainingGenerationCount int
+	RetryObserved            bool
+	AccessClosed             bool
+	Phase                    string
+	RequestedAt              time.Time
+	UpdatedAt                time.Time
+	CompletedAt              *time.Time
+	ReceiptToken             string
+	ReceiptExpiresAt         time.Time
 }
 
 type RegisterAccountInput struct {

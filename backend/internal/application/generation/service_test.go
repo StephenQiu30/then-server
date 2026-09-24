@@ -60,6 +60,10 @@ func (s *generationServiceRepositoryStub) RequestCancel(context.Context, string,
 	return s.view, nil
 }
 
+func (s *generationServiceRepositoryStub) RequestTaskCleanup(context.Context, string, string, time.Time) (TaskView, CleanupRequest, error) {
+	return s.view, CleanupRequest{ID: "cleanup-1", OwnerID: s.view.Task.OwnerID, TaskID: s.view.Task.ID, Scope: CleanupScopeTask, Status: CleanupPending, AccessRevokedAt: generationTestNow, CreatedAt: generationTestNow, UpdatedAt: generationTestNow}, nil
+}
+
 func serviceTestInput() CreateServiceInput {
 	return CreateServiceInput{
 		IdempotencyKey: "request-1",

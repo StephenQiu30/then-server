@@ -27,6 +27,7 @@ type Repository interface {
 	Get(context.Context, string, string) (TaskView, error)
 	List(context.Context, string, int, *string) (TaskPage, error)
 	RequestCancel(context.Context, string, string, time.Time) (TaskView, error)
+	RequestTaskCleanup(context.Context, string, string, time.Time) (TaskView, CleanupRequest, error)
 }
 
 type TaskView struct {
@@ -38,6 +39,11 @@ type TaskView struct {
 type TaskPage struct {
 	Items       []TaskView
 	NextAfterID *string
+}
+
+type DeleteResult struct {
+	View    TaskView
+	Cleanup CleanupRequest
 }
 
 type CreateResult struct {
@@ -142,6 +148,21 @@ func (s *Service) Cancel(ctx context.Context, token, taskID string) (TaskView, e
 		return TaskView{}, ErrInvalidGenerationInput
 	}
 	return s.repository.RequestCancel(ctx, user.ID, taskID, s.now().UTC())
+}
+
+func (s *Service) Delete(ctx context.Context, token, taskID string) (DeleteResult, error) {
+	user, err := s.currentUser(ctx, token)
+	if err != nil {
+		return DeleteResult{}, err
+	}
+	if !validUUID(taskID) {
+		return DeleteResult{}, ErrInvalidGenerationInput
+	}
+	view, cleanup, err := s.repository.RequestTaskCleanup(ctx, user.ID, taskID, s.now().UTC())
+	if err != nil {
+		return DeleteResult{}, err
+	}
+	return DeleteResult{View: view, Cleanup: cleanup}, nil
 }
 
 func (s *Service) currentUser(ctx context.Context, token string) (accountapp.User, error) {

@@ -53,6 +53,7 @@ type AccountDeletionResponse struct {
 	ID               string     `json:"id" format:"uuid"`
 	Status           string     `json:"status" enum:"pending,complete"`
 	MediaCount       int        `json:"media_count" minimum:"0"`
+	GenerationCount  int        `json:"generation_count" minimum:"0"`
 	RequestedAt      time.Time  `json:"requested_at" format:"date-time"`
 	CompletedAt      *time.Time `json:"completed_at,omitempty" format:"date-time"`
 	ReceiptToken     string     `json:"receipt_token" minLength:"43" maxLength:"43" doc:"仅在注销 202 响应交付一次；请安全保存"`

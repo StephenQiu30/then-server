@@ -186,7 +186,7 @@ func (h *AccountHandler) deleteCurrent(ctx context.Context, input *authenticated
 		return nil, h.authenticatedError(ctx, err)
 	}
 	return &accountDeletionOutput{RequestID: requestID(ctx), SetCookie: h.expiredSessionCookie(), CacheControl: "no-store", Body: AccountDeletionResponse{
-		ID: deletion.ID, Status: string(deletion.Status), MediaCount: deletion.MediaCount, RequestedAt: deletion.RequestedAt, CompletedAt: deletion.CompletedAt, ReceiptToken: deletion.ReceiptToken, ReceiptExpiresAt: deletion.ReceiptExpiresAt,
+		ID: deletion.ID, Status: string(deletion.Status), MediaCount: deletion.MediaCount, GenerationCount: deletion.GenerationCount, RequestedAt: deletion.RequestedAt, CompletedAt: deletion.CompletedAt, ReceiptToken: deletion.ReceiptToken, ReceiptExpiresAt: deletion.ReceiptExpiresAt,
 	}}, nil
 }
 

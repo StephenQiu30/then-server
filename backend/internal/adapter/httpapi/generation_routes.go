@@ -11,6 +11,7 @@ func registerGenerationOperations(api huma.API, handler *GenerationHandler) {
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "listGenerationJobs", Method: http.MethodGet, Path: "/generation-jobs", Tags: []string{"Generation"}, Summary: "列出本人生成任务", Errors: generationErrors(http.StatusBadRequest)}), handler.list)
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "getGenerationJob", Method: http.MethodGet, Path: "/generation-jobs/{job_id}", Tags: []string{"Generation"}, Summary: "获取本人生成任务", Errors: generationErrors(http.StatusBadRequest, http.StatusNotFound)}), handler.get)
 	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "cancelGenerationJob", Method: http.MethodPost, Path: "/generation-jobs/{job_id}/cancel", Tags: []string{"Generation"}, Summary: "请求取消本人生成任务", DefaultStatus: http.StatusAccepted, Errors: generationErrors(http.StatusBadRequest, http.StatusConflict, http.StatusNotFound)}), handler.cancel)
+	huma.Register(api, authenticatedOperation(huma.Operation{OperationID: "deleteGenerationJob", Method: http.MethodDelete, Path: "/generation-jobs/{job_id}", Tags: []string{"Generation"}, Summary: "撤销并清理本人生成任务", DefaultStatus: http.StatusAccepted, Errors: generationErrors(http.StatusBadRequest, http.StatusConflict, http.StatusNotFound)}), handler.delete)
 }
 
 func generationErrors(statuses ...int) []int {

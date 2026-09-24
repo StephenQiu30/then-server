@@ -7,6 +7,7 @@ import (
 	"time"
 
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
 	"gorm.io/gorm"
 )
 
@@ -34,11 +35,26 @@ func (r *AccountRepository) GetDeletionReceipt(ctx context.Context, id string, h
 		}
 		request.RemainingMediaCount = progress.Remaining
 		request.RetryObserved = progress.RetryObserved
+		var generationProgress struct {
+			Remaining int       `gorm:"column:remaining"`
+			UpdatedAt time.Time `gorm:"column:updated_at"`
+		}
+		if err := tx.Raw(`SELECT count(*) FILTER (WHERE status <> ?) AS remaining,
+			COALESCE(max(updated_at), ?) AS updated_at
+			FROM generation_cleanup_requests WHERE account_deletion_id = ?`, string(generationapp.CleanupComplete), record.RequestedAt, record.ID).Scan(&generationProgress).Error; err != nil {
+			return err
+		}
+		request.RemainingGenerationCount = generationProgress.Remaining
+		if generationProgress.UpdatedAt.After(request.UpdatedAt) {
+			request.UpdatedAt = generationProgress.UpdatedAt
+		}
 		if progress.UpdatedAt.After(request.UpdatedAt) {
 			request.UpdatedAt = progress.UpdatedAt
 		}
 		if progress.RetryObserved {
 			request.Phase = "media_cleanup_retry_observed"
+		} else if request.RemainingMediaCount == 0 && request.RemainingGenerationCount > 0 {
+			request.Phase = "generation_cleanup"
 		}
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})

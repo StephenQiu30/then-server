@@ -236,15 +236,19 @@ type Task struct {
 	SubmissionUnknownAt *time.Time
 	NextAttemptAt       *time.Time
 	CancelRequestedAt   *time.Time
-	ExternalTaskID      string
-	ResultAssetID       string
-	FailureCode         string
-	LeaseOwner          string
-	FencingToken        uint64
-	LeaseAttempt        int
-	LeaseUntil          *time.Time
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	// AccessRevokedAt stops a task and its output from becoming user-visible
+	// while asynchronous provider/object cleanup is still converging. The task
+	// row remains available to the cleanup worker as an audit fact.
+	AccessRevokedAt *time.Time
+	ExternalTaskID  string
+	ResultAssetID   string
+	FailureCode     string
+	LeaseOwner      string
+	FencingToken    uint64
+	LeaseAttempt    int
+	LeaseUntil      *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // Validate checks a task loaded from persistence before it is used by a
@@ -262,7 +266,7 @@ func (t Task) Validate() error {
 // external ID or a non-idle submission state must be reconciled instead of
 // being submitted again.
 func (t Task) PrepareSubmission() (Submission, error) {
-	if !t.validTaskFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted || t.NextAttemptAt != nil {
+	if !t.validTaskFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.AccessRevokedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted || t.NextAttemptAt != nil {
 		return Submission{}, ErrGenerationNotSubmittable
 	}
 	return t.submission(), nil
@@ -289,7 +293,7 @@ func (t Task) validTaskCoreFacts() bool {
 	if err != nil || !bytes.Equal(parameters, t.Parameters) {
 		return false
 	}
-	if !validTaskTime(t.SubmissionStartedAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.SubmissionUnknownAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.CancelRequestedAt, t.CreatedAt, t.UpdatedAt) || !validRetryTime(t.NextAttemptAt, t.CreatedAt) {
+	if !validTaskTime(t.SubmissionStartedAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.SubmissionUnknownAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.CancelRequestedAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.AccessRevokedAt, t.CreatedAt, t.UpdatedAt) || !validRetryTime(t.NextAttemptAt, t.CreatedAt) {
 		return false
 	}
 	if t.ResultAssetID != "" && !validID(t.ResultAssetID) {
@@ -376,7 +380,7 @@ func (t Task) submission() Submission {
 // request. If the request outcome is lost, the task can then be marked unknown
 // and cannot be submitted again until reconciliation.
 func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
-	if t == nil || !t.validTaskFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" {
+	if t == nil || !t.validTaskFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.AccessRevokedAt != nil || t.ExternalTaskID != "" {
 		return Submission{}, ErrGenerationNotSubmittable
 	}
 	if err := t.validateActiveLeaseAt(at); err != nil {
@@ -420,7 +424,7 @@ func (t *Task) BeginSubmission(at time.Time) (Submission, error) {
 // in place so the caller can persist and then release it with the same fencing
 // proof; a crashed worker is recovered after the lease expires.
 func (t *Task) ScheduleSubmissionRetry(at time.Time, policy RetryPolicy) error {
-	if t == nil || !t.validTaskFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted || t.SubmissionAttempt < 1 || at.IsZero() {
+	if t == nil || !t.validTaskFacts() || !submissionStatusAllowed(t.Status) || t.CancelRequestedAt != nil || t.AccessRevokedAt != nil || t.ExternalTaskID != "" || t.SubmissionState != SubmissionNotStarted || t.SubmissionAttempt < 1 || at.IsZero() {
 		return ErrInvalidGenerationState
 	}
 	if err := policy.Validate(); err != nil {
@@ -555,7 +559,7 @@ func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 	if !validFailureState(t.Status, t.FailureCode) || !validFailureState(next, failureCode) {
 		return ErrInvalidGenerationState
 	}
-	if next == StatusSucceeded && t.CancelRequestedAt != nil {
+	if next == StatusSucceeded && (t.CancelRequestedAt != nil || t.AccessRevokedAt != nil) {
 		return ErrInvalidGenerationState
 	}
 	if next == StatusSucceeded && !validID(t.ResultAssetID) {
@@ -704,6 +708,30 @@ func (t *Task) RequestCancel(at time.Time) error {
 	}
 	t.CancelRequestedAt = &at
 	t.NextAttemptAt = nil
+	t.StatusRevision++
+	t.UpdatedAt = at
+	return nil
+}
+
+// RevokeAccess makes the task and any already-published output immediately
+// unreadable to owner-facing queries. It does not claim that an external
+// provider or object store has been cleaned up; that fact is represented by a
+// separate cleanup request.
+func (t *Task) RevokeAccess(at time.Time) error {
+	if t == nil || at.IsZero() {
+		return ErrInvalidGenerationState
+	}
+	if !t.validTaskFacts() {
+		return ErrInvalidGenerationState
+	}
+	if t.AccessRevokedAt != nil {
+		return nil
+	}
+	if at.Before(t.UpdatedAt) || !t.canAdvanceStatusRevision() {
+		return ErrInvalidGenerationState
+	}
+	at = at.UTC()
+	t.AccessRevokedAt = timePtr(at)
 	t.StatusRevision++
 	t.UpdatedAt = at
 	return nil

@@ -77,12 +77,23 @@ type GenerationJobResponse struct {
 	ResultAssetID     string                         `json:"result_asset_id,omitempty" format:"uuid"`
 	FailureCode       string                         `json:"failure_code,omitempty"`
 	CancelRequestedAt *time.Time                     `json:"cancel_requested_at,omitempty" format:"date-time"`
+	AccessRevokedAt   *time.Time                     `json:"access_revoked_at,omitempty" format:"date-time"`
 	Reservation       *GenerationReservationResponse `json:"reservation,omitempty"`
 	Output            *GenerationOutputResponse      `json:"output,omitempty"`
+	Cleanup           *GenerationCleanupResponse     `json:"cleanup,omitempty"`
 	Reused            bool                           `json:"reused,omitempty"`
 	Match             generationapp.RequestMatch     `json:"match,omitempty" enum:"none,idempotent_replay,content_dedupe"`
 	CreatedAt         time.Time                      `json:"created_at" format:"date-time"`
 	UpdatedAt         time.Time                      `json:"updated_at" format:"date-time"`
+}
+
+type GenerationCleanupResponse struct {
+	ID              string                      `json:"id" format:"uuid"`
+	Status          generationapp.CleanupStatus `json:"status" enum:"pending,running,complete,failed"`
+	AccessRevokedAt time.Time                   `json:"access_revoked_at" format:"date-time"`
+	CompletedAt     *time.Time                  `json:"completed_at,omitempty" format:"date-time"`
+	Attempts        int                         `json:"attempts" minimum:"0"`
+	NextAttemptAt   *time.Time                  `json:"next_attempt_at,omitempty" format:"date-time"`
 }
 
 type GenerationJobPageResponse struct {
