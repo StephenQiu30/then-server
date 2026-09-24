@@ -56,7 +56,10 @@ func (r *submissionWorkerRepositoryStub) AcquireLease(_ context.Context, _ strin
 }
 
 func (r *submissionWorkerRepositoryStub) ClaimNextSubmissionLease(_ context.Context, owner string, at time.Time, ttl time.Duration) (TaskView, Lease, bool, error) {
-	if r.task.Status != StatusQueued && r.task.Status != StatusRunning || r.task.SubmissionState != SubmissionNotStarted || r.task.ExternalTaskID != "" || r.task.AccessRevokedAt != nil || (r.task.NextAttemptAt != nil && at.Before(*r.task.NextAttemptAt)) {
+	leaseReady := r.task.LeaseUntil == nil || !at.Before(*r.task.LeaseUntil)
+	readyToSubmit := r.task.SubmissionState == SubmissionNotStarted && leaseReady && (r.task.NextAttemptAt == nil || !at.Before(*r.task.NextAttemptAt))
+	readyToReconcile := r.task.SubmissionState == SubmissionInFlight && r.task.LeaseUntil != nil && !at.Before(*r.task.LeaseUntil)
+	if r.task.Status != StatusQueued && r.task.Status != StatusRunning || (!readyToSubmit && !readyToReconcile) || r.task.ExternalTaskID != "" || r.task.AccessRevokedAt != nil {
 		return TaskView{}, Lease{}, false, nil
 	}
 	view, lease, err := r.AcquireLease(context.Background(), r.task.ID, owner, at, ttl)
@@ -196,6 +199,42 @@ func TestSubmissionWorkerRunNextClaimsDurableQueue(t *testing.T) {
 	}
 	if repository.lease != nil || provider.calls != 1 {
 		t.Fatalf("RunNext() retained lease or submitted unexpected count: lease=%+v calls=%d", repository.lease, provider.calls)
+	}
+}
+
+func TestSubmissionWorkerRunNextRecoversExpiredInFlightWithoutResubmitting(t *testing.T) {
+	provider := &submissionWorkerProviderStub{}
+	task := mustTask(validCreateInput())
+	startedAt := generationTestNow.Add(time.Minute)
+	oldLease, err := task.AcquireLease("worker-old", startedAt, time.Minute)
+	if err != nil {
+		t.Fatalf("AcquireLease() error = %v", err)
+	}
+	if _, err := task.BeginSubmission(startedAt); err != nil {
+		t.Fatalf("BeginSubmission() error = %v", err)
+	}
+	worker, repository, now := newSubmissionWorkerTest(t, provider, task, submissionWorkerPolicy())
+	*now = oldLease.ExpiresAt.Add(-time.Nanosecond)
+	if found, _, err := worker.RunNext(context.Background()); err != nil || found {
+		t.Fatalf("RunNext() claimed an in-flight task before lease expiry: found=%v err=%v", found, err)
+	}
+
+	*now = oldLease.ExpiresAt
+	found, result, err := worker.RunNext(context.Background())
+	if !errors.Is(err, ErrGenerationSubmissionUnknown) {
+		t.Fatalf("RunNext() recovery error = %v, want reconciliation required", err)
+	}
+	if !found || result.View.Task.ID != task.ID {
+		t.Fatalf("RunNext() recovered the wrong task: found=%v task=%+v", found, result.View.Task)
+	}
+	if result.View.Task.SubmissionState != SubmissionUnknown || result.View.Task.ExternalTaskID != "" || result.View.Task.FencingToken != oldLease.FencingToken+1 || result.View.Task.LeaseOwner != "" || repository.lease != nil {
+		t.Fatalf("expired in-flight submission was not fenced into unknown: task=%+v lease=%+v", result.View.Task, repository.lease)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("recovered in-flight submission called Provider.Submit %d times", provider.calls)
+	}
+	if found, _, err := worker.RunNext(context.Background()); err != nil || found {
+		t.Fatalf("unknown submission remained claimable: found=%v err=%v", found, err)
 	}
 }
 
