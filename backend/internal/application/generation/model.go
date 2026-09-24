@@ -70,6 +70,13 @@ func (s Status) terminal() bool {
 	return s == StatusSucceeded || s == StatusFailed || s == StatusCanceled || s == StatusExpired
 }
 
+// Terminal reports whether a status no longer accepts worker transitions.
+// Persistence adapters use this boundary when validating late provider
+// identities for cleanup.
+func (s Status) Terminal() bool {
+	return s.terminal()
+}
+
 // SubmissionState records the provider submission boundary separately from
 // the user-visible task state. In particular, unknown means that transport
 // failed after the request may have been accepted and must be reconciled
