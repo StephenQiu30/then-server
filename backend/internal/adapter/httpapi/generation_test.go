@@ -40,6 +40,10 @@ func (s *generationHTTPStub) Cancel(context.Context, string, string) (generation
 	return s.view, s.err
 }
 
+func (s *generationHTTPStub) Delete(context.Context, string, string) (generationapp.DeleteResult, error) {
+	return generationapp.DeleteResult{View: s.view, Cleanup: generationapp.CleanupRequest{ID: "66666666-6666-4666-8666-666666666666", Status: generationapp.CleanupPending, AccessRevokedAt: s.view.Task.CreatedAt, CreatedAt: s.view.Task.CreatedAt, UpdatedAt: s.view.Task.CreatedAt}}, s.err
+}
+
 func generationHTTPFixture() generationapp.TaskView {
 	created := time.Date(2026, 9, 24, 1, 0, 0, 0, time.UTC)
 	return generationapp.TaskView{Task: generationapp.Task{
@@ -120,6 +124,7 @@ func TestGenerationHTTPContractUsesSessionAndMapsTaskOperations(t *testing.T) {
 		{name: "list", method: http.MethodGet, path: "/generation-jobs?limit=20", status: http.StatusOK},
 		{name: "get", method: http.MethodGet, path: "/generation-jobs/11111111-1111-4111-8111-111111111111", status: http.StatusOK},
 		{name: "cancel", method: http.MethodPost, path: "/generation-jobs/11111111-1111-4111-8111-111111111111/cancel", status: http.StatusAccepted},
+		{name: "delete", method: http.MethodDelete, path: "/generation-jobs/11111111-1111-4111-8111-111111111111", status: http.StatusAccepted},
 	} {
 		t.Run(operation.name, func(t *testing.T) {
 			response := httptest.NewRecorder()

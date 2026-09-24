@@ -44,6 +44,7 @@ type generationJobRecord struct {
 	SubmissionUnknownAt *time.Time `gorm:"column:submission_unknown_at;type:timestamptz"`
 	NextAttemptAt       *time.Time `gorm:"column:next_attempt_at;type:timestamptz;index:generation_jobs_next_attempt_idx"`
 	CancelRequestedAt   *time.Time `gorm:"column:cancel_requested_at;type:timestamptz"`
+	AccessRevokedAt     *time.Time `gorm:"column:access_revoked_at;type:timestamptz;index:generation_jobs_access_revoked_idx"`
 	ExternalTaskID      string     `gorm:"column:external_task_id;type:text;not null;default:''"`
 	ResultAssetID       string     `gorm:"column:result_asset_id;type:text"`
 	FailureCode         string     `gorm:"column:failure_code;type:text;not null;default:''"`
@@ -264,7 +265,7 @@ func (r *GenerationRepository) RequestCancel(ctx context.Context, ownerID, taskI
 			return err
 		}
 		if task.StatusRevision != oldRevision {
-			updates := map[string]any{"cancel_requested_at": task.CancelRequestedAt, "status_revision": task.StatusRevision, "updated_at": task.UpdatedAt}
+			updates := map[string]any{"cancel_requested_at": task.CancelRequestedAt, "access_revoked_at": task.AccessRevokedAt, "status_revision": task.StatusRevision, "updated_at": task.UpdatedAt}
 			updated := tx.Model(&generationJobRecord{}).Where("owner_id = ? AND id = ? AND status_revision = ?", ownerID, taskID, oldRevision).Updates(updates)
 			if updated.Error != nil {
 				return updated.Error
@@ -322,11 +323,13 @@ func (r *GenerationRepository) readTaskView(database *gorm.DB, task generationap
 	}
 	var output generationOutputRecord
 	if err := database.Where("task_id = ?", task.ID).First(&output).Error; err == nil {
-		domain, err := generationOutputFromRecord(output, task)
-		if err != nil {
-			return generationapp.TaskView{}, err
+		if task.AccessRevokedAt == nil {
+			domain, err := generationOutputFromRecord(output, task)
+			if err != nil {
+				return generationapp.TaskView{}, err
+			}
+			view.Asset = &domain
 		}
-		view.Asset = &domain
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return generationapp.TaskView{}, generationapp.ErrGenerationUnavailable
 	}
@@ -345,7 +348,7 @@ func generationJobRecordFromTask(task generationapp.Task) (generationJobRecord, 
 	if err != nil {
 		return generationJobRecord{}, generationapp.ErrInvalidGenerationState
 	}
-	return generationJobRecord{ID: task.ID, OwnerID: task.OwnerID, LookID: task.LookID, LookRevision: task.LookRevision, Purpose: string(task.Purpose), Provider: task.Provider, Model: task.Model, Parameters: append([]byte(nil), task.Parameters...), Inputs: inputs, Consent: consent, Currency: task.Cost.Currency, EstimatedMinorUnits: task.Cost.EstimatedMinorUnits, ReservedQuotaUnits: task.Cost.ReservedQuotaUnits, IdempotencyKeyHash: task.IdempotencyKeyHash, DedupeKey: task.DedupeKey, Status: string(task.Status), StatusRevision: task.StatusRevision, SubmissionState: string(task.SubmissionState), SubmissionAttempt: task.SubmissionAttempt, SubmissionStartedAt: task.SubmissionStartedAt, SubmissionUnknownAt: task.SubmissionUnknownAt, NextAttemptAt: task.NextAttemptAt, CancelRequestedAt: task.CancelRequestedAt, ExternalTaskID: task.ExternalTaskID, ResultAssetID: task.ResultAssetID, FailureCode: task.FailureCode, LeaseOwner: task.LeaseOwner, FencingToken: task.FencingToken, LeaseAttempt: task.LeaseAttempt, LeaseUntil: task.LeaseUntil, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt}, nil
+	return generationJobRecord{ID: task.ID, OwnerID: task.OwnerID, LookID: task.LookID, LookRevision: task.LookRevision, Purpose: string(task.Purpose), Provider: task.Provider, Model: task.Model, Parameters: append([]byte(nil), task.Parameters...), Inputs: inputs, Consent: consent, Currency: task.Cost.Currency, EstimatedMinorUnits: task.Cost.EstimatedMinorUnits, ReservedQuotaUnits: task.Cost.ReservedQuotaUnits, IdempotencyKeyHash: task.IdempotencyKeyHash, DedupeKey: task.DedupeKey, Status: string(task.Status), StatusRevision: task.StatusRevision, SubmissionState: string(task.SubmissionState), SubmissionAttempt: task.SubmissionAttempt, SubmissionStartedAt: task.SubmissionStartedAt, SubmissionUnknownAt: task.SubmissionUnknownAt, NextAttemptAt: task.NextAttemptAt, CancelRequestedAt: task.CancelRequestedAt, AccessRevokedAt: task.AccessRevokedAt, ExternalTaskID: task.ExternalTaskID, ResultAssetID: task.ResultAssetID, FailureCode: task.FailureCode, LeaseOwner: task.LeaseOwner, FencingToken: task.FencingToken, LeaseAttempt: task.LeaseAttempt, LeaseUntil: task.LeaseUntil, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt}, nil
 }
 
 func generationTaskFromRecord(record generationJobRecord) (generationapp.Task, error) {
@@ -361,7 +364,7 @@ func generationTaskFromRecord(record generationJobRecord) (generationapp.Task, e
 	if err := json.Unmarshal(record.Consent, &consent); err != nil {
 		return generationapp.Task{}, generationapp.ErrInvalidGenerationState
 	}
-	task := generationapp.Task{ID: record.ID, OwnerID: record.OwnerID, LookID: record.LookID, LookRevision: record.LookRevision, Purpose: generationapp.Purpose(record.Purpose), Provider: record.Provider, Model: record.Model, Parameters: parameters, Inputs: inputs, Consent: consent, Cost: generationapp.CostEstimate{Currency: record.Currency, EstimatedMinorUnits: record.EstimatedMinorUnits, ReservedQuotaUnits: record.ReservedQuotaUnits}, IdempotencyKeyHash: record.IdempotencyKeyHash, DedupeKey: record.DedupeKey, Status: generationapp.Status(record.Status), StatusRevision: record.StatusRevision, SubmissionState: generationapp.SubmissionState(record.SubmissionState), SubmissionAttempt: record.SubmissionAttempt, SubmissionStartedAt: record.SubmissionStartedAt, SubmissionUnknownAt: record.SubmissionUnknownAt, NextAttemptAt: record.NextAttemptAt, CancelRequestedAt: record.CancelRequestedAt, ExternalTaskID: record.ExternalTaskID, ResultAssetID: record.ResultAssetID, FailureCode: record.FailureCode, LeaseOwner: record.LeaseOwner, FencingToken: record.FencingToken, LeaseAttempt: record.LeaseAttempt, LeaseUntil: record.LeaseUntil, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+	task := generationapp.Task{ID: record.ID, OwnerID: record.OwnerID, LookID: record.LookID, LookRevision: record.LookRevision, Purpose: generationapp.Purpose(record.Purpose), Provider: record.Provider, Model: record.Model, Parameters: parameters, Inputs: inputs, Consent: consent, Cost: generationapp.CostEstimate{Currency: record.Currency, EstimatedMinorUnits: record.EstimatedMinorUnits, ReservedQuotaUnits: record.ReservedQuotaUnits}, IdempotencyKeyHash: record.IdempotencyKeyHash, DedupeKey: record.DedupeKey, Status: generationapp.Status(record.Status), StatusRevision: record.StatusRevision, SubmissionState: generationapp.SubmissionState(record.SubmissionState), SubmissionAttempt: record.SubmissionAttempt, SubmissionStartedAt: record.SubmissionStartedAt, SubmissionUnknownAt: record.SubmissionUnknownAt, NextAttemptAt: record.NextAttemptAt, CancelRequestedAt: record.CancelRequestedAt, AccessRevokedAt: record.AccessRevokedAt, ExternalTaskID: record.ExternalTaskID, ResultAssetID: record.ResultAssetID, FailureCode: record.FailureCode, LeaseOwner: record.LeaseOwner, FencingToken: record.FencingToken, LeaseAttempt: record.LeaseAttempt, LeaseUntil: record.LeaseUntil, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
 	if err := task.Validate(); err != nil {
 		return generationapp.Task{}, err
 	}
@@ -399,7 +402,7 @@ func generationLookupError(err error) error {
 }
 
 func generationGenerationError(err error) error {
-	if errors.Is(err, generationapp.ErrGenerationNotFound) || errors.Is(err, generationapp.ErrGenerationUnavailable) || errors.Is(err, generationapp.ErrInvalidGenerationInput) || errors.Is(err, generationapp.ErrGenerationDisabled) || errors.Is(err, generationapp.ErrGenerationQuotaExceeded) || errors.Is(err, generationapp.ErrGenerationBudgetExceeded) || errors.Is(err, generationapp.ErrGenerationConcurrency) || errors.Is(err, generationapp.ErrGenerationCurrency) || errors.Is(err, generationapp.ErrGenerationIdempotencyConflict) || errors.Is(err, generationapp.ErrGenerationNotCancellable) || errors.Is(err, generationapp.ErrGenerationRetryNotReady) || errors.Is(err, generationapp.ErrGenerationRetryExhausted) || errors.Is(err, generationapp.ErrGenerationLeaseHeld) || errors.Is(err, generationapp.ErrGenerationLeaseExpired) || errors.Is(err, generationapp.ErrGenerationLeaseConflict) || errors.Is(err, generationapp.ErrInvalidGenerationLease) {
+	if errors.Is(err, generationapp.ErrGenerationNotFound) || errors.Is(err, generationapp.ErrGenerationUnavailable) || errors.Is(err, generationapp.ErrInvalidGenerationInput) || errors.Is(err, generationapp.ErrGenerationDisabled) || errors.Is(err, generationapp.ErrGenerationQuotaExceeded) || errors.Is(err, generationapp.ErrGenerationBudgetExceeded) || errors.Is(err, generationapp.ErrGenerationConcurrency) || errors.Is(err, generationapp.ErrGenerationCurrency) || errors.Is(err, generationapp.ErrGenerationIdempotencyConflict) || errors.Is(err, generationapp.ErrGenerationNotCancellable) || errors.Is(err, generationapp.ErrGenerationRetryNotReady) || errors.Is(err, generationapp.ErrGenerationRetryExhausted) || errors.Is(err, generationapp.ErrGenerationLeaseHeld) || errors.Is(err, generationapp.ErrGenerationLeaseExpired) || errors.Is(err, generationapp.ErrGenerationLeaseConflict) || errors.Is(err, generationapp.ErrInvalidGenerationLease) || errors.Is(err, generationapp.ErrInvalidGenerationCleanup) || errors.Is(err, generationapp.ErrGenerationCleanupNotReady) || errors.Is(err, generationapp.ErrGenerationCleanupInProgress) {
 		return err
 	}
 	return generationapp.ErrGenerationUnavailable

@@ -64,7 +64,7 @@ func (a OutputAsset) ValidateFor(task Task) error {
 // and the succeeding task transition in one short database transaction.
 func NewOutputAsset(id string, task Task, fact OutputFact, at time.Time) (OutputAsset, error) {
 	if !task.validTaskCoreFacts() || !validID(id) || !validID(task.ID) || !validID(task.OwnerID) || !validID(task.LookID) ||
-		task.LookRevision < 1 || !task.Purpose.valid() || task.Status != StatusValidating ||
+		task.LookRevision < 1 || !task.Purpose.valid() || task.Status != StatusValidating || task.AccessRevokedAt != nil ||
 		!validOutputFact(task.Purpose, fact) || at.IsZero() {
 		return OutputAsset{}, ErrInvalidGenerationOutput
 	}

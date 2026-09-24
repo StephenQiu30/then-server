@@ -45,7 +45,7 @@ func (e OutboxEvent) validFacts() bool {
 func NewOutboxEvent(id string, task Task, now time.Time) (OutboxEvent, error) {
 	if !validID(id) || !validID(task.ID) || !task.Purpose.valid() ||
 		task.Status != StatusQueued || task.SubmissionState != SubmissionNotStarted ||
-		task.ExternalTaskID != "" || task.CancelRequestedAt != nil || task.StatusRevision < 1 || now.IsZero() {
+		task.ExternalTaskID != "" || task.CancelRequestedAt != nil || task.AccessRevokedAt != nil || task.StatusRevision < 1 || now.IsZero() {
 		return OutboxEvent{}, ErrInvalidGenerationOutbox
 	}
 	if !task.validTaskFacts() {
@@ -152,6 +152,7 @@ func cloneTask(task Task) Task {
 	task.SubmissionUnknownAt = cloneTime(task.SubmissionUnknownAt)
 	task.NextAttemptAt = cloneTime(task.NextAttemptAt)
 	task.CancelRequestedAt = cloneTime(task.CancelRequestedAt)
+	task.AccessRevokedAt = cloneTime(task.AccessRevokedAt)
 	task.LeaseUntil = cloneTime(task.LeaseUntil)
 	return task
 }

@@ -24,7 +24,7 @@ func (h *AccountHandler) getDeletionReceipt(ctx context.Context, input *accountD
 	}
 	return &accountDeletionReceiptOutput{RequestID: requestID(ctx), CacheControl: "no-store", Body: AccountDeletionReceiptResponse{
 		ID: request.ID, Status: string(request.Status), Phase: request.Phase, AccessClosed: request.AccessClosed,
-		MediaCount: request.MediaCount, RemainingMediaCount: request.RemainingMediaCount, RetryObserved: request.RetryObserved,
+		MediaCount: request.MediaCount, RemainingMediaCount: request.RemainingMediaCount, GenerationCount: request.GenerationCount, RemainingGenerationCount: request.RemainingGenerationCount, RetryObserved: request.RetryObserved,
 		RequestedAt: request.RequestedAt, UpdatedAt: request.UpdatedAt, CompletedAt: request.CompletedAt, ReceiptExpiresAt: request.ReceiptExpiresAt,
 	}}, nil
 }

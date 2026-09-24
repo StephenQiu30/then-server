@@ -289,6 +289,9 @@ func deleteMediaInTx(tx *gorm.DB, ownerID, mediaID string, at time.Time) (deleti
 	if media.Status == string(mediaapp.MediaDeleted) {
 		return request, mediaapp.ErrMediaConflict
 	}
+	if err := requestGenerationSourceCleanupInTx(tx, ownerID, mediaID, at); err != nil {
+		return request, err
+	}
 	var publishedReferences int64
 	if err := tx.Table("post_revision_media prm").Joins("JOIN posts p ON p.id = prm.post_id").Where("prm.media_id = ? AND p.state <> ?", mediaID, "deleted").Count(&publishedReferences).Error; err != nil {
 		return request, err

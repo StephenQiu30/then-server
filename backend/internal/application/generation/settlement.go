@@ -152,7 +152,7 @@ func cloneAsset(asset OutputAsset) *OutputAsset {
 }
 
 func validOutputAsset(task Task, asset OutputAsset) bool {
-	if !validID(asset.ID) || asset.Lineage.TaskID != task.ID || asset.Lineage.OwnerID != task.OwnerID || asset.Lineage.LookID != task.LookID || asset.Lineage.LookRevision != task.LookRevision || asset.Lineage.Purpose != task.Purpose || asset.PublishedAt.IsZero() || asset.PublishedAt.Before(task.CreatedAt) || (task.Status != StatusSucceeded && asset.PublishedAt.Before(task.UpdatedAt)) || !validOutputFact(task.Purpose, OutputFact{ContentType: asset.ContentType, ByteSize: asset.ByteSize, SHA256: asset.SHA256, ObjectVersionID: asset.ObjectVersionID}) {
+	if task.AccessRevokedAt != nil || !validID(asset.ID) || asset.Lineage.TaskID != task.ID || asset.Lineage.OwnerID != task.OwnerID || asset.Lineage.LookID != task.LookID || asset.Lineage.LookRevision != task.LookRevision || asset.Lineage.Purpose != task.Purpose || asset.PublishedAt.IsZero() || asset.PublishedAt.Before(task.CreatedAt) || (task.Status != StatusSucceeded && asset.PublishedAt.Before(task.UpdatedAt)) || !validOutputFact(task.Purpose, OutputFact{ContentType: asset.ContentType, ByteSize: asset.ByteSize, SHA256: asset.SHA256, ObjectVersionID: asset.ObjectVersionID}) {
 		return false
 	}
 	if task.Status == StatusSucceeded && asset.PublishedAt.After(task.UpdatedAt) {

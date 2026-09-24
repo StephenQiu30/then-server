@@ -16,6 +16,7 @@ type GenerationHTTPService interface {
 	Get(context.Context, string, string) (generationapp.TaskView, error)
 	List(context.Context, string, int, *string) (generationapp.TaskPage, error)
 	Cancel(context.Context, string, string) (generationapp.TaskView, error)
+	Delete(context.Context, string, string) (generationapp.DeleteResult, error)
 }
 
 type GenerationHandler struct {
@@ -98,6 +99,19 @@ func (h *GenerationHandler) cancel(ctx context.Context, input *generationJobInpu
 	return &generationJobOutput{RequestID: requestID(ctx), Body: generationJobResponse(view)}, nil
 }
 
+func (h *GenerationHandler) delete(ctx context.Context, input *generationJobInput) (*generationJobOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	result, err := h.service.Delete(ctx, input.Session, input.ID)
+	if err != nil {
+		return nil, h.error(ctx, err)
+	}
+	response := generationJobResponse(result.View)
+	response.Cleanup = generationCleanupResponse(result.Cleanup)
+	return &generationJobOutput{RequestID: requestID(ctx), Body: response}, nil
+}
+
 func (h *GenerationHandler) available(ctx context.Context, session string) error {
 	if h == nil || h.service == nil {
 		return newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
@@ -116,7 +130,7 @@ func (h *GenerationHandler) error(ctx context.Context, err error) error {
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
 	case errors.Is(err, generationapp.ErrGenerationNotFound):
 		return newErrorResponse(http.StatusNotFound, requestID(ctx))
-	case errors.Is(err, generationapp.ErrGenerationIdempotencyConflict), errors.Is(err, generationapp.ErrGenerationNotCancellable), errors.Is(err, generationapp.ErrGenerationQuotaExceeded), errors.Is(err, generationapp.ErrGenerationBudgetExceeded), errors.Is(err, generationapp.ErrGenerationConcurrency), errors.Is(err, generationapp.ErrGenerationCurrency):
+	case errors.Is(err, generationapp.ErrGenerationIdempotencyConflict), errors.Is(err, generationapp.ErrGenerationNotCancellable), errors.Is(err, generationapp.ErrGenerationQuotaExceeded), errors.Is(err, generationapp.ErrGenerationBudgetExceeded), errors.Is(err, generationapp.ErrGenerationConcurrency), errors.Is(err, generationapp.ErrGenerationCurrency), errors.Is(err, generationapp.ErrGenerationCleanupInProgress):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Generation request conflicts with the current task or admission limits."
 		return response
@@ -129,7 +143,11 @@ func (h *GenerationHandler) error(ctx context.Context, err error) error {
 
 func generationJobResponse(view generationapp.TaskView) GenerationJobResponse {
 	task := view.Task
-	response := GenerationJobResponse{ID: task.ID, LookID: task.LookID, LookRevision: task.LookRevision, Purpose: task.Purpose, Provider: task.Provider, Model: task.Model, Status: task.Status, StatusRevision: task.StatusRevision, SubmissionState: task.SubmissionState, SubmissionAttempt: task.SubmissionAttempt, ExternalTaskID: task.ExternalTaskID, ResultAssetID: task.ResultAssetID, FailureCode: task.FailureCode, CancelRequestedAt: task.CancelRequestedAt, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt, Match: generationapp.RequestMatchNone}
+	externalTaskID, resultAssetID := task.ExternalTaskID, task.ResultAssetID
+	if task.AccessRevokedAt != nil {
+		externalTaskID, resultAssetID = "", ""
+	}
+	response := GenerationJobResponse{ID: task.ID, LookID: task.LookID, LookRevision: task.LookRevision, Purpose: task.Purpose, Provider: task.Provider, Model: task.Model, Status: task.Status, StatusRevision: task.StatusRevision, SubmissionState: task.SubmissionState, SubmissionAttempt: task.SubmissionAttempt, ExternalTaskID: externalTaskID, ResultAssetID: resultAssetID, FailureCode: task.FailureCode, CancelRequestedAt: task.CancelRequestedAt, AccessRevokedAt: task.AccessRevokedAt, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt, Match: generationapp.RequestMatchNone}
 	if view.Reservation != nil {
 		reservation := view.Reservation
 		response.Reservation = &GenerationReservationResponse{ID: reservation.ID, State: reservation.State, ReservedQuotaUnits: reservation.ReservedQuotaUnits, EstimatedMinorUnits: reservation.EstimatedMinorUnits, Currency: reservation.Currency, StateRevision: reservation.StateRevision, CreatedAt: reservation.CreatedAt, UpdatedAt: reservation.UpdatedAt}
@@ -139,4 +157,8 @@ func generationJobResponse(view generationapp.TaskView) GenerationJobResponse {
 		response.Output = &GenerationOutputResponse{ID: asset.ID, ContentType: asset.ContentType, ByteSize: asset.ByteSize, SHA256: asset.SHA256, ObjectVersionID: asset.ObjectVersionID, PublishedAt: asset.PublishedAt}
 	}
 	return response
+}
+
+func generationCleanupResponse(cleanup generationapp.CleanupRequest) *GenerationCleanupResponse {
+	return &GenerationCleanupResponse{ID: cleanup.ID, Status: cleanup.Status, AccessRevokedAt: cleanup.AccessRevokedAt, CompletedAt: cleanup.CompletedAt, Attempts: cleanup.Attempts, NextAttemptAt: cleanup.NextAttemptAt}
 }
