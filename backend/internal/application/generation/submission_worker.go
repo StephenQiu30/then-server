@@ -138,7 +138,7 @@ func (w *SubmissionWorker) runClaimed(ctx context.Context, view TaskView, lease 
 
 	// A cancellation that arrived before submit must never create a provider
 	// task. Settlement clears the lease and releases the quota atomically.
-	if view.Task.CancelRequestedAt != nil && view.Task.ExternalTaskID == "" {
+	if view.Task.CancelRequestedAt != nil && view.Task.ExternalTaskID == "" && view.Task.SubmissionState == SubmissionNotStarted {
 		canceled, finalizeErr := w.repository.FinalizeWithoutOutput(ctx, lease, StatusCanceled, "", w.now().UTC())
 		if finalizeErr != nil {
 			return SubmissionResult{View: view}, finalizeErr
@@ -161,6 +161,13 @@ func (w *SubmissionWorker) runClaimed(ctx context.Context, view TaskView, lease 
 			return SubmissionResult{View: view}, releaseErr
 		}
 		return SubmissionResult{View: released}, ErrGenerationSubmissionUnknown
+	}
+	// An expired worker lease can leave the durable state in flight while its
+	// provider request is still unresolved. Mark it unknown before releasing the
+	// recovered lease so cancellation cannot hide an external side effect and a
+	// later worker cannot submit the same request blindly.
+	if view.Task.SubmissionState == SubmissionInFlight {
+		return w.markUnknown(ctx, lease, view)
 	}
 
 	started, submission, err := w.repository.BeginSubmission(ctx, lease, w.now().UTC())
