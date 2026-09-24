@@ -5,11 +5,19 @@ package integration
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/StephenQiu30/then-server/backend/internal/adapter/httpapi"
 	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
@@ -22,6 +30,10 @@ import (
 
 type generationRecoveryProviderStub struct{ submitCalls int }
 
+type generationIntegrationProbe struct{}
+
+func (generationIntegrationProbe) Probe(context.Context) error { return nil }
+
 func (p *generationRecoveryProviderStub) Submit(context.Context, generationapp.Submission) (generationapp.Receipt, error) {
 	p.submitCalls++
 	return generationapp.Receipt{ExternalTaskID: "unexpected-provider-task"}, nil
@@ -33,6 +45,125 @@ func (*generationRecoveryProviderStub) Query(context.Context, string) (generatio
 
 func (*generationRecoveryProviderStub) Cancel(context.Context, string) error {
 	return errors.New("cancel is not part of submission recovery")
+}
+
+func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database *gorm.DB, service *generationapp.Service, ownerToken, otherToken string) {
+	t.Helper()
+
+	router, err := httpapi.NewRouterWithGeneration(
+		ctx,
+		false,
+		generationIntegrationProbe{},
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		httpapi.NewGenerationHandler(service, false),
+		time.Second,
+		slog.New(slog.NewJSONHandler(io.Discard, nil)),
+	)
+	if err != nil {
+		t.Fatalf("construct generation HTTP router: %v", err)
+	}
+
+	body := fmt.Sprintf(`{"idempotency_key":"generation-http-request","look_id":"00000000-0000-4000-8000-000000000901","look_revision":1,"purpose":"image","provider":"fixture","model":"fixture-image-v1","parameters":{"seed":901},"inputs":[{"media_id":"00000000-0000-4000-8000-000000000902","role":"person","ordinal":0,"revision":1,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"media_id":"00000000-0000-4000-8000-000000000903","role":"garment","ordinal":1,"revision":1,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],"consent":{"id":"00000000-0000-4000-8000-000000000904","purpose":"image","policy_version":"local-image-v1","accepted_at":"%s"}}`, time.Now().UTC().Add(-time.Minute).Format(time.RFC3339))
+	request := func(method, target, session, requestBody string) *http.Request {
+		req := httptest.NewRequest(method, target, strings.NewReader(requestBody))
+		if requestBody != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		if session != "" {
+			req.AddCookie(&http.Cookie{Name: "then_session", Value: session})
+		}
+		return req
+	}
+	decodeJob := func(response *httptest.ResponseRecorder) httpapi.GenerationJobResponse {
+		t.Helper()
+		var job httpapi.GenerationJobResponse
+		if err := json.Unmarshal(response.Body.Bytes(), &job); err != nil {
+			t.Fatalf("decode generation response %q: %v", response.Body.String(), err)
+		}
+		return job
+	}
+
+	createdResponse := httptest.NewRecorder()
+	router.ServeHTTP(createdResponse, request(http.MethodPost, "/generation-jobs", ownerToken, body))
+	if createdResponse.Code != http.StatusAccepted {
+		t.Fatalf("create generation over HTTP status=%d body=%s", createdResponse.Code, createdResponse.Body.String())
+	}
+	created := decodeJob(createdResponse)
+	if created.ID == "" || created.Status != generationapp.StatusQueued || created.Reused || created.Match != generationapp.RequestMatchNone {
+		t.Fatalf("unexpected created HTTP generation job: %+v", created)
+	}
+	if strings.Contains(createdResponse.Body.String(), "owner_id") || strings.Contains(createdResponse.Body.String(), "object_key") || strings.Contains(createdResponse.Body.String(), "owners/") {
+		t.Fatalf("generation HTTP response exposed private persistence fields: %s", createdResponse.Body.String())
+	}
+	var persisted int64
+	if err := database.WithContext(ctx).Table("generation_jobs").Where("id = ? AND status = ?", created.ID, string(generationapp.StatusQueued)).Count(&persisted).Error; err != nil || persisted != 1 {
+		t.Fatalf("HTTP-created generation job was not persisted: count=%d err=%v", persisted, err)
+	}
+
+	ownerRead := httptest.NewRecorder()
+	router.ServeHTTP(ownerRead, request(http.MethodGet, "/generation-jobs/"+created.ID, ownerToken, ""))
+	if ownerRead.Code != http.StatusOK || decodeJob(ownerRead).ID != created.ID {
+		t.Fatalf("owner could not read HTTP-created task: status=%d body=%s", ownerRead.Code, ownerRead.Body.String())
+	}
+	otherOwnerRead := httptest.NewRecorder()
+	router.ServeHTTP(otherOwnerRead, request(http.MethodGet, "/generation-jobs/"+created.ID, otherToken, ""))
+	if otherOwnerRead.Code != http.StatusNotFound {
+		t.Fatalf("cross-owner HTTP read status=%d body=%s", otherOwnerRead.Code, otherOwnerRead.Body.String())
+	}
+
+	replayResponse := httptest.NewRecorder()
+	router.ServeHTTP(replayResponse, request(http.MethodPost, "/generation-jobs", ownerToken, body))
+	if replayResponse.Code != http.StatusAccepted {
+		t.Fatalf("idempotent HTTP replay status=%d body=%s", replayResponse.Code, replayResponse.Body.String())
+	}
+	replayed := decodeJob(replayResponse)
+	if replayed.ID != created.ID || !replayed.Reused || replayed.Match != generationapp.RequestMatchIdempotentReplay {
+		t.Fatalf("HTTP idempotent replay created or returned another job: created=%+v replayed=%+v", created, replayed)
+	}
+
+	listResponse := httptest.NewRecorder()
+	router.ServeHTTP(listResponse, request(http.MethodGet, "/generation-jobs?limit=20", ownerToken, ""))
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("list generation over HTTP status=%d body=%s", listResponse.Code, listResponse.Body.String())
+	}
+	var page httpapi.GenerationJobPageResponse
+	if err := json.Unmarshal(listResponse.Body.Bytes(), &page); err != nil || len(page.Jobs) != 1 || page.Jobs[0].ID != created.ID {
+		t.Fatalf("owner HTTP list mismatch: page=%+v err=%v body=%s", page, err, listResponse.Body.String())
+	}
+
+	cancelResponse := httptest.NewRecorder()
+	router.ServeHTTP(cancelResponse, request(http.MethodPost, "/generation-jobs/"+created.ID+"/cancel", ownerToken, ""))
+	if cancelResponse.Code != http.StatusAccepted {
+		t.Fatalf("cancel generation over HTTP status=%d body=%s", cancelResponse.Code, cancelResponse.Body.String())
+	}
+	canceled := decodeJob(cancelResponse)
+	if canceled.ID != created.ID || canceled.Status != generationapp.StatusQueued || canceled.CancelRequestedAt == nil {
+		t.Fatalf("HTTP cancellation claimed an unverified provider stop: %+v", canceled)
+	}
+	readAfterCancel := httptest.NewRecorder()
+	router.ServeHTTP(readAfterCancel, request(http.MethodGet, "/generation-jobs/"+created.ID, ownerToken, ""))
+	if readAfterCancel.Code != http.StatusOK || decodeJob(readAfterCancel).CancelRequestedAt == nil {
+		t.Fatalf("HTTP cancellation request was not persisted: status=%d body=%s", readAfterCancel.Code, readAfterCancel.Body.String())
+	}
+
+	deleteResponse := httptest.NewRecorder()
+	router.ServeHTTP(deleteResponse, request(http.MethodDelete, "/generation-jobs/"+created.ID, ownerToken, ""))
+	if deleteResponse.Code != http.StatusAccepted {
+		t.Fatalf("delete generation over HTTP status=%d body=%s", deleteResponse.Code, deleteResponse.Body.String())
+	}
+	deleted := decodeJob(deleteResponse)
+	if deleted.ID != created.ID || deleted.AccessRevokedAt == nil || deleted.Cleanup == nil {
+		t.Fatalf("HTTP deletion did not revoke access and return cleanup state: %+v", deleted)
+	}
+	readAfterDelete := httptest.NewRecorder()
+	router.ServeHTTP(readAfterDelete, request(http.MethodGet, "/generation-jobs/"+created.ID, ownerToken, ""))
+	if readAfterDelete.Code != http.StatusOK {
+		t.Fatalf("owner could not read deletion progress over HTTP: status=%d body=%s", readAfterDelete.Code, readAfterDelete.Body.String())
+	}
+	deletionProgress := decodeJob(readAfterDelete)
+	if deletionProgress.AccessRevokedAt == nil || deletionProgress.Cleanup == nil {
+		t.Fatalf("HTTP deletion progress was not persisted: %+v", deletionProgress)
+	}
 }
 
 func TestGenerationPersistenceLifecycle(t *testing.T) {
@@ -71,6 +202,10 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	third, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "generation-third@example.test", DisplayName: "Generation Third", Password: "correct-password-generation-third"})
 	if err != nil {
 		t.Fatalf("register third generation owner: %v", err)
+	}
+	fourth, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "generation-http@example.test", DisplayName: "Generation HTTP", Password: "correct-password-generation-http"})
+	if err != nil {
+		t.Fatalf("register generation HTTP owner: %v", err)
 	}
 
 	policy := generationapp.AdmissionPolicy{Enabled: true, ZeroCost: true, MaxConcurrentTasks: 4, MaxQuotaUnits: 4}
@@ -936,5 +1071,6 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if reconciliationAuditCount != 4 {
 		t.Fatalf("expected four atomic reconciliation audit rows, got %d", reconciliationAuditCount)
 	}
+	verifyGenerationHTTPPersistence(t, ctx, database, generations, fourth.Token, second.Token)
 
 }
