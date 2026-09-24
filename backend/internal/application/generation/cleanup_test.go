@@ -70,6 +70,37 @@ func TestCleanupRequestRetainsTargetsAcrossRetry(t *testing.T) {
 	}
 }
 
+func TestCleanupRequestExhaustsAfterMaximumAttempts(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if err := task.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewCleanupRequest("cleanup-exhausted", task, CleanupScopeTask, nil, generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Status = CleanupFailed
+	request.Attempts = MaxCleanupAttempts
+	request.StableError = "target_delete_failed"
+	request.NextAttemptAt = timePtr(generationTestNow.Add(2 * time.Minute))
+	request.UpdatedAt = generationTestNow.Add(2 * time.Minute)
+	if err := request.Validate(); err != nil {
+		t.Fatalf("maximum-attempt running request became invalid: %v", err)
+	}
+	if _, err := request.Begin(generationTestNow.Add(3 * time.Minute)); !errors.Is(err, ErrGenerationCleanupExhausted) {
+		t.Fatalf("exhausted cleanup was claimable: %v", err)
+	}
+	request.Status = CleanupRunning
+	request.StableError = ""
+	request.NextAttemptAt = nil
+	if err := request.Exhaust(generationTestNow.Add(3 * time.Minute)); err != nil {
+		t.Fatalf("exhausted cleanup was not recorded: %v", err)
+	}
+	if request.Status != CleanupFailed || request.StableError != "cleanup_retry_exhausted" || request.NextAttemptAt != nil {
+		t.Fatalf("exhausted cleanup retained retry state: %+v", request)
+	}
+}
+
 func TestCleanupRequestReopensWhenLateTargetArrives(t *testing.T) {
 	task := mustTask(validCreateInput())
 	if err := task.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {
@@ -101,6 +132,20 @@ func TestCleanupRequestReopensWhenLateTargetArrives(t *testing.T) {
 	}
 	if len(request.Targets) != 1 {
 		t.Fatalf("replaying late target duplicated the manifest: %+v", request.Targets)
+	}
+}
+
+func TestCleanupRequestAllowsLateScopeCreationAfterAccessRevocation(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if err := task.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewCleanupRequest("cleanup-late-scope", task, CleanupScopeSource, nil, generationTestNow.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("late cleanup scope was rejected: %v", err)
+	}
+	if request.AccessRevokedAt.After(request.CreatedAt) {
+		t.Fatalf("late cleanup scope moved access revocation forward: %+v", request)
 	}
 }
 

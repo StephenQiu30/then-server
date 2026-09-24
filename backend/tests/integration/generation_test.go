@@ -651,5 +651,55 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if _, err := workerRepository.ReleaseLease(ctx, lateLease, lateAccepted.Task.UpdatedAt.Add(time.Minute)); err != nil {
 		t.Fatalf("release late acceptance lease: %v", err)
 	}
+	maxCleanupRequests, err := workerRepository.RequestSourceCleanup(ctx, third.User.ID, lateInput.Inputs.References[0].MediaID, reclaimedLate.UpdatedAt.Add(time.Minute))
+	if err != nil || len(maxCleanupRequests) != 1 {
+		t.Fatalf("create cleanup retry exhaustion fixture: requests=%+v err=%v", maxCleanupRequests, err)
+	}
+	maxCleanup := maxCleanupRequests[0]
+	exhaustedAt := maxCleanup.UpdatedAt.Add(2 * time.Minute)
+	failedAt := exhaustedAt.Add(-time.Minute)
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("id = ?", maxCleanup.ID).Updates(map[string]any{
+		"status":          string(generationapp.CleanupFailed),
+		"completed_at":    nil,
+		"stable_error":    "target_delete_failed",
+		"attempts":        generationapp.MaxCleanupAttempts,
+		"next_attempt_at": exhaustedAt.Add(-time.Second),
+		"updated_at":      failedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed exhausted failed cleanup: %v", err)
+	}
+	// This lifecycle leaves other cleanup fixtures pending for later assertions;
+	// delay them so the queue claim below isolates the exhausted request.
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("id <> ? AND status IN ?", maxCleanup.ID, []string{string(generationapp.CleanupPending), string(generationapp.CleanupFailed)}).Update("next_attempt_at", exhaustedAt.Add(time.Hour)).Error; err != nil {
+		t.Fatalf("delay unrelated cleanup fixtures: %v", err)
+	}
+	if _, _, found, err := workerRepository.ClaimNextCleanup(ctx, exhaustedAt, time.Minute); err != nil || found {
+		t.Fatalf("exhausted failed cleanup remained claimable: found=%v err=%v", found, err)
+	}
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("id = ?", maxCleanup.ID).Updates(map[string]any{
+		"status":          string(generationapp.CleanupRunning),
+		"completed_at":    nil,
+		"stable_error":    "",
+		"attempts":        generationapp.MaxCleanupAttempts,
+		"next_attempt_at": nil,
+		"updated_at":      failedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed stale exhausted running cleanup: %v", err)
+	}
+	recoveredAt := exhaustedAt.Add(time.Minute)
+	if _, _, found, err := workerRepository.ClaimNextCleanup(ctx, recoveredAt, time.Minute); err != nil || found {
+		t.Fatalf("stale exhausted cleanup was claimed: found=%v err=%v", found, err)
+	}
+	var exhaustedState struct {
+		Status      string
+		StableError string
+		Attempts    int
+	}
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Select("status, stable_error, attempts").Where("id = ?", maxCleanup.ID).Scan(&exhaustedState).Error; err != nil {
+		t.Fatalf("read exhausted cleanup state: %v", err)
+	}
+	if exhaustedState.Status != string(generationapp.CleanupFailed) || exhaustedState.StableError != "cleanup_retry_exhausted" || exhaustedState.Attempts != generationapp.MaxCleanupAttempts {
+		t.Fatalf("stale exhausted cleanup was not durably settled: %+v", exhaustedState)
+	}
 
 }

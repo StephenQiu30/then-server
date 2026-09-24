@@ -10,7 +10,10 @@ var (
 	ErrGenerationCleanupNotReady   = errors.New("generation cleanup is not ready")
 	ErrGenerationCleanupInProgress = errors.New("generation cleanup is already in progress")
 	ErrGenerationCleanupClaim      = errors.New("generation cleanup claim is stale")
+	ErrGenerationCleanupExhausted  = errors.New("generation cleanup retries exhausted")
 )
+
+const MaxCleanupAttempts = 100
 
 // CleanupScope identifies the owner-facing operation that revoked access.
 // Task is the first DELETE-01 slice; source and account cleanup use the same
@@ -127,7 +130,7 @@ func NewCleanupRequest(id string, task Task, scope CleanupScope, targets []Clean
 }
 
 func (r CleanupRequest) Validate() error {
-	if !validID(r.ID) || !validID(r.OwnerID) || !validID(r.TaskID) || !validCleanupScope(r.Scope) || (r.SourceMediaID != "" && !validID(r.SourceMediaID)) || (r.AccountDeletionID != "" && !validID(r.AccountDeletionID)) || !validCleanupStatus(r.Status) || r.AccessRevokedAt.IsZero() || r.CreatedAt.IsZero() || r.UpdatedAt.IsZero() || r.UpdatedAt.Before(r.CreatedAt) || r.AccessRevokedAt.Before(r.CreatedAt) || r.AccessRevokedAt.After(r.UpdatedAt) || r.Attempts < 0 || r.Attempts > 100 || !validToken(r.StableError, 96) && r.StableError != "" {
+	if !validID(r.ID) || !validID(r.OwnerID) || !validID(r.TaskID) || !validCleanupScope(r.Scope) || (r.SourceMediaID != "" && !validID(r.SourceMediaID)) || (r.AccountDeletionID != "" && !validID(r.AccountDeletionID)) || !validCleanupStatus(r.Status) || r.AccessRevokedAt.IsZero() || r.CreatedAt.IsZero() || r.UpdatedAt.IsZero() || r.UpdatedAt.Before(r.CreatedAt) || r.AccessRevokedAt.After(r.UpdatedAt) || r.Attempts < 0 || r.Attempts > MaxCleanupAttempts || !validToken(r.StableError, 96) && r.StableError != "" {
 		return ErrInvalidGenerationCleanup
 	}
 	if r.CompletedAt != nil {
@@ -177,7 +180,10 @@ func (r *CleanupRequest) Begin(at time.Time) ([]CleanupTarget, error) {
 	if r.NextAttemptAt != nil && at.Before(*r.NextAttemptAt) {
 		return nil, ErrGenerationCleanupNotReady
 	}
-	if r.Attempts >= 100 || at.Before(r.UpdatedAt) {
+	if r.Attempts >= MaxCleanupAttempts {
+		return nil, ErrGenerationCleanupExhausted
+	}
+	if at.Before(r.UpdatedAt) {
 		return nil, ErrInvalidGenerationCleanup
 	}
 	at = at.UTC()
@@ -190,6 +196,22 @@ func (r *CleanupRequest) Begin(at time.Time) ([]CleanupTarget, error) {
 		return nil, err
 	}
 	return cloneCleanupTargets(r.Targets), nil
+}
+
+// Exhaust records a terminally retryable cleanup failure after the bounded
+// attempt budget is consumed. The request remains visible for audit and
+// operator action but is no longer eligible for automatic claiming.
+func (r *CleanupRequest) Exhaust(at time.Time) error {
+	if r == nil || r.Validate() != nil || r.Status != CleanupRunning || r.Attempts < MaxCleanupAttempts || at.IsZero() || at.Before(r.UpdatedAt) {
+		return ErrInvalidGenerationCleanup
+	}
+	at = at.UTC()
+	r.Status = CleanupFailed
+	r.CompletedAt = nil
+	r.StableError = "cleanup_retry_exhausted"
+	r.NextAttemptAt = nil
+	r.UpdatedAt = at
+	return r.Validate()
 }
 
 func (r *CleanupRequest) Complete(at time.Time) error {
