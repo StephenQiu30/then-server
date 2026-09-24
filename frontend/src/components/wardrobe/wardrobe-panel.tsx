@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,7 +67,7 @@ export function WardrobePanel() {
   const [impactItemID, setImpactItemID] = useState<string | null>(null)
   const [nameError, setNameError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [deletionReceipt, setDeletionReceipt] = useState<string | null>(null)
   const items =
     wardrobe.data?.pages.flatMap(
       (page) => page.items as API.WardrobeItemResponse[],
@@ -102,7 +103,6 @@ export function WardrobePanel() {
     setForm(wardrobeFormFromItem(item))
     setNameError(null)
     setError(null)
-    setNotice(null)
   }
 
   function showActionError(cause: unknown) {
@@ -122,7 +122,6 @@ export function WardrobePanel() {
     if (validation) return
     setPending('save')
     setError(null)
-    setNotice(null)
     try {
       if (editing) {
         const updated = await actions.update(editing.id, {
@@ -134,7 +133,7 @@ export function WardrobePanel() {
         })
         setEditing(updated)
         setForm(wardrobeFormFromItem(updated))
-        setNotice('衣物已保存。')
+        toast('衣物已保存。')
       } else {
         const id = createID.current ?? crypto.randomUUID()
         createID.current = id
@@ -148,7 +147,7 @@ export function WardrobePanel() {
         })
         createID.current = null
         setForm(emptyWardrobeForm())
-        setNotice('衣物已加入衣橱。')
+        toast('衣物已加入衣橱。')
       }
     } catch (cause) {
       showActionError(cause)
@@ -179,7 +178,6 @@ export function WardrobePanel() {
     setPending('impact')
     setImpactItemID(item.id)
     setError(null)
-    setNotice(null)
     try {
       const impact = await actions.impact(item.id)
       setDeletion({ item, impact, policy: 'redact_snapshots' })
@@ -204,7 +202,7 @@ export function WardrobePanel() {
         draft.policy,
       )
       if (editing?.id === draft.item.id) cancelEdit()
-      setNotice('衣物已删除。')
+      setDeletionReceipt('衣物已删除。')
     } catch (cause) {
       showActionError(cause)
       await wardrobe.refetch()
@@ -217,10 +215,7 @@ export function WardrobePanel() {
   return (
     <PageShell>
       <header className="flex flex-col items-start gap-4">
-        <Link
-          href="/"
-          className="text-primary underline-offset-4 hover:underline"
-        >
+        <Link href="/" className="text-link underline-offset-4 hover:underline">
           于是 OOTD
         </Link>
         <Badge variant="secondary">衣橱</Badge>
@@ -266,10 +261,10 @@ export function WardrobePanel() {
         </Alert>
       ) : (
         <>
-          {notice && (
+          {deletionReceipt && (
             <Alert role="status">
-              <AlertTitle>已完成</AlertTitle>
-              <AlertDescription>{notice}</AlertDescription>
+              <AlertTitle>删除完成</AlertTitle>
+              <AlertDescription>{deletionReceipt}</AlertDescription>
             </Alert>
           )}
           {error && (

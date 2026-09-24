@@ -53,7 +53,7 @@ frontend/
 
 ## 当前实现与自动检查
 
-- `src/app/globals.css` 映射根 DESIGN 的 Then Web foundation；默认浅色，字体跟随系统。Button/Badge 的 Then 变体归 `components/ui`，不在页面覆盖颜色或字体。
+- `src/app/globals.css` 映射根 DESIGN 的双端中性视觉标准；默认浅色，Web 使用 Geist 与中文系统字体回退。Button/Badge 的 Then 变体归 `components/ui`，不在页面覆盖颜色或字体。
 - `components/layout/page-shell.tsx` 是首页、404 和路由错误页共用的内容结构；各页面必须保持唯一 `main-content`，供根 layout 的跳转链接使用。
 - Next.js 16.3 错误边界使用 `retry()` 重新获取并渲染；不输出内部错误正文，不建立测试专用生产路由。业务加载/空态在实际数据页实现后接入。
 - ESLint 禁止回引 Themes、其他 primitive 体系及页面直用 Axios；目录与依赖边界由 tests/architecture 检查，涵盖别名、相对路径、re-export 和字面量动态 import。UI 不反向依赖业务，生产代码不导入 tests/assets/根工具配置；具体允许方向见 PROJECT。

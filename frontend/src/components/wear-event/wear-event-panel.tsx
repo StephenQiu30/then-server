@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -84,7 +85,7 @@ export function WearEventPanel() {
   const [pending, setPending] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [deletionReceipt, setDeletionReceipt] = useState<string | null>(null)
   const wardrobeItems =
     wardrobe.data?.pages.flatMap(
       (page) => page.items as API.WardrobeItemResponse[],
@@ -163,7 +164,6 @@ export function WearEventPanel() {
     setFormError(null)
     setError(null)
     setDuplicate(null)
-    setNotice(null)
   }
 
   function selectPlan(id: string) {
@@ -255,7 +255,6 @@ export function WearEventPanel() {
     setPending(true)
     setError(null)
     setDuplicate(null)
-    setNotice(null)
     try {
       const fields = wearRequestFields(form)
       fields.confirmed_unavailable_ids =
@@ -270,14 +269,16 @@ export function WearEventPanel() {
         })
         setEditing(event)
         setForm(wearFormFromResponse(event))
-        setNotice('实际穿着已纠正，关联计划已按服务端事实重算。')
+        toast('实际穿着已纠正', {
+          description: '关联计划已按服务端事实重算。',
+        })
       } else {
         const id = createID.current ?? crypto.randomUUID()
         createID.current = id
         await actions.create({ id, ...fields })
         createID.current = null
         setForm(emptyWearForm())
-        setNotice('实际穿着已保存。')
+        toast('实际穿着已保存。')
       }
     } catch (cause) {
       showError(cause)
@@ -297,11 +298,10 @@ export function WearEventPanel() {
     setConfirmDelete(null)
     setPending(true)
     setError(null)
-    setNotice(null)
     try {
       await actions.remove(event.id, event.revision)
       if (editing?.id === event.id) cancelEdit()
-      setNotice('实际记录已删除，关联计划状态已重算。')
+      setDeletionReceipt('实际记录已删除，关联计划状态已重算。')
     } catch (cause) {
       showError(cause)
       await events.refetch()
@@ -313,10 +313,7 @@ export function WearEventPanel() {
   return (
     <PageShell>
       <header className="flex flex-col items-start gap-4">
-        <Link
-          href="/"
-          className="text-primary underline-offset-4 hover:underline"
-        >
+        <Link href="/" className="text-link underline-offset-4 hover:underline">
           于是 OOTD
         </Link>
         <Badge variant="secondary">实际</Badge>
@@ -360,10 +357,10 @@ export function WearEventPanel() {
         </Alert>
       ) : (
         <>
-          {notice && (
+          {deletionReceipt && (
             <Alert role="status">
-              <AlertTitle>已完成</AlertTitle>
-              <AlertDescription>{notice}</AlertDescription>
+              <AlertTitle>删除完成</AlertTitle>
+              <AlertDescription>{deletionReceipt}</AlertDescription>
             </Alert>
           )}
           {error && (

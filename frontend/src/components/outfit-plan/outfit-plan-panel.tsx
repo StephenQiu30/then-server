@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -81,7 +82,7 @@ export function OutfitPlanPanel() {
   const [pending, setPending] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [deletionReceipt, setDeletionReceipt] = useState<string | null>(null)
   const wardrobeItems =
     wardrobe.data?.pages.flatMap(
       (page) => page.items as API.WardrobeItemResponse[],
@@ -138,7 +139,6 @@ export function OutfitPlanPanel() {
     setForm(planFormFromResponse(plan))
     setFormError(null)
     setError(null)
-    setNotice(null)
   }
 
   async function reloadEditing() {
@@ -185,7 +185,6 @@ export function OutfitPlanPanel() {
     if (validation) return
     setPending(true)
     setError(null)
-    setNotice(null)
     try {
       const fields = planRequestFields(form)
       fields.confirmed_unavailable_ids =
@@ -199,14 +198,14 @@ export function OutfitPlanPanel() {
         })
         setEditing(plan)
         setForm(planFormFromResponse(plan))
-        setNotice('计划已保存；实际穿着仍需另行确认。')
+        toast('计划已保存', { description: '实际穿着仍需另行确认。' })
       } else {
         const id = createID.current ?? crypto.randomUUID()
         createID.current = id
         await actions.create({ id, ...fields })
         createID.current = null
         setForm(emptyPlanForm())
-        setNotice('计划已保存；尚未记录实际穿着。')
+        toast('计划已保存', { description: '尚未记录实际穿着。' })
       }
     } catch (cause) {
       showError(cause)
@@ -221,14 +220,17 @@ export function OutfitPlanPanel() {
     setConfirmation(null)
     setPending(true)
     setError(null)
-    setNotice(null)
     try {
       if (action === 'cancel') await actions.cancel(plan.id, plan.revision)
       if (action === 'not_worn')
         await actions.markNotWorn(plan.id, plan.revision)
       if (action === 'delete') await actions.remove(plan.id, plan.revision)
       if (editing?.id === plan.id) cancelEdit()
-      setNotice(`${actionLabels[action]}已完成。`)
+      if (action === 'delete') {
+        setDeletionReceipt('计划已删除。')
+      } else {
+        toast(`${actionLabels[action]}已完成。`)
+      }
     } catch (cause) {
       showError(cause)
       await plans.refetch()
@@ -243,7 +245,7 @@ export function OutfitPlanPanel() {
     setError(null)
     try {
       await actions.restore(plan.id, plan.revision)
-      setNotice('计划已恢复为待确认。')
+      toast('计划已恢复为待确认。')
     } catch (cause) {
       showError(cause)
       await plans.refetch()
@@ -255,10 +257,7 @@ export function OutfitPlanPanel() {
   return (
     <PageShell>
       <header className="flex flex-col items-start gap-4">
-        <Link
-          href="/"
-          className="text-primary underline-offset-4 hover:underline"
-        >
+        <Link href="/" className="text-link underline-offset-4 hover:underline">
           于是 OOTD
         </Link>
         <Badge variant="secondary">计划</Badge>
@@ -302,10 +301,10 @@ export function OutfitPlanPanel() {
         </Alert>
       ) : (
         <>
-          {notice && (
+          {deletionReceipt && (
             <Alert role="status">
-              <AlertTitle>已完成</AlertTitle>
-              <AlertDescription>{notice}</AlertDescription>
+              <AlertTitle>删除完成</AlertTitle>
+              <AlertDescription>{deletionReceipt}</AlertDescription>
             </Alert>
           )}
           {error && (
