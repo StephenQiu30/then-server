@@ -38,6 +38,15 @@ type QuotaReservation struct {
 	UpdatedAt           time.Time
 }
 
+// Validate checks the immutable and lifecycle facts of a persisted quota
+// reservation before it participates in a settlement.
+func (r QuotaReservation) Validate() error {
+	if !r.validFacts() {
+		return ErrInvalidQuotaReservation
+	}
+	return nil
+}
+
 func (r QuotaReservation) validFacts() bool {
 	if !validID(r.ID) || !validID(r.TaskID) || !validID(r.OwnerID) || !r.Purpose.valid() ||
 		r.StateRevision < 1 || r.CreatedAt.IsZero() || r.UpdatedAt.IsZero() || r.UpdatedAt.Before(r.CreatedAt) {

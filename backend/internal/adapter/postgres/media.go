@@ -91,7 +91,7 @@ func (deletionRequestRecord) TableName() string { return "deletion_requests" }
 
 type outboxEventRecord struct {
 	ID          string     `gorm:"column:id;type:uuid;primaryKey"`
-	EventType   string     `gorm:"column:event_type;type:text;not null;index:outbox_events_pending_idx,priority:2;check:outbox_events_type_check,event_type IN ('media.uploaded','media.deletion_requested','community.notification_requested')"`
+	EventType   string     `gorm:"column:event_type;type:text;not null;index:outbox_events_pending_idx,priority:2;check:outbox_events_type_check,event_type IN ('media.uploaded','media.deletion_requested','community.notification_requested','generation.task_requested')"`
 	AggregateID string     `gorm:"column:aggregate_id;type:uuid;not null"`
 	Payload     []byte     `gorm:"column:payload;type:jsonb;not null"`
 	CreatedAt   time.Time  `gorm:"column:created_at;type:timestamptz;not null"`

@@ -115,3 +115,16 @@ func TestAdmissionPolicyRequiresExplicitEnabledLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestAdmissionPolicySupportsBoundedZeroCostLocalMode(t *testing.T) {
+	policy := AdmissionPolicy{Enabled: true, ZeroCost: true, MaxConcurrentTasks: 2, MaxQuotaUnits: 10}
+	if err := policy.Validate(); err != nil {
+		t.Fatalf("zero-cost policy validation error = %v", err)
+	}
+	if err := policy.Check(CostEstimate{ReservedQuotaUnits: 1}, AdmissionUsage{}); err != nil {
+		t.Fatalf("zero-cost task rejected: %v", err)
+	}
+	if err := policy.Check(CostEstimate{Currency: "USD", EstimatedMinorUnits: 1}, AdmissionUsage{}); !errors.Is(err, ErrGenerationBudgetExceeded) {
+		t.Fatalf("paid task passed zero-cost policy: %v", err)
+	}
+}

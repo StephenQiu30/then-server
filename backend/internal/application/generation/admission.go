@@ -17,6 +17,7 @@ var (
 // check, so this helper never claims that a reservation has been committed.
 type AdmissionPolicy struct {
 	Enabled             bool
+	ZeroCost            bool
 	Currency            string
 	MaxConcurrentTasks  int
 	MaxQuotaUnits       int
@@ -38,6 +39,12 @@ func (p AdmissionPolicy) Validate() error {
 	if !p.Enabled {
 		return nil
 	}
+	if p.ZeroCost {
+		if p.Currency != "" || p.MaxBudgetMinorUnits != 0 || p.MaxConcurrentTasks < 1 || p.MaxQuotaUnits < 1 {
+			return ErrInvalidGenerationInput
+		}
+		return nil
+	}
 	if !validToken(p.Currency, 16) || p.MaxConcurrentTasks < 1 || p.MaxQuotaUnits < 1 || p.MaxBudgetMinorUnits < 1 {
 		return ErrInvalidGenerationInput
 	}
@@ -57,11 +64,17 @@ func (p AdmissionPolicy) Check(cost CostEstimate, usage AdmissionUsage) error {
 	if cost.EstimatedMinorUnits < 0 || cost.ReservedQuotaUnits < 0 || usage.ActiveTasks < 0 || usage.ReservedQuotaUnits < 0 || usage.ReservedMinorUnits < 0 {
 		return ErrInvalidGenerationInput
 	}
-	if cost.EstimatedMinorUnits > 0 && !validToken(cost.Currency, 16) || cost.EstimatedMinorUnits == 0 && cost.Currency != "" && !validToken(cost.Currency, 16) {
-		return ErrInvalidGenerationInput
-	}
-	if cost.Currency != "" && cost.Currency != p.Currency {
-		return ErrGenerationCurrency
+	if p.ZeroCost {
+		if cost.EstimatedMinorUnits != 0 || cost.Currency != "" || usage.ReservedMinorUnits != 0 {
+			return ErrGenerationBudgetExceeded
+		}
+	} else {
+		if cost.EstimatedMinorUnits > 0 && !validToken(cost.Currency, 16) || cost.EstimatedMinorUnits == 0 && cost.Currency != "" && !validToken(cost.Currency, 16) {
+			return ErrInvalidGenerationInput
+		}
+		if cost.Currency != "" && cost.Currency != p.Currency {
+			return ErrGenerationCurrency
+		}
 	}
 	if usage.ActiveTasks >= p.MaxConcurrentTasks {
 		return ErrGenerationConcurrency

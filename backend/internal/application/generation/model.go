@@ -198,6 +198,16 @@ type Task struct {
 	UpdatedAt           time.Time
 }
 
+// Validate checks a task loaded from persistence before it is used by a
+// service or worker. Persistence adapters must fail closed on malformed
+// state instead of repairing it implicitly.
+func (t Task) Validate() error {
+	if !t.validTaskFacts() {
+		return ErrInvalidGenerationState
+	}
+	return nil
+}
+
 // PrepareSubmission creates the provider-neutral payload for a first submit.
 // Workers should call BeginSubmission before sending it. A task with an
 // external ID or a non-idle submission state must be reconciled instead of
