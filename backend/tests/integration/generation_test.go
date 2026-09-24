@@ -786,6 +786,21 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", resultView.Task.ID).Select("object_key").Scan(&storedOutputObjectKey).Error; err != nil || storedOutputObjectKey != outputObjectKey {
 		t.Fatalf("generation output key was not persisted: key=%q err=%v", storedOutputObjectKey, err)
 	}
+	for _, overBudget := range []struct {
+		contentType string
+		byteSize    int64
+	}{
+		{contentType: generationapp.OutputContentTypeJPEG, byteSize: generationapp.MaxGenerationImageOutputBytes + 1},
+		{contentType: generationapp.OutputContentTypeGLB, byteSize: generationapp.MaxGenerationModelOutputBytes + 1},
+	} {
+		err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", resultView.Task.ID).Updates(map[string]any{
+			"content_type": overBudget.contentType,
+			"byte_size":    overBudget.byteSize,
+		}).Error
+		if err == nil {
+			t.Fatalf("PostgreSQL accepted over-budget generation output: type=%s size=%d", overBudget.contentType, overBudget.byteSize)
+		}
+	}
 	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", resultView.Task.ID).Update("object_key", "").Error; err != nil {
 		t.Fatalf("simulate legacy output without object key: %v", err)
 	}

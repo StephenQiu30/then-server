@@ -125,6 +125,41 @@ func TestNewOutputAssetRejectsUntrustedObjectFact(t *testing.T) {
 	}
 }
 
+func TestNewOutputAssetEnforcesOutputByteBudgets(t *testing.T) {
+	tests := []struct {
+		name    string
+		purpose Purpose
+		fact    OutputFact
+		limit   int64
+	}{
+		{name: "image", purpose: PurposeImage, fact: imageOutputFact(), limit: MaxGenerationImageOutputBytes},
+		{name: "model", purpose: PurposeModel, fact: modelOutputFact(), limit: MaxGenerationModelOutputBytes},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := validCreateInput()
+			if test.purpose == PurposeModel {
+				input.Purpose = PurposeModel
+				input.Consent.Purpose = PurposeModel
+				input.Inputs.ImageAssetID = "image-1"
+				input.Inputs.ImageSHA256 = strings.Repeat("c", 64)
+				input.Inputs.References = []InputReference{{MediaID: "image-1", Role: InputRoleLookImage, Ordinal: 0, Revision: 5, SHA256: strings.Repeat("c", 64)}}
+			}
+			task := validatingTask(t, input)
+			fact := test.fact
+			fact.ByteSize = test.limit
+			if _, err := NewOutputAsset("asset-budget-boundary", task, fact, generationTestNow.Add(3*time.Minute)); err != nil {
+				t.Fatalf("accepted output at byte budget: %v", err)
+			}
+
+			fact.ByteSize++
+			if _, err := NewOutputAsset("asset-over-budget", task, fact, generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrInvalidGenerationOutput) {
+				t.Fatalf("accepted output above byte budget: %v", err)
+			}
+		})
+	}
+}
+
 func TestOutputObjectKeyBindsPurposeAndRejectsUnsafeIDs(t *testing.T) {
 	task := mustTask(validCreateInput())
 	imageKey, err := OutputObjectKey(task)
