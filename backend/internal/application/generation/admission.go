@@ -45,8 +45,9 @@ type AdmissionPolicy struct {
 // caller chooses the scope (owner, project, or both) while holding the
 // transaction's relevant locks.
 type AdmissionUsage struct {
-	ActiveTasks        int
-	ReservedQuotaUnits int
+	ActiveTasks int
+	// UsedQuotaUnits includes active reservations and successfully consumed quota.
+	UsedQuotaUnits     int
 	ReservedMinorUnits int64
 }
 
@@ -69,8 +70,8 @@ func (p AdmissionPolicy) Validate() error {
 }
 
 // Check evaluates a new task against the supplied usage snapshot. It does
-// not mutate usage; reservation and task creation must remain one database
-// transaction in the eventual DATA-01 repository.
+// not mutate usage; the repository keeps this check and task reservation in
+// one database transaction.
 func (p AdmissionPolicy) Check(cost CostEstimate, usage AdmissionUsage) error {
 	if !p.Enabled {
 		return ErrGenerationDisabled
@@ -78,7 +79,7 @@ func (p AdmissionPolicy) Check(cost CostEstimate, usage AdmissionUsage) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
-	if cost.EstimatedMinorUnits < 0 || cost.ReservedQuotaUnits < 0 || usage.ActiveTasks < 0 || usage.ReservedQuotaUnits < 0 || usage.ReservedMinorUnits < 0 {
+	if cost.EstimatedMinorUnits < 0 || cost.ReservedQuotaUnits < 0 || usage.ActiveTasks < 0 || usage.UsedQuotaUnits < 0 || usage.ReservedMinorUnits < 0 {
 		return ErrInvalidGenerationInput
 	}
 	if p.ZeroCost {
@@ -102,10 +103,10 @@ func (p AdmissionPolicy) Check(cost CostEstimate, usage AdmissionUsage) error {
 	if usage.ActiveTasks >= p.MaxConcurrentTasks {
 		return ErrGenerationConcurrency
 	}
-	if usage.ReservedQuotaUnits > p.MaxQuotaUnits {
+	if usage.UsedQuotaUnits > p.MaxQuotaUnits {
 		return ErrGenerationQuotaExceeded
 	}
-	if cost.ReservedQuotaUnits > p.MaxQuotaUnits-usage.ReservedQuotaUnits {
+	if cost.ReservedQuotaUnits > p.MaxQuotaUnits-usage.UsedQuotaUnits {
 		return ErrGenerationQuotaExceeded
 	}
 	if usage.ReservedMinorUnits > p.MaxBudgetMinorUnits {
