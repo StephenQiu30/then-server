@@ -43,8 +43,9 @@ func (p *observationWorkerProviderStub) Cancel(_ context.Context, externalID str
 }
 
 type observationWorkerRepositoryStub struct {
-	task        Task
-	reservation *QuotaReservation
+	task               Task
+	reservation        *QuotaReservation
+	unpublishedTargets []CleanupTarget
 }
 
 func (r *observationWorkerRepositoryStub) AcquireObservationLease(_ context.Context, _ string, owner string, at time.Time, ttl time.Duration) (TaskView, Lease, error) {

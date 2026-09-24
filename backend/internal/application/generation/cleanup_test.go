@@ -181,7 +181,7 @@ func TestCleanupRequestAllowsLateScopeCreationAfterAccessRevocation(t *testing.T
 	if err != nil {
 		t.Fatalf("late cleanup scope was rejected: %v", err)
 	}
-	if request.AccessRevokedAt.After(request.CreatedAt) {
+	if request.AccessRevokedAt == nil || request.AccessRevokedAt.After(request.CreatedAt) {
 		t.Fatalf("late cleanup scope moved access revocation forward: %+v", request)
 	}
 }
@@ -208,5 +208,25 @@ func TestCleanupRequestKeepsDistinctObjectVersions(t *testing.T) {
 	}
 	if len(request.Targets) != 2 {
 		t.Fatalf("same object version replay duplicated the manifest: %+v", request.Targets)
+	}
+}
+
+func TestOrphanOutputCleanupDoesNotRevokeTaskAccess(t *testing.T) {
+	task := mustTask(validCreateInput())
+	objectKey, err := OutputObjectKey(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewOrphanOutputCleanupRequest("orphan-cleanup-1", task, CleanupTarget{
+		Kind: CleanupTargetObject, ID: task.ID, ObjectKey: objectKey, ObjectVersionID: "output-version-1",
+	}, generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("NewOrphanOutputCleanupRequest() error = %v", err)
+	}
+	if request.Scope != CleanupScopeOrphanOutput || request.AccessRevokedAt != nil || request.Status != CleanupPending || len(request.Targets) != 1 {
+		t.Fatalf("orphan cleanup changed the task's owner-facing access: %+v", request)
+	}
+	if err := task.Validate(); err != nil || task.AccessRevokedAt != nil {
+		t.Fatalf("task validity or access changed while recording cleanup: task=%+v err=%v", task, err)
 	}
 }

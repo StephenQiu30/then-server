@@ -60,13 +60,27 @@ func Migrate(ctx context.Context, database *gorm.DB) error {
 		return err
 	}
 	// AutoMigrate does not alter an existing CHECK constraint when a new
-	// provider-neutral outbox event type is added. Keep development databases
-	// created before generation support compatible with the new event.
+	// provider-neutral outbox event type or cleanup scope is added.
 	if database.Dialector.Name() == "postgres" {
 		if err := database.WithContext(ctx).Exec("ALTER TABLE outbox_events DROP CONSTRAINT IF EXISTS outbox_events_type_check").Error; err != nil {
 			return err
 		}
 		if err := database.WithContext(ctx).Exec("ALTER TABLE outbox_events ADD CONSTRAINT outbox_events_type_check CHECK (event_type IN ('media.uploaded','media.deletion_requested','community.notification_requested','generation.task_requested'))").Error; err != nil {
+			return err
+		}
+		if err := database.WithContext(ctx).Exec("ALTER TABLE generation_cleanup_requests DROP CONSTRAINT IF EXISTS generation_cleanup_scope_check").Error; err != nil {
+			return err
+		}
+		if err := database.WithContext(ctx).Exec("ALTER TABLE generation_cleanup_requests ADD CONSTRAINT generation_cleanup_scope_check CHECK (scope IN ('task','source','account','orphan_output'))").Error; err != nil {
+			return err
+		}
+		if err := database.WithContext(ctx).Exec("ALTER TABLE generation_cleanup_requests ALTER COLUMN access_revoked_at DROP NOT NULL").Error; err != nil {
+			return err
+		}
+		if err := database.WithContext(ctx).Exec("ALTER TABLE generation_cleanup_requests DROP CONSTRAINT IF EXISTS generation_cleanup_access_revocation_check").Error; err != nil {
+			return err
+		}
+		if err := database.WithContext(ctx).Exec("ALTER TABLE generation_cleanup_requests ADD CONSTRAINT generation_cleanup_access_revocation_check CHECK ((scope = 'orphan_output' AND access_revoked_at IS NULL) OR (scope <> 'orphan_output' AND access_revoked_at IS NOT NULL))").Error; err != nil {
 			return err
 		}
 	}

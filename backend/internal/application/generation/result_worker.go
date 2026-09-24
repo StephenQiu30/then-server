@@ -25,6 +25,7 @@ type ResultWorkerRepository interface {
 	ReleaseLease(context.Context, Lease, time.Time) (TaskView, error)
 	FinalizeWithoutOutput(context.Context, Lease, Status, string, time.Time) (TaskView, error)
 	PublishOutput(context.Context, Lease, OutputAsset, time.Time) (TaskView, error)
+	RecordUnpublishedOutput(context.Context, Lease, CleanupTarget, time.Time) error
 }
 
 // ResultWorkerQueue is the durable scheduler boundary used by RunNext. It
@@ -159,7 +160,7 @@ func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Leas
 		return w.releaseWithError(ctx, lease, view, ErrGenerationOutputFetchUnknown, now)
 	}
 	if !fetchedResultMatches(view.Task, fetched) {
-		return w.releaseWithError(ctx, lease, view, ErrInvalidProviderObservation, now)
+		return w.releaseAfterUnpublishedOutput(ctx, lease, view, objectKey, fetched.Fact, ErrInvalidProviderObservation, now)
 	}
 	outputBytes, readErr := w.outputs.ReadOutputVersion(fetchContext, fetched.Fact.ObjectKey, fetched.Fact.ObjectVersionID, maxOutputBytes(view.Task.Purpose))
 	if readErr != nil {
@@ -167,18 +168,32 @@ func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Leas
 	}
 	verified, verifyErr := VerifyOutputContent(view.Task.Purpose, outputBytes)
 	if verifyErr != nil || verified.ContentType != fetched.Fact.ContentType || verified.ByteSize != fetched.Fact.ByteSize || verified.SHA256 != fetched.Fact.SHA256 {
-		return w.releaseWithError(ctx, lease, view, ErrInvalidGenerationOutput, now)
+		return w.releaseAfterUnpublishedOutput(ctx, lease, view, objectKey, fetched.Fact, ErrInvalidGenerationOutput, now)
 	}
 	publishedAt := now().UTC()
 	asset, err := NewOutputAsset(uuid.NewString(), view.Task, fetched.Fact, publishedAt)
 	if err != nil {
-		return w.releaseWithError(ctx, lease, view, err, now)
+		return w.releaseAfterUnpublishedOutput(ctx, lease, view, objectKey, fetched.Fact, err, now)
 	}
 	published, err := w.repository.PublishOutput(ctx, lease, asset, publishedAt)
 	if err != nil {
-		return w.releaseWithError(ctx, lease, view, err, now)
+		return w.releaseAfterUnpublishedOutput(ctx, lease, view, objectKey, fetched.Fact, err, now)
 	}
 	return ResultWorkerResult{View: published, Outcome: ResultOutcomePublished}, nil
+}
+
+func (w *ResultWorker) releaseAfterUnpublishedOutput(ctx context.Context, lease Lease, view TaskView, expectedObjectKey string, fact OutputFact, resultErr error, now func() time.Time) (ResultWorkerResult, error) {
+	if fact.ObjectKey == expectedObjectKey && validToken(fact.ObjectVersionID, 160) {
+		target := CleanupTarget{Kind: CleanupTargetObject, ID: view.Task.ID, ObjectKey: fact.ObjectKey, ObjectVersionID: fact.ObjectVersionID}
+		if err := w.repository.RecordUnpublishedOutput(ctx, lease, target, now().UTC()); err != nil {
+			released, releaseErr := w.repository.ReleaseLease(ctx, lease, now().UTC())
+			if releaseErr != nil {
+				return ResultWorkerResult{View: view}, errors.Join(err, releaseErr)
+			}
+			return ResultWorkerResult{View: released}, err
+		}
+	}
+	return w.releaseWithError(ctx, lease, view, resultErr, now)
 }
 
 func fetchedResultMatches(task Task, fetched FetchedResult) bool {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
@@ -193,5 +194,9 @@ func generationJobResponse(view generationapp.TaskView) GenerationJobResponse {
 }
 
 func generationCleanupResponse(cleanup generationapp.CleanupRequest) *GenerationCleanupResponse {
-	return &GenerationCleanupResponse{ID: cleanup.ID, Status: cleanup.Status, AccessRevokedAt: cleanup.AccessRevokedAt, CompletedAt: cleanup.CompletedAt, Attempts: cleanup.Attempts, NextAttemptAt: cleanup.NextAttemptAt}
+	var accessRevokedAt time.Time
+	if cleanup.AccessRevokedAt != nil {
+		accessRevokedAt = *cleanup.AccessRevokedAt
+	}
+	return &GenerationCleanupResponse{ID: cleanup.ID, Status: cleanup.Status, AccessRevokedAt: accessRevokedAt, CompletedAt: cleanup.CompletedAt, Attempts: cleanup.Attempts, NextAttemptAt: cleanup.NextAttemptAt}
 }
