@@ -116,6 +116,26 @@ func TestResultWorkerRunNextClaimsValidatingQueue(t *testing.T) {
 	}
 }
 
+func TestResultWorkerSettlesCancellationBeforeFetchingOutput(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
+	if err := repository.task.RequestCancel(generationTestNow.Add(5*time.Minute + 30*time.Second)); err != nil {
+		t.Fatalf("RequestCancel() error = %v", err)
+	}
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task)}
+	worker := newResultWorker(t, repository, fetcher)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if err != nil {
+		t.Fatalf("RunOnce() error = %v", err)
+	}
+	if result.Outcome != ResultOutcomeCanceled || result.View.Task.Status != StatusCanceled || result.View.Task.ResultAssetID != "" || result.View.Task.LeaseOwner != "" {
+		t.Fatalf("requested cancellation did not settle before fetch: %+v", result)
+	}
+	if fetcher.fetches != 0 {
+		t.Fatalf("canceled validating task fetched output %d times", fetcher.fetches)
+	}
+}
+
 func TestResultWorkerKeepsValidatingTaskOnFetchFailure(t *testing.T) {
 	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
 	fetcher := &resultWorkerFetcherStub{err: errors.New("provider output unavailable")}

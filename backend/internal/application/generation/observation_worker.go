@@ -129,9 +129,28 @@ func (w *ObservationWorker) runClaimed(ctx context.Context, view TaskView, lease
 	if err := validateObservation(view.Task.ExternalTaskID, remote); err != nil {
 		return w.releaseWithError(ctx, lease, view, err)
 	}
+	if view.Task.CancelRequestedAt != nil && !remote.State.terminal() && remote.State != StatusSucceeded {
+		cancelContext, stopCancel := context.WithTimeout(ctx, w.policy.ProviderTimeout)
+		cancelErr := w.provider.Cancel(cancelContext, view.Task.ExternalTaskID)
+		stopCancel()
+		if cancelErr != nil {
+			return w.releaseWithError(ctx, lease, view, ErrGenerationCancellationUnknown)
+		}
+		providerContext, stopQuery := context.WithTimeout(ctx, w.policy.ProviderTimeout)
+		remote, queryErr = w.provider.Query(providerContext, view.Task.ExternalTaskID)
+		stopQuery()
+		if queryErr != nil {
+			return w.releaseWithError(ctx, lease, view, ErrGenerationCancellationUnknown)
+		}
+		if err := validateObservation(view.Task.ExternalTaskID, remote); err != nil {
+			return w.releaseWithError(ctx, lease, view, err)
+		}
+	}
 
 	now := w.now().UTC()
 	switch remote.State {
+	case StatusQueued:
+		return w.applyNonTerminal(ctx, lease, view, remote, StatusRunning, now, ObservationOutcomeRunning)
 	case StatusRunning:
 		return w.applyNonTerminal(ctx, lease, view, remote, StatusRunning, now, ObservationOutcomeRunning)
 	case StatusValidating:
@@ -176,7 +195,7 @@ func validateObservation(expectedID string, remote RemoteTask) error {
 		return ErrInvalidProviderObservation
 	}
 	switch remote.State {
-	case StatusRunning, StatusValidating, StatusSucceeded:
+	case StatusQueued, StatusRunning, StatusValidating, StatusSucceeded:
 		if remote.FailureCode != "" {
 			return ErrInvalidProviderObservation
 		}

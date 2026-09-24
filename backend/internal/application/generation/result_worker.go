@@ -23,6 +23,7 @@ var (
 type ResultWorkerRepository interface {
 	AcquireResultLease(context.Context, string, string, time.Time, time.Duration) (TaskView, Lease, error)
 	ReleaseLease(context.Context, Lease, time.Time) (TaskView, error)
+	FinalizeWithoutOutput(context.Context, Lease, Status, string, time.Time) (TaskView, error)
 	PublishOutput(context.Context, Lease, OutputAsset, time.Time) (TaskView, error)
 }
 
@@ -51,7 +52,10 @@ func (p ResultWorkerPolicy) Validate() error {
 
 type ResultOutcome string
 
-const ResultOutcomePublished ResultOutcome = "published"
+const (
+	ResultOutcomePublished ResultOutcome = "published"
+	ResultOutcomeCanceled  ResultOutcome = "canceled"
+)
 
 // ResultWorkerResult contains only persisted task facts and a bounded outcome.
 type ResultWorkerResult struct {
@@ -114,6 +118,13 @@ func (w *ResultWorker) RunNext(ctx context.Context) (bool, ResultWorkerResult, e
 }
 
 func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Lease) (ResultWorkerResult, error) {
+	if view.Task.CancelRequestedAt != nil {
+		canceled, err := w.repository.FinalizeWithoutOutput(ctx, lease, StatusCanceled, "", w.now().UTC())
+		if err != nil {
+			return ResultWorkerResult{View: view, Outcome: ResultOutcomeCanceled}, err
+		}
+		return ResultWorkerResult{View: canceled, Outcome: ResultOutcomeCanceled}, nil
+	}
 	request := FetchRequest{
 		TaskID:         view.Task.ID,
 		ExternalTaskID: view.Task.ExternalTaskID,
