@@ -3,12 +3,29 @@ package generation
 import "errors"
 
 var (
-	ErrGenerationDisabled       = errors.New("generation is disabled")
-	ErrGenerationQuotaExceeded  = errors.New("generation quota exceeded")
-	ErrGenerationBudgetExceeded = errors.New("generation budget exceeded")
-	ErrGenerationConcurrency    = errors.New("generation concurrency limit exceeded")
-	ErrGenerationCurrency       = errors.New("generation currency mismatch")
+	ErrGenerationDisabled        = errors.New("generation is disabled")
+	ErrGenerationQuotaExceeded   = errors.New("generation quota exceeded")
+	ErrGenerationBudgetExceeded  = errors.New("generation budget exceeded")
+	ErrGenerationConcurrency     = errors.New("generation concurrency limit exceeded")
+	ErrGenerationCurrency        = errors.New("generation currency mismatch")
+	ErrGenerationCostUnavailable = errors.New("server-side generation cost estimate is unavailable")
 )
+
+// CostEstimator calculates a server-owned quote. Implementations must be
+// deterministic and must not contact generation providers.
+type CostEstimator interface {
+	Estimate(Purpose, string, string, []byte) (CostEstimate, error)
+}
+
+// CostEstimatorFunc adapts a function to CostEstimator.
+type CostEstimatorFunc func(Purpose, string, string, []byte) (CostEstimate, error)
+
+func (f CostEstimatorFunc) Estimate(purpose Purpose, provider, model string, parameters []byte) (CostEstimate, error) {
+	if f == nil {
+		return CostEstimate{}, ErrGenerationCostUnavailable
+	}
+	return f(purpose, provider, model, parameters)
+}
 
 // AdmissionPolicy is the provider-independent, fail-closed part of task
 // acceptance. Concrete values belong to runtime configuration; this type
@@ -69,11 +86,17 @@ func (p AdmissionPolicy) Check(cost CostEstimate, usage AdmissionUsage) error {
 			return ErrGenerationBudgetExceeded
 		}
 	} else {
-		if cost.EstimatedMinorUnits > 0 && !validToken(cost.Currency, 16) || cost.EstimatedMinorUnits == 0 && cost.Currency != "" && !validToken(cost.Currency, 16) {
+		if cost.EstimatedMinorUnits == 0 {
+			return ErrGenerationCostUnavailable
+		}
+		if !validToken(cost.Currency, 16) {
 			return ErrInvalidGenerationInput
 		}
-		if cost.Currency != "" && cost.Currency != p.Currency {
+		if cost.Currency != p.Currency {
 			return ErrGenerationCurrency
+		}
+		if cost.ReservedQuotaUnits == 0 {
+			return ErrGenerationQuotaExceeded
 		}
 	}
 	if usage.ActiveTasks >= p.MaxConcurrentTasks {

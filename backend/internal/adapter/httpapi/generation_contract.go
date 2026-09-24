@@ -21,12 +21,6 @@ type GenerationConsentRequest struct {
 	AcceptedAt    time.Time `json:"accepted_at" format:"date-time"`
 }
 
-type GenerationCostRequest struct {
-	Currency            string `json:"currency,omitempty" maxLength:"16"`
-	EstimatedMinorUnits int64  `json:"estimated_minor_units,omitempty" minimum:"0"`
-	ReservedQuotaUnits  int    `json:"reserved_quota_units,omitempty" minimum:"0"`
-}
-
 type CreateGenerationJobRequest struct {
 	IdempotencyKey string                            `json:"idempotency_key" minLength:"1" maxLength:"256"`
 	LookID         string                            `json:"look_id" format:"uuid"`
@@ -39,7 +33,6 @@ type CreateGenerationJobRequest struct {
 	ImageAssetID   string                            `json:"image_asset_id,omitempty" format:"uuid"`
 	ImageSHA256    string                            `json:"image_sha256,omitempty" pattern:"^[a-f0-9]{64}$"`
 	Consent        GenerationConsentRequest          `json:"consent"`
-	Cost           *GenerationCostRequest            `json:"cost,omitempty"`
 }
 
 type GenerationOutputResponse struct {

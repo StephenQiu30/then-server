@@ -47,7 +47,7 @@ func (*generationRecoveryProviderStub) Cancel(context.Context, string) error {
 	return errors.New("cancel is not part of submission recovery")
 }
 
-func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database *gorm.DB, service *generationapp.Service, ownerToken, otherToken string) {
+func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database *gorm.DB, service *generationapp.Service, ownerID, ownerToken, otherToken string) {
 	t.Helper()
 
 	router, err := httpapi.NewRouterWithGeneration(
@@ -95,9 +95,44 @@ func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database
 	if strings.Contains(createdResponse.Body.String(), "owner_id") || strings.Contains(createdResponse.Body.String(), "object_key") || strings.Contains(createdResponse.Body.String(), "owners/") {
 		t.Fatalf("generation HTTP response exposed private persistence fields: %s", createdResponse.Body.String())
 	}
-	var persisted int64
-	if err := database.WithContext(ctx).Table("generation_jobs").Where("id = ? AND status = ?", created.ID, string(generationapp.StatusQueued)).Count(&persisted).Error; err != nil || persisted != 1 {
-		t.Fatalf("HTTP-created generation job was not persisted: count=%d err=%v", persisted, err)
+	var persisted struct {
+		OwnerID      string
+		LookID       string
+		LookRevision int
+		Inputs       []byte
+		Consent      []byte
+	}
+	if err := database.WithContext(ctx).Table("generation_jobs").Select("owner_id, look_id, look_revision, inputs, consent").Where("id = ? AND status = ?", created.ID, string(generationapp.StatusQueued)).Scan(&persisted).Error; err != nil {
+		t.Fatalf("read HTTP-created generation job: %v", err)
+	}
+	var inputSnapshot generationapp.InputSnapshot
+	if err := json.Unmarshal(persisted.Inputs, &inputSnapshot); err != nil {
+		t.Fatalf("decode persisted HTTP input snapshot %q: %v", persisted.Inputs, err)
+	}
+	var consent generationapp.ConsentReceipt
+	if err := json.Unmarshal(persisted.Consent, &consent); err != nil {
+		t.Fatalf("decode persisted HTTP consent receipt %q: %v", persisted.Consent, err)
+	}
+	wantReferences := []generationapp.InputReference{
+		{MediaID: "00000000-0000-4000-8000-000000000902", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{MediaID: "00000000-0000-4000-8000-000000000903", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 1, SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+	}
+	snapshotValid := inputSnapshot.LookID == created.LookID && inputSnapshot.LookRevision == created.LookRevision && len(inputSnapshot.References) == len(wantReferences)
+	if snapshotValid {
+		for index, reference := range wantReferences {
+			if inputSnapshot.References[index] != reference {
+				snapshotValid = false
+				break
+			}
+		}
+	}
+	consentValid := consent.ID == "00000000-0000-4000-8000-000000000904" && consent.Purpose == generationapp.PurposeImage && consent.PolicyVersion == "local-image-v1" && !consent.AcceptedAt.IsZero()
+	if persisted.OwnerID != ownerID || persisted.LookID != created.LookID || persisted.LookRevision != created.LookRevision || !snapshotValid || !consentValid {
+		t.Fatalf("HTTP request facts were not persisted faithfully: owner=%q look=%q revision=%d inputs=%+v consent=%+v", persisted.OwnerID, persisted.LookID, persisted.LookRevision, inputSnapshot, consent)
+	}
+	var persistedCount int64
+	if err := database.WithContext(ctx).Table("generation_jobs").Where("id = ? AND status = ?", created.ID, string(generationapp.StatusQueued)).Count(&persistedCount).Error; err != nil || persistedCount != 1 {
+		t.Fatalf("HTTP-created generation job was not persisted: count=%d err=%v", persistedCount, err)
 	}
 
 	ownerRead := httptest.NewRecorder()
@@ -110,6 +145,27 @@ func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database
 	if otherOwnerRead.Code != http.StatusNotFound {
 		t.Fatalf("cross-owner HTTP read status=%d body=%s", otherOwnerRead.Code, otherOwnerRead.Body.String())
 	}
+	otherOwnerList := httptest.NewRecorder()
+	router.ServeHTTP(otherOwnerList, request(http.MethodGet, "/generation-jobs?limit=20", otherToken, ""))
+	if otherOwnerList.Code != http.StatusOK {
+		t.Fatalf("list another owner's generation tasks over HTTP status=%d body=%s", otherOwnerList.Code, otherOwnerList.Body.String())
+	}
+	var otherPage httpapi.GenerationJobPageResponse
+	if err := json.Unmarshal(otherOwnerList.Body.Bytes(), &otherPage); err != nil {
+		t.Fatalf("decode another owner's HTTP task list %q: %v", otherOwnerList.Body.String(), err)
+	}
+	for _, job := range otherPage.Jobs {
+		if job.ID == created.ID {
+			t.Fatalf("cross-owner HTTP list exposed task %q: %+v", created.ID, otherPage)
+		}
+	}
+
+	changedRequest := strings.ReplaceAll(body, `"seed":901`, `"seed":902`)
+	conflictResponse := httptest.NewRecorder()
+	router.ServeHTTP(conflictResponse, request(http.MethodPost, "/generation-jobs", ownerToken, changedRequest))
+	if conflictResponse.Code != http.StatusConflict || !strings.Contains(conflictResponse.Body.String(), `"code":"CONFLICT"`) {
+		t.Fatalf("changed HTTP request with the same idempotency key status=%d body=%s", conflictResponse.Code, conflictResponse.Body.String())
+	}
 
 	replayResponse := httptest.NewRecorder()
 	router.ServeHTTP(replayResponse, request(http.MethodPost, "/generation-jobs", ownerToken, body))
@@ -119,6 +175,16 @@ func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database
 	replayed := decodeJob(replayResponse)
 	if replayed.ID != created.ID || !replayed.Reused || replayed.Match != generationapp.RequestMatchIdempotentReplay {
 		t.Fatalf("HTTP idempotent replay created or returned another job: created=%+v replayed=%+v", created, replayed)
+	}
+	contentDuplicateBody := strings.ReplaceAll(body, "generation-http-request", "generation-http-content-duplicate")
+	contentDuplicateResponse := httptest.NewRecorder()
+	router.ServeHTTP(contentDuplicateResponse, request(http.MethodPost, "/generation-jobs", ownerToken, contentDuplicateBody))
+	if contentDuplicateResponse.Code != http.StatusAccepted {
+		t.Fatalf("HTTP content duplicate status=%d body=%s", contentDuplicateResponse.Code, contentDuplicateResponse.Body.String())
+	}
+	contentDuplicate := decodeJob(contentDuplicateResponse)
+	if contentDuplicate.ID != created.ID || !contentDuplicate.Reused || contentDuplicate.Match != generationapp.RequestMatchContentDedupe {
+		t.Fatalf("HTTP content dedupe returned another task: created=%+v duplicate=%+v", created, contentDuplicate)
 	}
 
 	listResponse := httptest.NewRecorder()
@@ -182,7 +248,7 @@ func verifyGenerationHTTPQuotaPersistence(t *testing.T, ctx context.Context, dat
 		t.Fatalf("construct quota generation HTTP router: %v", err)
 	}
 
-	body := fmt.Sprintf(`{"idempotency_key":"generation-http-quota-request","look_id":"00000000-0000-4000-8000-000000000911","look_revision":1,"purpose":"image","provider":"fixture","model":"fixture-image-v1","parameters":{"seed":911},"inputs":[{"media_id":"00000000-0000-4000-8000-000000000912","role":"person","ordinal":0,"revision":1,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"media_id":"00000000-0000-4000-8000-000000000913","role":"garment","ordinal":1,"revision":1,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],"consent":{"id":"00000000-0000-4000-8000-000000000914","purpose":"image","policy_version":"local-image-v1","accepted_at":"%s"},"cost":{"currency":"USD","estimated_minor_units":60,"reserved_quota_units":1}}`, time.Now().UTC().Add(-time.Minute).Format(time.RFC3339))
+	body := fmt.Sprintf(`{"idempotency_key":"generation-http-quota-request","look_id":"00000000-0000-4000-8000-000000000911","look_revision":1,"purpose":"image","provider":"fixture","model":"fixture-image-v1","parameters":{"seed":911},"inputs":[{"media_id":"00000000-0000-4000-8000-000000000912","role":"person","ordinal":0,"revision":1,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"media_id":"00000000-0000-4000-8000-000000000913","role":"garment","ordinal":1,"revision":1,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],"consent":{"id":"00000000-0000-4000-8000-000000000914","purpose":"image","policy_version":"local-image-v1","accepted_at":"%s"}}`, time.Now().UTC().Add(-time.Minute).Format(time.RFC3339))
 	call := func(requestBody string) *httptest.ResponseRecorder {
 		t.Helper()
 		request := httptest.NewRequest(http.MethodPost, "/generation-jobs", strings.NewReader(requestBody))
@@ -207,7 +273,7 @@ func verifyGenerationHTTPQuotaPersistence(t *testing.T, ctx context.Context, dat
 	}
 	created := decodeJob(createdResponse)
 	if created.Reservation == nil || created.Reservation.State != generationapp.ReservationReserved || created.Reservation.EstimatedMinorUnits != 60 || created.Reservation.ReservedQuotaUnits != 1 || created.Reservation.Currency != "USD" {
-		t.Fatalf("HTTP admission did not return its persisted quota reservation: %+v", created)
+		t.Fatalf("HTTP admission did not return its server-estimated quota reservation: %+v", created)
 	}
 
 	replayResponse := call(body)
@@ -225,7 +291,6 @@ func verifyGenerationHTTPQuotaPersistence(t *testing.T, ctx context.Context, dat
 	overBudget = strings.ReplaceAll(overBudget, "00000000-0000-4000-8000-000000000913", "00000000-0000-4000-8000-000000000923")
 	overBudget = strings.ReplaceAll(overBudget, "00000000-0000-4000-8000-000000000914", "00000000-0000-4000-8000-000000000924")
 	overBudget = strings.ReplaceAll(overBudget, `"seed":911`, `"seed":921`)
-	overBudget = strings.ReplaceAll(overBudget, `"estimated_minor_units":60`, `"estimated_minor_units":50`)
 	overBudgetResponse := call(overBudget)
 	if overBudgetResponse.Code != http.StatusConflict || !strings.Contains(overBudgetResponse.Body.String(), `"code":"CONFLICT"`) {
 		t.Fatalf("over-budget HTTP request status=%d body=%s", overBudgetResponse.Code, overBudgetResponse.Body.String())
@@ -391,14 +456,16 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 
 	paidPolicy := generationapp.AdmissionPolicy{Enabled: true, Currency: "USD", MaxConcurrentTasks: 4, MaxQuotaUnits: 4, MaxBudgetMinorUnits: 100}
-	paidGenerations, err := generationapp.NewService(accounts, store.NewGenerationRepository(database), paidPolicy)
+	paidEstimator := generationapp.CostEstimatorFunc(func(generationapp.Purpose, string, string, []byte) (generationapp.CostEstimate, error) {
+		return generationapp.CostEstimate{Currency: "USD", EstimatedMinorUnits: 10, ReservedQuotaUnits: 2}, nil
+	})
+	paidGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database), paidPolicy, paidEstimator)
 	if err != nil {
 		t.Fatalf("construct paid generation service: %v", err)
 	}
 	paidInput := input
 	paidInput.IdempotencyKey = "generation-paid-request"
 	paidInput.Parameters = []byte(`{"seed":"paid"}`)
-	paidInput.Cost = generationapp.CostEstimate{Currency: "USD", EstimatedMinorUnits: 10, ReservedQuotaUnits: 2}
 	paidCreated, err := paidGenerations.Create(ctx, second.Token, paidInput)
 	if err != nil {
 		t.Fatalf("accept quota-backed generation task: %v", err)
@@ -1004,7 +1071,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err := database.WithContext(ctx).Table("users").Where("id = ?", third.User.ID).Update("role", "admin").Error; err != nil {
 		t.Fatalf("grant test administrator role: %v", err)
 	}
-	adminGenerations, err := generationapp.NewService(accounts, workerRepository, paidPolicy)
+	adminGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, workerRepository, paidPolicy, paidEstimator)
 	if err != nil {
 		t.Fatalf("construct admin generation service: %v", err)
 	}
@@ -1149,6 +1216,12 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if reconciliationAuditCount != 4 {
 		t.Fatalf("expected four atomic reconciliation audit rows, got %d", reconciliationAuditCount)
 	}
-	verifyGenerationHTTPPersistence(t, ctx, database, generations, fourth.Token, second.Token)
-	verifyGenerationHTTPQuotaPersistence(t, ctx, database, paidGenerations, fifth.User.ID, fifth.Token)
+	verifyGenerationHTTPPersistence(t, ctx, database, generations, fourth.User.ID, fourth.Token, second.Token)
+	quotaHTTPGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database), paidPolicy, generationapp.CostEstimatorFunc(func(generationapp.Purpose, string, string, []byte) (generationapp.CostEstimate, error) {
+		return generationapp.CostEstimate{Currency: "USD", EstimatedMinorUnits: 60, ReservedQuotaUnits: 1}, nil
+	}))
+	if err != nil {
+		t.Fatalf("construct synthetic HTTP quota estimator: %v", err)
+	}
+	verifyGenerationHTTPQuotaPersistence(t, ctx, database, quotaHTTPGenerations, fifth.User.ID, fifth.Token)
 }
