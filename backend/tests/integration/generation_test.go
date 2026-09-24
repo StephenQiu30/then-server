@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -10,6 +11,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"log/slog"
 	"net/http"
@@ -32,6 +35,33 @@ import (
 )
 
 type generationRecoveryProviderStub struct{ submitCalls int }
+
+type generationFixtureResultFetcher struct {
+	objects *objectstore.Store
+	data    []byte
+	version string
+}
+
+func (f *generationFixtureResultFetcher) Fetch(ctx context.Context, request generationapp.FetchRequest) (generationapp.FetchedResult, error) {
+	versionID, err := f.objects.PutDerived(ctx, request.ObjectKey, bytes.NewReader(f.data), int64(len(f.data)))
+	if err != nil {
+		return generationapp.FetchedResult{}, err
+	}
+	f.version = versionID
+	digest := sha256.Sum256(f.data)
+	return generationapp.FetchedResult{
+		ExternalTaskID: request.ExternalTaskID,
+		TaskID:         request.TaskID,
+		Purpose:        request.Purpose,
+		LookID:         request.LookID,
+		LookRevision:   request.LookRevision,
+		Inputs:         request.Inputs,
+		Fact: generationapp.OutputFact{
+			ObjectKey: request.ObjectKey, ContentType: generationapp.OutputContentTypeJPEG,
+			ByteSize: int64(len(f.data)), SHA256: hex.EncodeToString(digest[:]), ObjectVersionID: versionID,
+		},
+	}, nil
+}
 
 type generationIntegrationProbe struct{}
 
@@ -778,39 +808,26 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if _, err := workerRepository.ReleaseLease(ctx, observationLease, workflowAt.Add(6*time.Minute)); err != nil {
 		t.Fatalf("release accepted observation lease before result lease: %v", err)
 	}
-	resultView, resultLease, found, err := workerRepository.ClaimNextResultLease(ctx, "worker-result", workflowAt.Add(6*time.Minute), 10*time.Minute)
-	if err != nil || !found {
-		t.Fatalf("claim validating generation result lease: found=%v err=%v", found, err)
-	}
 	outputAt := workflowAt.Add(7 * time.Minute)
-	outputObjectKey, err := generationapp.OutputObjectKey(resultView.Task)
+	resultFetcher := &generationFixtureResultFetcher{objects: objects, data: integrationGenerationJPEG(t)}
+	resultWorker, err := generationapp.NewResultWorker(workerRepository, resultFetcher, objects, generationapp.ResultWorkerPolicy{
+		WorkerID: "worker-result", LeaseTTL: 10 * time.Minute, FetchTimeout: time.Minute,
+	})
 	if err != nil {
-		t.Fatalf("build task-bound output key: %v", err)
+		t.Fatalf("create provider-neutral result worker: %v", err)
 	}
-	outputBytes := "synthetic-generation-output"
-	outputDigest := sha256.Sum256([]byte(outputBytes))
-	outputVersionID, err := objects.PutDerived(ctx, outputObjectKey, strings.NewReader(outputBytes), int64(len(outputBytes)))
-	if err != nil || outputVersionID == "" {
-		t.Fatalf("write synthetic generation output: version=%q err=%v", outputVersionID, err)
-	}
-	asset, err := generationapp.NewOutputAsset(
-		"00000000-0000-4000-8000-000000000401",
-		resultView.Task,
-		generationapp.OutputFact{ObjectKey: outputObjectKey, ContentType: generationapp.OutputContentTypeJPEG, ByteSize: int64(len(outputBytes)), SHA256: hex.EncodeToString(outputDigest[:]), ObjectVersionID: outputVersionID},
-		outputAt,
-	)
+	result, err := resultWorker.RunOnceAt(ctx, paidCreated.View.Task.ID, outputAt)
 	if err != nil {
-		t.Fatalf("build generation output asset: %v", err)
+		t.Fatalf("run provider-neutral result worker: %v", err)
 	}
-	published, err := workerRepository.PublishOutput(ctx, resultLease, asset, outputAt)
-	if err != nil {
-		t.Fatalf("publish generation output: %v", err)
-	}
-	if published.Task.Status != generationapp.StatusSucceeded || published.Task.ResultAssetID != asset.ID || published.Task.LeaseOwner != "" || published.Task.LeaseUntil != nil || published.Reservation == nil || published.Reservation.State != generationapp.ReservationConsumed || published.Asset == nil || published.Asset.ID != asset.ID {
+	published := result.View
+	outputObjectKey := published.Asset.ObjectKey
+	outputVersionID := resultFetcher.version
+	if published.Task.Status != generationapp.StatusSucceeded || published.Task.ResultAssetID == "" || published.Task.LeaseOwner != "" || published.Task.LeaseUntil != nil || published.Reservation == nil || published.Reservation.State != generationapp.ReservationConsumed || published.Asset == nil {
 		t.Fatalf("generation output settlement was not atomic: %+v", published)
 	}
 	var storedOutputObjectKey string
-	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", resultView.Task.ID).Select("object_key").Scan(&storedOutputObjectKey).Error; err != nil || storedOutputObjectKey != outputObjectKey {
+	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", published.Task.ID).Select("object_key").Scan(&storedOutputObjectKey).Error; err != nil || storedOutputObjectKey != outputObjectKey {
 		t.Fatalf("generation output key was not persisted: key=%q err=%v", storedOutputObjectKey, err)
 	}
 	for _, overBudget := range []struct {
@@ -820,7 +837,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		{contentType: generationapp.OutputContentTypeJPEG, byteSize: generationapp.MaxGenerationImageOutputBytes + 1},
 		{contentType: generationapp.OutputContentTypeGLB, byteSize: generationapp.MaxGenerationModelOutputBytes + 1},
 	} {
-		err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", resultView.Task.ID).Updates(map[string]any{
+		err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", published.Task.ID).Updates(map[string]any{
 			"content_type": overBudget.contentType,
 			"byte_size":    overBudget.byteSize,
 		}).Error
@@ -828,16 +845,17 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 			t.Fatalf("PostgreSQL accepted over-budget generation output: type=%s size=%d", overBudget.contentType, overBudget.byteSize)
 		}
 	}
-	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", resultView.Task.ID).Update("object_key", "").Error; err != nil {
+	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", published.Task.ID).Update("object_key", "").Error; err != nil {
 		t.Fatalf("simulate legacy output without object key: %v", err)
 	}
-	legacyOutputView, err := workerRepository.Get(ctx, second.User.ID, resultView.Task.ID)
+	legacyOutputView, err := workerRepository.Get(ctx, second.User.ID, published.Task.ID)
 	if err != nil || legacyOutputView.Asset == nil || legacyOutputView.Asset.ObjectKey != "" {
 		t.Fatalf("legacy output could not be read: view=%+v err=%v", legacyOutputView, err)
 	}
-	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", resultView.Task.ID).Update("object_key", outputObjectKey).Error; err != nil {
+	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", published.Task.ID).Update("object_key", outputObjectKey).Error; err != nil {
 		t.Fatalf("restore generation output object key: %v", err)
 	}
+	resultLease := generationapp.Lease{TaskID: published.Task.ID, Owner: "worker-result", FencingToken: published.Task.FencingToken, Attempt: published.Task.LeaseAttempt, ExpiresAt: outputAt.Add(time.Minute)}
 	replayedOutput, err := workerRepository.PublishOutput(ctx, resultLease, *published.Asset, outputAt)
 	if err != nil {
 		t.Fatalf("replay generation output settlement: %v", err)
@@ -931,9 +949,9 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	modelInput.Inputs = generationapp.InputSnapshot{
 		LookID:       paidInput.LookID,
 		LookRevision: paidInput.LookRevision,
-		References:   []generationapp.InputReference{{MediaID: asset.ID, Role: generationapp.InputRoleLookImage, Ordinal: 0, Revision: 1, SHA256: asset.SHA256}},
-		ImageAssetID: asset.ID,
-		ImageSHA256:  asset.SHA256,
+		References:   []generationapp.InputReference{{MediaID: published.Asset.ID, Role: generationapp.InputRoleLookImage, Ordinal: 0, Revision: 1, SHA256: published.Asset.SHA256}},
+		ImageAssetID: published.Asset.ID,
+		ImageSHA256:  published.Asset.SHA256,
 	}
 	modelInput.Consent = generationapp.ConsentReceipt{ID: "00000000-0000-4000-8000-000000000402", Purpose: generationapp.PurposeModel, PolicyVersion: "local-model-v1", AcceptedAt: acceptedAt}
 	if _, err := paidGenerations.Create(ctx, first.Token, modelInput); !errors.Is(err, generationapp.ErrGenerationSourceUnavailable) {
@@ -1508,4 +1526,17 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("construct synthetic HTTP quota estimator: %v", err)
 	}
 	verifyGenerationHTTPQuotaPersistence(t, ctx, database, quotaHTTPGenerations, fifth.User.ID, fifth.Token)
+}
+
+func integrationGenerationJPEG(t *testing.T) []byte {
+	t.Helper()
+	var source bytes.Buffer
+	if err := jpeg.Encode(&source, image.NewRGBA(image.Rect(0, 0, 8, 6)), &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := generationapp.NormalizeGenerationImage(source.Bytes())
+	if err != nil {
+		t.Fatalf("normalize synthetic generation JPEG: %v", err)
+	}
+	return data
 }

@@ -97,6 +97,25 @@ func (s *Store) OpenDerivedVersion(ctx context.Context, objectKey, versionID str
 	return s.openVersion(ctx, DerivedBucket, objectKey, versionID)
 }
 
+// ReadOutputVersion returns a bounded generation result from its immutable
+// private object version. Callers still verify the content and digest.
+func (s *Store) ReadOutputVersion(ctx context.Context, objectKey, versionID string, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return nil, errors.New("output size limit invalid")
+	}
+	reader, err := s.OpenDerivedVersion(ctx, objectKey, versionID)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil || int64(len(data)) > maxBytes {
+		return nil, errors.New("output version read failed")
+	}
+	return data, nil
+}
+
 func (s *Store) openVersion(ctx context.Context, bucket, objectKey, versionID string) (io.ReadCloser, error) {
 	if s == nil || s.client == nil || objectKey == "" || versionID == "" {
 		return nil, errors.New("object version unavailable")

@@ -70,39 +70,53 @@ type ResultWorkerResult struct {
 type ResultWorker struct {
 	repository ResultWorkerRepository
 	fetcher    ResultFetcher
+	outputs    OutputVersionReader
 	policy     ResultWorkerPolicy
 	now        func() time.Time
 }
 
-func NewResultWorker(repository ResultWorkerRepository, fetcher ResultFetcher, policy ResultWorkerPolicy) (*ResultWorker, error) {
-	if repository == nil || fetcher == nil {
+func NewResultWorker(repository ResultWorkerRepository, fetcher ResultFetcher, outputs OutputVersionReader, policy ResultWorkerPolicy) (*ResultWorker, error) {
+	if repository == nil || fetcher == nil || outputs == nil {
 		return nil, ErrInvalidGenerationResultWorker
 	}
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
-	return &ResultWorker{repository: repository, fetcher: fetcher, policy: policy, now: time.Now}, nil
+	return &ResultWorker{repository: repository, fetcher: fetcher, outputs: outputs, policy: policy, now: time.Now}, nil
 }
 
 // RunOnce claims only a validating task. Fetch failures or invalid lineage
 // release the lease without changing task state; a successful fact is
 // converted into a new immutable asset and atomically settled.
 func (w *ResultWorker) RunOnce(ctx context.Context, taskID string) (ResultWorkerResult, error) {
-	if w == nil || w.repository == nil || w.fetcher == nil || w.policy.Validate() != nil || !validID(taskID) {
+	if w == nil {
 		return ResultWorkerResult{}, ErrInvalidGenerationResultWorker
 	}
-	at := w.now().UTC()
+	return w.RunOnceAt(ctx, taskID, w.now().UTC())
+}
+
+// RunOnceAt claims and processes one result at an explicit time. Runtime
+// callers should use RunOnce; the explicit form keeps persistence tests
+// deterministic across their staged task timestamps.
+func (w *ResultWorker) RunOnceAt(ctx context.Context, taskID string, at time.Time) (ResultWorkerResult, error) {
+	if w == nil || w.repository == nil || w.fetcher == nil || w.outputs == nil || w.policy.Validate() != nil || !validID(taskID) {
+		return ResultWorkerResult{}, ErrInvalidGenerationResultWorker
+	}
+	if at.IsZero() {
+		return ResultWorkerResult{}, ErrInvalidGenerationResultWorker
+	}
+	at = at.UTC()
 	view, lease, err := w.repository.AcquireResultLease(ctx, taskID, w.policy.WorkerID, at, w.policy.LeaseTTL)
 	if err != nil {
 		return ResultWorkerResult{}, err
 	}
-	return w.runClaimed(ctx, view, lease)
+	return w.runClaimed(ctx, view, lease, func() time.Time { return at })
 }
 
 // RunNext claims and processes one validating task. It returns found=false
 // when no result is ready at the current durable queue snapshot.
 func (w *ResultWorker) RunNext(ctx context.Context) (bool, ResultWorkerResult, error) {
-	if w == nil || w.repository == nil || w.fetcher == nil || w.policy.Validate() != nil {
+	if w == nil || w.repository == nil || w.fetcher == nil || w.outputs == nil || w.policy.Validate() != nil {
 		return false, ResultWorkerResult{}, ErrInvalidGenerationResultWorker
 	}
 	queue, ok := w.repository.(ResultWorkerQueue)
@@ -113,13 +127,13 @@ func (w *ResultWorker) RunNext(ctx context.Context) (bool, ResultWorkerResult, e
 	if err != nil || !found {
 		return found, ResultWorkerResult{View: view}, err
 	}
-	result, err := w.runClaimed(ctx, view, lease)
+	result, err := w.runClaimed(ctx, view, lease, w.now)
 	return true, result, err
 }
 
-func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Lease) (ResultWorkerResult, error) {
+func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Lease, now func() time.Time) (ResultWorkerResult, error) {
 	if view.Task.CancelRequestedAt != nil {
-		canceled, err := w.repository.FinalizeWithoutOutput(ctx, lease, StatusCanceled, "", w.now().UTC())
+		canceled, err := w.repository.FinalizeWithoutOutput(ctx, lease, StatusCanceled, "", now().UTC())
 		if err != nil {
 			return ResultWorkerResult{View: view, Outcome: ResultOutcomeCanceled}, err
 		}
@@ -127,7 +141,7 @@ func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Leas
 	}
 	objectKey, err := OutputObjectKey(view.Task)
 	if err != nil {
-		return w.releaseWithError(ctx, lease, view, err)
+		return w.releaseWithError(ctx, lease, view, err, now)
 	}
 	request := FetchRequest{
 		TaskID:         view.Task.ID,
@@ -139,22 +153,30 @@ func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Leas
 		Inputs:         cloneSnapshot(view.Task.Inputs),
 	}
 	fetchContext, cancel := context.WithTimeout(ctx, w.policy.FetchTimeout)
+	defer cancel()
 	fetched, fetchErr := w.fetcher.Fetch(fetchContext, request)
-	cancel()
 	if fetchErr != nil {
-		return w.releaseWithError(ctx, lease, view, ErrGenerationOutputFetchUnknown)
+		return w.releaseWithError(ctx, lease, view, ErrGenerationOutputFetchUnknown, now)
 	}
 	if !fetchedResultMatches(view.Task, fetched) {
-		return w.releaseWithError(ctx, lease, view, ErrInvalidProviderObservation)
+		return w.releaseWithError(ctx, lease, view, ErrInvalidProviderObservation, now)
 	}
-	publishedAt := w.now().UTC()
+	outputBytes, readErr := w.outputs.ReadOutputVersion(fetchContext, fetched.Fact.ObjectKey, fetched.Fact.ObjectVersionID, maxOutputBytes(view.Task.Purpose))
+	if readErr != nil {
+		return w.releaseWithError(ctx, lease, view, ErrGenerationOutputFetchUnknown, now)
+	}
+	verified, verifyErr := VerifyOutputContent(view.Task.Purpose, outputBytes)
+	if verifyErr != nil || verified.ContentType != fetched.Fact.ContentType || verified.ByteSize != fetched.Fact.ByteSize || verified.SHA256 != fetched.Fact.SHA256 {
+		return w.releaseWithError(ctx, lease, view, ErrInvalidGenerationOutput, now)
+	}
+	publishedAt := now().UTC()
 	asset, err := NewOutputAsset(uuid.NewString(), view.Task, fetched.Fact, publishedAt)
 	if err != nil {
-		return w.releaseWithError(ctx, lease, view, err)
+		return w.releaseWithError(ctx, lease, view, err, now)
 	}
 	published, err := w.repository.PublishOutput(ctx, lease, asset, publishedAt)
 	if err != nil {
-		return w.releaseWithError(ctx, lease, view, err)
+		return w.releaseWithError(ctx, lease, view, err, now)
 	}
 	return ResultWorkerResult{View: published, Outcome: ResultOutcomePublished}, nil
 }
@@ -163,7 +185,14 @@ func fetchedResultMatches(task Task, fetched FetchedResult) bool {
 	return validID(fetched.TaskID) && fetched.TaskID == task.ID &&
 		fetched.ExternalTaskID == task.ExternalTaskID && validToken(fetched.ExternalTaskID, 256) &&
 		fetched.Purpose == task.Purpose && fetched.LookID == task.LookID && fetched.LookRevision == task.LookRevision &&
-		inputSnapshotsEqual(task.Inputs, fetched.Inputs) && validOutputObjectKey(task, fetched.Fact.ObjectKey)
+		inputSnapshotsEqual(task.Inputs, fetched.Inputs) && validOutputFact(task.Purpose, fetched.Fact) && validOutputObjectKey(task, fetched.Fact.ObjectKey)
+}
+
+func maxOutputBytes(purpose Purpose) int64 {
+	if purpose == PurposeImage {
+		return MaxGenerationImageOutputBytes
+	}
+	return MaxGenerationModelOutputBytes
 }
 
 func inputSnapshotsEqual(left, right InputSnapshot) bool {
@@ -178,8 +207,8 @@ func inputSnapshotsEqual(left, right InputSnapshot) bool {
 	return true
 }
 
-func (w *ResultWorker) releaseWithError(ctx context.Context, lease Lease, view TaskView, resultErr error) (ResultWorkerResult, error) {
-	released, releaseErr := w.repository.ReleaseLease(ctx, lease, w.now().UTC())
+func (w *ResultWorker) releaseWithError(ctx context.Context, lease Lease, view TaskView, resultErr error, now func() time.Time) (ResultWorkerResult, error) {
+	released, releaseErr := w.repository.ReleaseLease(ctx, lease, now().UTC())
 	if releaseErr != nil {
 		return ResultWorkerResult{View: view}, releaseErr
 	}
