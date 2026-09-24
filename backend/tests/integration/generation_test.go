@@ -300,25 +300,31 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if observedView.Task.Status != generationapp.StatusValidating || observationLease.Owner != "worker-observer" {
 		t.Fatalf("accepted generation observation lease was not fenced: task=%+v lease=%+v", observedView.Task, observationLease)
 	}
-
-	outputAt := workflowAt.Add(6 * time.Minute)
+	if _, err := workerRepository.ReleaseLease(ctx, observationLease, workflowAt.Add(6*time.Minute)); err != nil {
+		t.Fatalf("release accepted observation lease before result lease: %v", err)
+	}
+	resultView, resultLease, err := workerRepository.AcquireResultLease(ctx, paidCreated.View.Task.ID, "worker-result", workflowAt.Add(6*time.Minute), 10*time.Minute)
+	if err != nil {
+		t.Fatalf("acquire validating generation result lease: %v", err)
+	}
+	outputAt := workflowAt.Add(7 * time.Minute)
 	asset, err := generationapp.NewOutputAsset(
 		"00000000-0000-4000-8000-000000000401",
-		observedView.Task,
+		resultView.Task,
 		generationapp.OutputFact{ContentType: generationapp.OutputContentTypeJPEG, ByteSize: 4096, SHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", ObjectVersionID: "local-object-v1"},
 		outputAt,
 	)
 	if err != nil {
 		t.Fatalf("build generation output asset: %v", err)
 	}
-	published, err := workerRepository.PublishOutput(ctx, observationLease, asset, outputAt)
+	published, err := workerRepository.PublishOutput(ctx, resultLease, asset, outputAt)
 	if err != nil {
 		t.Fatalf("publish generation output: %v", err)
 	}
 	if published.Task.Status != generationapp.StatusSucceeded || published.Task.ResultAssetID != asset.ID || published.Task.LeaseOwner != "" || published.Task.LeaseUntil != nil || published.Reservation == nil || published.Reservation.State != generationapp.ReservationConsumed || published.Asset == nil || published.Asset.ID != asset.ID {
 		t.Fatalf("generation output settlement was not atomic: %+v", published)
 	}
-	replayedOutput, err := workerRepository.PublishOutput(ctx, observationLease, *published.Asset, outputAt)
+	replayedOutput, err := workerRepository.PublishOutput(ctx, resultLease, *published.Asset, outputAt)
 	if err != nil {
 		t.Fatalf("replay generation output settlement: %v", err)
 	}

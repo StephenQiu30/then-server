@@ -1,0 +1,122 @@
+package generation
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+var (
+	ErrInvalidGenerationResultWorker = errors.New("invalid generation result worker")
+	// ErrGenerationResultUnavailable means the task is not yet ready for a
+	// result fetch. A queued/running task must first receive a provider success
+	// observation and enter validating.
+	ErrGenerationResultUnavailable = errors.New("generation result is not ready")
+)
+
+// ResultWorkerRepository is the fenced persistence boundary for private
+// output publication. AcquireResultLease only claims validating tasks with an
+// accepted external identity; PublishOutput atomically writes the immutable
+// asset, terminal task state and quota settlement.
+type ResultWorkerRepository interface {
+	AcquireResultLease(context.Context, string, string, time.Time, time.Duration) (TaskView, Lease, error)
+	ReleaseLease(context.Context, Lease, time.Time) (TaskView, error)
+	PublishOutput(context.Context, Lease, OutputAsset, time.Time) (TaskView, error)
+}
+
+// ResultWorkerPolicy bounds the private result fetch. No provider or
+// object-store call occurs until a concrete adapter is injected by a future
+// enabled worker.
+type ResultWorkerPolicy struct {
+	WorkerID     string
+	LeaseTTL     time.Duration
+	FetchTimeout time.Duration
+}
+
+func (p ResultWorkerPolicy) Validate() error {
+	if !validID(p.WorkerID) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.FetchTimeout <= 0 || p.FetchTimeout > 10*time.Minute {
+		return ErrInvalidGenerationResultWorker
+	}
+	return nil
+}
+
+type ResultOutcome string
+
+const ResultOutcomePublished ResultOutcome = "published"
+
+// ResultWorkerResult contains only persisted task facts and a bounded outcome.
+type ResultWorkerResult struct {
+	View    TaskView
+	Outcome ResultOutcome
+}
+
+// ResultWorker fetches one validating result, verifies its immutable output
+// fact against the task, and commits the private asset through the repository.
+// It never calls Provider directly and is intentionally not started by
+// bootstrap.
+type ResultWorker struct {
+	repository ResultWorkerRepository
+	fetcher    ResultFetcher
+	policy     ResultWorkerPolicy
+	now        func() time.Time
+}
+
+func NewResultWorker(repository ResultWorkerRepository, fetcher ResultFetcher, policy ResultWorkerPolicy) (*ResultWorker, error) {
+	if repository == nil || fetcher == nil {
+		return nil, ErrInvalidGenerationResultWorker
+	}
+	if err := policy.Validate(); err != nil {
+		return nil, err
+	}
+	return &ResultWorker{repository: repository, fetcher: fetcher, policy: policy, now: time.Now}, nil
+}
+
+// RunOnce claims only a validating task. Fetch failures or invalid lineage
+// release the lease without changing task state; a successful fact is
+// converted into a new immutable asset and atomically settled.
+func (w *ResultWorker) RunOnce(ctx context.Context, taskID string) (ResultWorkerResult, error) {
+	if w == nil || w.repository == nil || w.fetcher == nil || w.policy.Validate() != nil || !validID(taskID) {
+		return ResultWorkerResult{}, ErrInvalidGenerationResultWorker
+	}
+	at := w.now().UTC()
+	view, lease, err := w.repository.AcquireResultLease(ctx, taskID, w.policy.WorkerID, at, w.policy.LeaseTTL)
+	if err != nil {
+		return ResultWorkerResult{}, err
+	}
+	request := FetchRequest{
+		TaskID:         view.Task.ID,
+		ExternalTaskID: view.Task.ExternalTaskID,
+		Purpose:        view.Task.Purpose,
+		LookID:         view.Task.LookID,
+		LookRevision:   view.Task.LookRevision,
+	}
+	fetchContext, cancel := context.WithTimeout(ctx, w.policy.FetchTimeout)
+	fetched, fetchErr := w.fetcher.Fetch(fetchContext, request)
+	cancel()
+	if fetchErr != nil {
+		return w.releaseWithError(ctx, lease, view, ErrGenerationOutputFetchUnknown)
+	}
+	if fetched.ExternalTaskID != view.Task.ExternalTaskID || !validToken(fetched.ExternalTaskID, 256) {
+		return w.releaseWithError(ctx, lease, view, ErrInvalidProviderObservation)
+	}
+	publishedAt := w.now().UTC()
+	asset, err := NewOutputAsset(uuid.NewString(), view.Task, fetched.Fact, publishedAt)
+	if err != nil {
+		return w.releaseWithError(ctx, lease, view, err)
+	}
+	published, err := w.repository.PublishOutput(ctx, lease, asset, publishedAt)
+	if err != nil {
+		return w.releaseWithError(ctx, lease, view, err)
+	}
+	return ResultWorkerResult{View: published, Outcome: ResultOutcomePublished}, nil
+}
+
+func (w *ResultWorker) releaseWithError(ctx context.Context, lease Lease, view TaskView, resultErr error) (ResultWorkerResult, error) {
+	released, releaseErr := w.repository.ReleaseLease(ctx, lease, w.now().UTC())
+	if releaseErr != nil {
+		return ResultWorkerResult{View: view}, releaseErr
+	}
+	return ResultWorkerResult{View: released}, resultErr
+}

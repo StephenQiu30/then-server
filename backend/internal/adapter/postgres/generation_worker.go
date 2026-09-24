@@ -13,56 +13,16 @@ import (
 
 var _ generationapp.SubmissionWorkerRepository = (*GenerationRepository)(nil)
 var _ generationapp.ObservationWorkerRepository = (*GenerationRepository)(nil)
+var _ generationapp.ResultWorkerRepository = (*GenerationRepository)(nil)
 
 // AcquireLease claims one active generation task for a bounded worker
 // interval. It contains no provider call; the lease only fences later worker
 // state writes.
 func (r *GenerationRepository) AcquireLease(ctx context.Context, taskID, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, error) {
-	if r == nil || r.database == nil {
-		return generationapp.TaskView{}, generationapp.Lease{}, generationapp.ErrGenerationUnavailable
-	}
-	if _, err := uuid.Parse(taskID); err != nil {
-		return generationapp.TaskView{}, generationapp.Lease{}, generationapp.ErrInvalidGenerationInput
-	}
-	var view generationapp.TaskView
-	var lease generationapp.Lease
-	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var record generationJobRecord
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", taskID).First(&record).Error; err != nil {
-			return generationLookupError(err)
-		}
-		task, err := generationTaskFromRecord(record)
-		if err != nil {
-			return err
-		}
-		previousRevision := task.StatusRevision
-		if _, err := task.AcquireLease(owner, at, ttl); err != nil {
-			return err
-		}
-		if err := updateGenerationTask(tx, task, previousRevision); err != nil {
-			return err
-		}
-		persisted, err := generationTaskByID(tx, taskID)
-		if err != nil {
-			return err
-		}
-		lease, err = persisted.CurrentLease()
-		if err != nil {
-			return err
-		}
-		view, err = r.readTaskView(tx, persisted)
-		return err
-	})
-	if err != nil {
-		return generationapp.TaskView{}, generationapp.Lease{}, generationGenerationError(err)
-	}
-	return view, lease, nil
+	return r.acquireLease(ctx, taskID, owner, at, ttl, nil)
 }
 
-// AcquireObservationLease claims only a task that already has an accepted
-// provider identity. The query worker must not turn a queued task into
-// running merely because it was selected by a broad scheduler.
-func (r *GenerationRepository) AcquireObservationLease(ctx context.Context, taskID, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, error) {
+func (r *GenerationRepository) acquireLease(ctx context.Context, taskID, owner string, at time.Time, ttl time.Duration, eligible func(generationapp.Task) error) (generationapp.TaskView, generationapp.Lease, error) {
 	if r == nil || r.database == nil {
 		return generationapp.TaskView{}, generationapp.Lease{}, generationapp.ErrGenerationUnavailable
 	}
@@ -80,8 +40,10 @@ func (r *GenerationRepository) AcquireObservationLease(ctx context.Context, task
 		if err != nil {
 			return err
 		}
-		if task.ExternalTaskID == "" || task.SubmissionState != generationapp.SubmissionAccepted {
-			return generationapp.ErrGenerationObservationUnavailable
+		if eligible != nil {
+			if err := eligible(task); err != nil {
+				return err
+			}
 		}
 		previousRevision := task.StatusRevision
 		if _, err := task.AcquireLease(owner, at, ttl); err != nil {
@@ -105,6 +67,30 @@ func (r *GenerationRepository) AcquireObservationLease(ctx context.Context, task
 		return generationapp.TaskView{}, generationapp.Lease{}, generationWorkerError(err)
 	}
 	return view, lease, nil
+}
+
+// AcquireObservationLease claims only a task that already has an accepted
+// provider identity. The query worker must not turn a queued task into
+// running merely because it was selected by a broad scheduler.
+func (r *GenerationRepository) AcquireObservationLease(ctx context.Context, taskID, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, error) {
+	return r.acquireLease(ctx, taskID, owner, at, ttl, func(task generationapp.Task) error {
+		if task.ExternalTaskID == "" || task.SubmissionState != generationapp.SubmissionAccepted {
+			return generationapp.ErrGenerationObservationUnavailable
+		}
+		return nil
+	})
+}
+
+// AcquireResultLease claims only a validating task with an accepted provider
+// identity. It prevents a broad worker scan from publishing an output for a
+// queued or merely running task.
+func (r *GenerationRepository) AcquireResultLease(ctx context.Context, taskID, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, error) {
+	return r.acquireLease(ctx, taskID, owner, at, ttl, func(task generationapp.Task) error {
+		if task.Status != generationapp.StatusValidating || task.ExternalTaskID == "" || task.SubmissionState != generationapp.SubmissionAccepted {
+			return generationapp.ErrGenerationResultUnavailable
+		}
+		return nil
+	})
 }
 
 // RenewLease extends the current lease without changing its fencing token.
@@ -354,6 +340,7 @@ func generationWorkerError(err error) error {
 		errors.Is(err, generationapp.ErrGenerationRetryNotReady) ||
 		errors.Is(err, generationapp.ErrGenerationRetryExhausted) ||
 		errors.Is(err, generationapp.ErrGenerationObservationUnavailable) ||
+		errors.Is(err, generationapp.ErrGenerationResultUnavailable) ||
 		errors.Is(err, generationapp.ErrSubmissionInProgress) ||
 		errors.Is(err, generationapp.ErrSubmissionOutcomeUnknown) ||
 		errors.Is(err, generationapp.ErrExternalTaskConflict) ||
