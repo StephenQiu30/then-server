@@ -55,7 +55,7 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 
 ## 生成配置与费用边界
 
-生成相关环境变量统一由 `internal/platform/config` 解析。默认配置是 `GENERATION_ENABLED=false` 和 `GENERATION_PROVIDER_CALLS_ENABLED=false`：不会向图片/模型供应商发起请求，也不会产生供应商生成费用。预算、配额、并发、最大提交次数、供应商超时和保留期只有在显式开启 `GENERATION_ENABLED=true` 时才允许填写，并且必须通过有界校验。
+生成相关环境变量统一由 `internal/platform/config` 解析。默认 `GENERATION_MODE=off`、`GENERATION_ENABLED=false` 和 `GENERATION_PROVIDER_CALLS_ENABLED=false`：不会向图片/模型服务发起请求，也不会产生供应商生成费用。`GENERATION_MODE=local` 只允许确定性 fixture 或回环 `GENERATION_LOCAL_IMAGE_ENDPOINT`，货币和外部预算必须为零；`GENERATION_MODE=remote` 只表达后续远程意图，仍受供应商门禁限制。预算、配额、并发、最大提交次数、超时和保留期集中校验。
 
 `GENERATION_PROVIDER_CALLS_ENABLED=true` 当前会被启动配置直接拒绝，直到 14-01 的供应商准入、代表素材 POC、真实 worker 和删除合同完成。未来开启该开关后，供应商 API 可能按其账户和价格产生费用；费用上限只能由 `GENERATION_MAX_BUDGET_MINOR_UNITS` 约束，不能把配置视为免费承诺。当前本地测试与 CI 使用合成 Provider/本地依赖，不调用付费生成服务。163 邮件也只有在完整邮件配置存在且实际调用验证/找回接口时才会发信；本切片不发送邮件，网易账号是否存在套餐或配额费用需按实际账号条款确认。
 

@@ -12,12 +12,24 @@ import (
 	"time"
 )
 
+// GenerationMode identifies the execution boundary for the optional image and
+// model generation path.
+type GenerationMode string
+
+const (
+	GenerationModeOff    GenerationMode = "off"
+	GenerationModeLocal  GenerationMode = "local"
+	GenerationModeRemote GenerationMode = "remote"
+)
+
 // GenerationConfig is the single process-level policy for the optional image
 // and model generation path. Provider calls remain disabled until the
 // documented GATE/POC/worker work is complete.
 type GenerationConfig struct {
+	Mode                  GenerationMode
 	Enabled               bool
 	ProviderCallsEnabled  bool
+	LocalImageEndpoint    string
 	Currency              string
 	MaxConcurrentTasks    int
 	MaxQuotaUnits         int
@@ -228,6 +240,10 @@ func loadGenerationConfig(get func(string, string) string) (GenerationConfig, er
 	if err != nil {
 		return GenerationConfig{}, err
 	}
+	mode, err := parseGenerationMode(get("GENERATION_MODE", ""), enabled)
+	if err != nil {
+		return GenerationConfig{}, err
+	}
 	providerCalls, err := parseBool("GENERATION_PROVIDER_CALLS_ENABLED", get("GENERATION_PROVIDER_CALLS_ENABLED", "false"))
 	if err != nil {
 		return GenerationConfig{}, err
@@ -257,8 +273,10 @@ func loadGenerationConfig(get func(string, string) string) (GenerationConfig, er
 		return GenerationConfig{}, err
 	}
 	configuration := GenerationConfig{
-		Enabled:               enabled,
+		Mode:                  mode,
+		Enabled:               mode != GenerationModeOff,
 		ProviderCallsEnabled:  providerCalls,
+		LocalImageEndpoint:    get("GENERATION_LOCAL_IMAGE_ENDPOINT", ""),
 		Currency:              get("GENERATION_CURRENCY", ""),
 		MaxConcurrentTasks:    maxConcurrentTasks,
 		MaxQuotaUnits:         maxQuotaUnits,
@@ -277,11 +295,58 @@ func validateGenerationConfig(configuration GenerationConfig) error {
 	if configuration.ProviderCallsEnabled {
 		return fmt.Errorf("GENERATION_PROVIDER_CALLS_ENABLED: provider calls remain disabled until 14-01 GATE/POC/WORKER completion")
 	}
-	if !configuration.Enabled {
+	if configuration.Mode == GenerationModeOff {
+		if configuration.Enabled || configuration.LocalImageEndpoint != "" {
+			return fmt.Errorf("GENERATION_MODE: off cannot enable generation or configure a local image endpoint")
+		}
 		return nil
 	}
-	if !validCurrency(configuration.Currency) || configuration.MaxConcurrentTasks < 1 || configuration.MaxConcurrentTasks > 1000 || configuration.MaxQuotaUnits < 1 || configuration.MaxQuotaUnits > 1_000_000 || configuration.MaxBudgetMinorUnits < 1 || configuration.MaxBudgetMinorUnits > 10_000_000_000 || configuration.MaxSubmissionAttempts < 1 || configuration.MaxSubmissionAttempts > 10 || configuration.ProviderTimeout <= 0 || configuration.ProviderTimeout > 10*time.Minute || configuration.Retention <= 0 || configuration.Retention > 365*24*time.Hour {
-		return fmt.Errorf("GENERATION_*: enabled mode requires bounded currency, budget, quota, attempts, timeout and retention")
+	if configuration.Mode == GenerationModeLocal {
+		if configuration.Currency != "" || configuration.MaxBudgetMinorUnits != 0 {
+			return fmt.Errorf("GENERATION_*: local mode requires empty currency and zero budget")
+		}
+		if configuration.MaxConcurrentTasks < 1 || configuration.MaxConcurrentTasks > 1000 || configuration.MaxQuotaUnits < 1 || configuration.MaxQuotaUnits > 1_000_000 || configuration.MaxSubmissionAttempts < 1 || configuration.MaxSubmissionAttempts > 10 || configuration.ProviderTimeout <= 0 || configuration.ProviderTimeout > 10*time.Minute || configuration.Retention <= 0 || configuration.Retention > 365*24*time.Hour {
+			return fmt.Errorf("GENERATION_*: local mode requires bounded concurrency, quota, attempts, timeout and retention")
+		}
+		if configuration.LocalImageEndpoint != "" {
+			if err := validateLocalImageEndpoint(configuration.LocalImageEndpoint); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if configuration.Mode != GenerationModeRemote || !validCurrency(configuration.Currency) || configuration.MaxConcurrentTasks < 1 || configuration.MaxConcurrentTasks > 1000 || configuration.MaxQuotaUnits < 1 || configuration.MaxQuotaUnits > 1_000_000 || configuration.MaxBudgetMinorUnits < 1 || configuration.MaxBudgetMinorUnits > 10_000_000_000 || configuration.MaxSubmissionAttempts < 1 || configuration.MaxSubmissionAttempts > 10 || configuration.ProviderTimeout <= 0 || configuration.ProviderTimeout > 10*time.Minute || configuration.Retention <= 0 || configuration.Retention > 365*24*time.Hour {
+		return fmt.Errorf("GENERATION_*: remote mode requires bounded currency, budget, quota, attempts, timeout and retention")
+	}
+	if configuration.LocalImageEndpoint != "" {
+		return fmt.Errorf("GENERATION_LOCAL_IMAGE_ENDPOINT: only local mode may configure a local image endpoint")
+	}
+	return nil
+}
+
+func parseGenerationMode(value string, legacyEnabled bool) (GenerationMode, error) {
+	if value == "" {
+		if legacyEnabled {
+			return GenerationModeRemote, nil
+		}
+		return GenerationModeOff, nil
+	}
+	switch GenerationMode(value) {
+	case GenerationModeOff, GenerationModeLocal, GenerationModeRemote:
+		return GenerationMode(value), nil
+	default:
+		return "", fmt.Errorf("GENERATION_MODE: expected off, local or remote")
+	}
+}
+
+func validateLocalImageEndpoint(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed == nil || parsed.Scheme != "http" || parsed.Hostname() == "" || parsed.Port() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || !isLoopbackHost(parsed.Hostname()) {
+		return fmt.Errorf("GENERATION_LOCAL_IMAGE_ENDPOINT: expected loopback HTTP URL with port")
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("GENERATION_LOCAL_IMAGE_ENDPOINT: invalid port")
 	}
 	return nil
 }
