@@ -209,6 +209,32 @@ func (r *CleanupRequest) Fail(at time.Time, stableError string, retryAt time.Tim
 	return r.Validate()
 }
 
+// AddTarget extends a cleanup manifest when a late external side effect is
+// discovered after the original delete request was created. Adding a new
+// target invalidates any running or completed claim and puts the request back
+// into the durable pending state so the new target cannot be skipped.
+func (r *CleanupRequest) AddTarget(target CleanupTarget, at time.Time) error {
+	if r == nil || r.Validate() != nil || at.IsZero() || at.Before(r.UpdatedAt) {
+		return ErrInvalidGenerationCleanup
+	}
+	if err := target.Validate(); err != nil {
+		return err
+	}
+	for _, existing := range r.Targets {
+		if existing.Kind == target.Kind && existing.ID == target.ID {
+			return nil
+		}
+	}
+	at = at.UTC()
+	r.Targets = append(r.Targets, target)
+	r.Status = CleanupPending
+	r.CompletedAt = nil
+	r.StableError = ""
+	r.NextAttemptAt = nil
+	r.UpdatedAt = at
+	return r.Validate()
+}
+
 func validCleanupScope(scope CleanupScope) bool {
 	return scope == CleanupScopeTask || scope == CleanupScopeSource || scope == CleanupScopeAccount
 }

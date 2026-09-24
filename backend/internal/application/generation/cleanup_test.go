@@ -69,3 +69,37 @@ func TestCleanupRequestRetainsTargetsAcrossRetry(t *testing.T) {
 		t.Fatalf("cleanup did not complete cleanly: %+v", request)
 	}
 }
+
+func TestCleanupRequestReopensWhenLateTargetArrives(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if err := task.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewCleanupRequest("cleanup-late-target", task, CleanupScopeTask, nil, generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := request.Begin(generationTestNow.Add(2 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := request.Complete(generationTestNow.Add(3 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	lateAt := generationTestNow.Add(4 * time.Minute)
+	if err := request.AddTarget(CleanupTarget{Kind: CleanupTargetProvider, ID: "provider-late-1"}, lateAt); err != nil {
+		t.Fatalf("late cleanup target was rejected: %v", err)
+	}
+	if request.Status != CleanupPending || request.CompletedAt != nil || request.NextAttemptAt != nil || request.StableError != "" || len(request.Targets) != 1 {
+		t.Fatalf("late target did not reopen cleanup: %+v", request)
+	}
+	if _, err := request.Begin(lateAt); err != nil {
+		t.Fatalf("reopened cleanup was not claimable: %v", err)
+	}
+	if err := request.AddTarget(CleanupTarget{Kind: CleanupTargetProvider, ID: "provider-late-1"}, lateAt.Add(time.Minute)); err != nil {
+		t.Fatalf("replaying late target was not idempotent: %v", err)
+	}
+	if len(request.Targets) != 1 {
+		t.Fatalf("replaying late target duplicated the manifest: %+v", request.Targets)
+	}
+}
