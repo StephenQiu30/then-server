@@ -46,11 +46,7 @@ func (h *GenerationHandler) create(ctx context.Context, input *createGenerationJ
 	for _, reference := range input.Body.Inputs {
 		references = append(references, generationapp.InputReference{MediaID: reference.MediaID, Role: generationapp.InputRole(reference.Role), Ordinal: reference.Ordinal, Revision: reference.Revision, SHA256: reference.SHA256})
 	}
-	cost := generationapp.CostEstimate{}
-	if input.Body.Cost != nil {
-		cost = generationapp.CostEstimate{Currency: input.Body.Cost.Currency, EstimatedMinorUnits: input.Body.Cost.EstimatedMinorUnits, ReservedQuotaUnits: input.Body.Cost.ReservedQuotaUnits}
-	}
-	result, err := h.service.Create(ctx, input.Session, generationapp.CreateServiceInput{IdempotencyKey: input.Body.IdempotencyKey, LookID: input.Body.LookID, LookRevision: input.Body.LookRevision, Purpose: generationapp.Purpose(input.Body.Purpose), Provider: input.Body.Provider, Model: input.Body.Model, Parameters: parameters, Inputs: generationapp.InputSnapshot{LookID: input.Body.LookID, LookRevision: input.Body.LookRevision, References: references, ImageAssetID: input.Body.ImageAssetID, ImageSHA256: input.Body.ImageSHA256}, Consent: generationapp.ConsentReceipt{ID: input.Body.Consent.ID, Purpose: generationapp.Purpose(input.Body.Consent.Purpose), PolicyVersion: input.Body.Consent.PolicyVersion, AcceptedAt: input.Body.Consent.AcceptedAt}, Cost: cost})
+	result, err := h.service.Create(ctx, input.Session, generationapp.CreateServiceInput{IdempotencyKey: input.Body.IdempotencyKey, LookID: input.Body.LookID, LookRevision: input.Body.LookRevision, Purpose: generationapp.Purpose(input.Body.Purpose), Provider: input.Body.Provider, Model: input.Body.Model, Parameters: parameters, Inputs: generationapp.InputSnapshot{LookID: input.Body.LookID, LookRevision: input.Body.LookRevision, References: references, ImageAssetID: input.Body.ImageAssetID, ImageSHA256: input.Body.ImageSHA256}, Consent: generationapp.ConsentReceipt{ID: input.Body.Consent.ID, Purpose: generationapp.Purpose(input.Body.Consent.Purpose), PolicyVersion: input.Body.Consent.PolicyVersion, AcceptedAt: input.Body.Consent.AcceptedAt}})
 	if err != nil {
 		return nil, h.error(ctx, err)
 	}
@@ -168,7 +164,7 @@ func (h *GenerationHandler) error(ctx context.Context, err error) error {
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Generation request conflicts with the current task or admission limits."
 		return response
-	case errors.Is(err, generationapp.ErrGenerationDisabled), errors.Is(err, generationapp.ErrGenerationUnavailable), errors.Is(err, accountapp.ErrAccountUnavailable):
+	case errors.Is(err, generationapp.ErrGenerationDisabled), errors.Is(err, generationapp.ErrGenerationUnavailable), errors.Is(err, generationapp.ErrGenerationCostUnavailable), errors.Is(err, accountapp.ErrAccountUnavailable):
 		return huma.ErrorWithHeaders(newErrorResponse(http.StatusServiceUnavailable, requestID(ctx)), http.Header{"Retry-After": []string{"1"}})
 	default:
 		return huma.ErrorWithHeaders(newErrorResponse(http.StatusServiceUnavailable, requestID(ctx)), http.Header{"Retry-After": []string{"1"}})

@@ -65,24 +65,34 @@ type CreateServiceInput struct {
 	Parameters     []byte
 	Inputs         InputSnapshot
 	Consent        ConsentReceipt
-	Cost           CostEstimate
 }
 
 type Service struct {
-	auth       Authenticator
-	repository Repository
-	policy     AdmissionPolicy
-	now        func() time.Time
+	auth          Authenticator
+	repository    Repository
+	policy        AdmissionPolicy
+	costEstimator CostEstimator
+	now           func() time.Time
 }
 
 func NewService(auth Authenticator, repository Repository, policy AdmissionPolicy) (*Service, error) {
+	var costEstimator CostEstimator
+	if policy.ZeroCost {
+		costEstimator = CostEstimatorFunc(func(Purpose, string, string, []byte) (CostEstimate, error) {
+			return CostEstimate{}, nil
+		})
+	}
+	return NewServiceWithCostEstimator(auth, repository, policy, costEstimator)
+}
+
+func NewServiceWithCostEstimator(auth Authenticator, repository Repository, policy AdmissionPolicy, costEstimator CostEstimator) (*Service, error) {
 	if auth == nil || repository == nil {
 		return nil, ErrGenerationUnavailable
 	}
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
-	return &Service{auth: auth, repository: repository, policy: policy, now: time.Now}, nil
+	return &Service{auth: auth, repository: repository, policy: policy, costEstimator: costEstimator, now: time.Now}, nil
 }
 
 func (s *Service) Create(ctx context.Context, token string, input CreateServiceInput) (CreateResult, error) {
@@ -90,9 +100,21 @@ func (s *Service) Create(ctx context.Context, token string, input CreateServiceI
 	if err != nil {
 		return CreateResult{}, err
 	}
-	if err := s.policy.Check(input.Cost, AdmissionUsage{}); err != nil && !errors.Is(err, ErrGenerationConcurrency) && !errors.Is(err, ErrGenerationQuotaExceeded) && !errors.Is(err, ErrGenerationBudgetExceeded) && !errors.Is(err, ErrGenerationCurrency) {
-		// The repository repeats the check against a locked usage snapshot. This
-		// early check only avoids accepting obviously malformed or disabled work.
+	if !s.policy.Enabled {
+		return CreateResult{}, ErrGenerationDisabled
+	}
+	if s.costEstimator == nil {
+		return CreateResult{}, ErrGenerationCostUnavailable
+	}
+	parameters, err := CanonicalParameters(input.Parameters)
+	if err != nil {
+		return CreateResult{}, ErrInvalidGenerationInput
+	}
+	cost, err := s.costEstimator.Estimate(input.Purpose, input.Provider, input.Model, append([]byte(nil), parameters...))
+	if err != nil {
+		return CreateResult{}, err
+	}
+	if err := s.policy.Check(cost, AdmissionUsage{}); err != nil {
 		return CreateResult{}, err
 	}
 	create := CreateInput{
@@ -104,10 +126,10 @@ func (s *Service) Create(ctx context.Context, token string, input CreateServiceI
 		Purpose:        input.Purpose,
 		Provider:       input.Provider,
 		Model:          input.Model,
-		Parameters:     append([]byte(nil), input.Parameters...),
+		Parameters:     parameters,
 		Inputs:         input.Inputs,
 		Consent:        input.Consent,
-		Cost:           input.Cost,
+		Cost:           cost,
 	}
 	now := s.now().UTC()
 	result, err := s.repository.Accept(ctx, create, s.policy, uuid.NewString(), uuid.NewString(), now)

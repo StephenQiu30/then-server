@@ -255,4 +255,11 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 	if !confirmationConstraintFound {
 		t.Fatal("generated contract does not require confirms_self_and_adult to be true")
 	}
+	generationRequest, exists := spec.Components.Schemas["CreateGenerationJobRequest"]
+	if !exists {
+		t.Fatal("generated client contract is missing CreateGenerationJobRequest")
+	}
+	if _, acceptsCost := generationRequest.Properties["cost"]; acceptsCost {
+		t.Fatal("generation request accepts a client-provided cost or quota estimate")
+	}
 }

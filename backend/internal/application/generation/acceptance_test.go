@@ -96,6 +96,7 @@ func TestPrepareAcceptanceDoesNotReuseRevokedContentDuplicate(t *testing.T) {
 	newInput := existingInput
 	newInput.ID = "job-revoked-duplicate"
 	newInput.IdempotencyKey = "request-revoked-duplicate"
+	newInput.Cost = CostEstimate{Currency: "USD", EstimatedMinorUnits: 25, ReservedQuotaUnits: 2}
 	result, err := PrepareAcceptance(generationPolicy(), AdmissionUsage{}, []Task{existing}, newInput, "reservation-2", "outbox-2", generationTestNow.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("revoked content duplicate was rejected before source validation: %v", err)
@@ -133,7 +134,8 @@ func TestPrepareAcceptanceFailsClosedWithoutNewSideEffects(t *testing.T) {
 }
 
 func TestPrepareAcceptanceDoesNotCreateReservationForZeroCostTask(t *testing.T) {
-	result, err := PrepareAcceptance(generationPolicy(), AdmissionUsage{}, nil, validCreateInput(), "", "outbox-1", generationTestNow)
+	policy := AdmissionPolicy{Enabled: true, ZeroCost: true, MaxConcurrentTasks: 2, MaxQuotaUnits: 10}
+	result, err := PrepareAcceptance(policy, AdmissionUsage{}, nil, validCreateInput(), "", "outbox-1", generationTestNow)
 	if err != nil {
 		t.Fatalf("zero-cost acceptance error = %v", err)
 	}

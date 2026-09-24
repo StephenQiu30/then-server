@@ -133,6 +133,51 @@ func TestServiceCreatePassesAuthenticatedOwnerAndPolicyToRepository(t *testing.T
 	if repository.input.ID == "" || repository.input.ID == ownerID {
 		t.Fatalf("service did not allocate a task id: %q", repository.input.ID)
 	}
+	if repository.input.Cost != (CostEstimate{}) {
+		t.Fatalf("local development estimate was not zero cost: %+v", repository.input.Cost)
+	}
+}
+
+func TestServiceCreateRequiresServerOwnedCostEstimate(t *testing.T) {
+	auth := generationServiceAuthStub{user: accountapp.User{ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", Status: accountapp.AccountActive}}
+	repository := &generationServiceRepositoryStub{}
+	policy := AdmissionPolicy{Enabled: true, Currency: "USD", MaxConcurrentTasks: 2, MaxQuotaUnits: 10, MaxBudgetMinorUnits: 100}
+	service, err := NewService(auth, repository, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Create(context.Background(), "session", serviceTestInput()); !errors.Is(err, ErrGenerationCostUnavailable) {
+		t.Fatalf("missing server-side cost estimate error = %v", err)
+	}
+	if repository.acceptCalls != 0 {
+		t.Fatalf("accepted %d tasks without a server-side cost estimate", repository.acceptCalls)
+	}
+}
+
+func TestServiceCreateUsesCanonicalParametersAndServerOwnedEstimate(t *testing.T) {
+	auth := generationServiceAuthStub{user: accountapp.User{ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", Status: accountapp.AccountActive}}
+	repository := &generationServiceRepositoryStub{}
+	estimate := CostEstimate{Currency: "USD", EstimatedMinorUnits: 60, ReservedQuotaUnits: 1}
+	service, err := NewServiceWithCostEstimator(auth, repository, AdmissionPolicy{Enabled: true, Currency: "USD", MaxConcurrentTasks: 2, MaxQuotaUnits: 10, MaxBudgetMinorUnits: 100}, CostEstimatorFunc(func(purpose Purpose, provider, model string, parameters []byte) (CostEstimate, error) {
+		if purpose != PurposeImage || provider != "local" || model != "local-image" || string(parameters) != `{"quality":"draft"}` {
+			t.Fatalf("estimator received noncanonical request facts: purpose=%q provider=%q model=%q parameters=%s", purpose, provider, model, parameters)
+		}
+		return estimate, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := serviceTestInput()
+	input.Parameters = []byte(`{ "quality" : "draft" }`)
+	if _, err := service.Create(context.Background(), "session", input); err != nil {
+		t.Fatal(err)
+	}
+	if repository.input.Cost != estimate {
+		t.Fatalf("repository did not receive the server-side quote: got %+v want %+v", repository.input.Cost, estimate)
+	}
+	if string(repository.input.Parameters) != `{"quality":"draft"}` {
+		t.Fatalf("repository parameters were not canonical: %s", repository.input.Parameters)
+	}
 }
 
 func TestServiceCreateFailsClosedWhenDisabled(t *testing.T) {

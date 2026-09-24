@@ -58,7 +58,7 @@ func TestAdmissionPolicyRejectsEachLimitAndInvalidCost(t *testing.T) {
 		},
 		{
 			name:  "quota already over limit",
-			cost:  CostEstimate{Currency: "USD"},
+			cost:  CostEstimate{Currency: "USD", EstimatedMinorUnits: 1, ReservedQuotaUnits: 1},
 			usage: AdmissionUsage{ReservedQuotaUnits: 11},
 			want:  ErrGenerationQuotaExceeded,
 		},
@@ -70,7 +70,7 @@ func TestAdmissionPolicyRejectsEachLimitAndInvalidCost(t *testing.T) {
 		},
 		{
 			name:  "budget already over limit",
-			cost:  CostEstimate{Currency: "USD"},
+			cost:  CostEstimate{Currency: "USD", EstimatedMinorUnits: 1, ReservedQuotaUnits: 1},
 			usage: AdmissionUsage{ReservedMinorUnits: 1001},
 			want:  ErrGenerationBudgetExceeded,
 		},
@@ -85,6 +85,18 @@ func TestAdmissionPolicyRejectsEachLimitAndInvalidCost(t *testing.T) {
 			cost:  CostEstimate{EstimatedMinorUnits: 1, ReservedQuotaUnits: 1},
 			usage: AdmissionUsage{},
 			want:  ErrInvalidGenerationInput,
+		},
+		{
+			name:  "missing price estimate",
+			cost:  CostEstimate{Currency: "USD", ReservedQuotaUnits: 1},
+			usage: AdmissionUsage{},
+			want:  ErrGenerationCostUnavailable,
+		},
+		{
+			name:  "missing quota estimate",
+			cost:  CostEstimate{Currency: "USD", EstimatedMinorUnits: 1},
+			usage: AdmissionUsage{},
+			want:  ErrGenerationQuotaExceeded,
 		},
 		{
 			name:  "negative usage",
