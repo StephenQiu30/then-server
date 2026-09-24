@@ -49,6 +49,21 @@ type CleanupTarget struct {
 	ObjectVersionID string            `json:"object_version_id,omitempty"`
 }
 
+// SameCleanupTarget compares the immutable external side effect represented
+// by two manifest entries. Object IDs are not sufficient on their own because
+// versioned object storage can retain more than one physical version.
+func SameCleanupTarget(left, right CleanupTarget) bool {
+	return cleanupTargetKey(left) == cleanupTargetKey(right)
+}
+
+func cleanupTargetKey(target CleanupTarget) string {
+	key := string(target.Kind) + "\x00" + target.ID
+	if target.Kind == CleanupTargetObject {
+		key += "\x00" + target.ObjectVersionID
+	}
+	return key
+}
+
 func (target CleanupTarget) Validate() error {
 	if !validToken(string(target.Kind), 32) || !validToken(target.ID, 256) {
 		return ErrInvalidGenerationCleanup
@@ -136,7 +151,7 @@ func (r CleanupRequest) Validate() error {
 		if err := target.Validate(); err != nil {
 			return err
 		}
-		key := string(target.Kind) + "\x00" + target.ID
+		key := cleanupTargetKey(target)
 		if _, exists := seen[key]; exists {
 			return ErrInvalidGenerationCleanup
 		}
@@ -221,7 +236,7 @@ func (r *CleanupRequest) AddTarget(target CleanupTarget, at time.Time) error {
 		return err
 	}
 	for _, existing := range r.Targets {
-		if existing.Kind == target.Kind && existing.ID == target.ID {
+		if SameCleanupTarget(existing, target) {
 			return nil
 		}
 	}

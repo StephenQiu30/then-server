@@ -103,3 +103,28 @@ func TestCleanupRequestReopensWhenLateTargetArrives(t *testing.T) {
 		t.Fatalf("replaying late target duplicated the manifest: %+v", request.Targets)
 	}
 }
+
+func TestCleanupRequestKeepsDistinctObjectVersions(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if err := task.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewCleanupRequest("cleanup-object-versions", task, CleanupScopeTask, []CleanupTarget{
+		{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectVersionID: "object-version-1"},
+	}, generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := request.AddTarget(CleanupTarget{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectVersionID: "object-version-2"}, generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatalf("distinct object version was rejected: %v", err)
+	}
+	if len(request.Targets) != 2 {
+		t.Fatalf("distinct object version was dropped: %+v", request.Targets)
+	}
+	if err := request.AddTarget(CleanupTarget{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectVersionID: "object-version-2"}, generationTestNow); err != nil {
+		t.Fatalf("same object version replay was not idempotent: %v", err)
+	}
+	if len(request.Targets) != 2 {
+		t.Fatalf("same object version replay duplicated the manifest: %+v", request.Targets)
+	}
+}
