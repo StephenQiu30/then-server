@@ -305,7 +305,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if claimedCleanup.Status != generationapp.CleanupRunning || len(targets) != 2 || targets[0].Kind != generationapp.CleanupTargetObject || targets[1].Kind != generationapp.CleanupTargetProvider {
 		t.Fatalf("generation cleanup claim lost its target snapshot: request=%+v targets=%+v", claimedCleanup, targets)
 	}
-	completedCleanup, err := workerRepository.CompleteTaskCleanup(ctx, deletedCleanup.ID, claimedCleanup.UpdatedAt.Add(time.Minute))
+	completedCleanup, err := workerRepository.CompleteTaskCleanup(ctx, claimedCleanup, claimedCleanup.UpdatedAt.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("complete generation cleanup: %v", err)
 	}
@@ -398,6 +398,21 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if len(sourceRequests) != 1 || sourceRequests[0].Scope != generationapp.CleanupScopeSource || sourceRequests[0].SourceMediaID != "00000000-0000-4000-8000-000000000201" {
 		t.Fatalf("source cleanup did not retain the source relationship: %+v", sourceRequests)
 	}
+	claimedSource, sourceTargets, found, err := workerRepository.ClaimNextCleanup(ctx, sourceRequests[0].UpdatedAt.Add(time.Minute), time.Minute)
+	if err != nil || !found || claimedSource.Status != generationapp.CleanupRunning || len(sourceTargets) != 0 {
+		t.Fatalf("cleanup worker did not claim source cleanup: found=%v request=%+v targets=%+v err=%v", found, claimedSource, sourceTargets, err)
+	}
+	recoveryAt := claimedSource.UpdatedAt.Add(time.Minute)
+	recoveredSource, _, found, err := workerRepository.ClaimNextCleanup(ctx, recoveryAt, time.Minute)
+	if err != nil || !found || recoveredSource.Status != generationapp.CleanupRunning || recoveredSource.Attempts != claimedSource.Attempts+1 {
+		t.Fatalf("stale cleanup claim was not recovered: found=%v old=%+v new=%+v err=%v", found, claimedSource, recoveredSource, err)
+	}
+	if _, err := workerRepository.CompleteTaskCleanup(ctx, claimedSource, recoveryAt.Add(time.Minute)); !errors.Is(err, generationapp.ErrGenerationCleanupClaim) {
+		t.Fatalf("stale cleanup worker completed after recovery: %v", err)
+	}
+	if _, err := workerRepository.CompleteTaskCleanup(ctx, recoveredSource, recoveryAt.Add(time.Minute)); err != nil {
+		t.Fatalf("recovered cleanup worker could not complete: %v", err)
+	}
 	accountDeletion, err := accounts.DeleteCurrentUser(ctx, first.Token)
 	if err != nil {
 		t.Fatalf("begin account deletion with generation cleanup: %v", err)
@@ -413,7 +428,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin account generation cleanup: %v", err)
 	}
-	if _, err := workerRepository.CompleteTaskCleanup(ctx, accountCleanupID, accountCleanup.UpdatedAt.Add(time.Minute)); err != nil {
+	if _, err := workerRepository.CompleteTaskCleanup(ctx, accountCleanup, accountCleanup.UpdatedAt.Add(time.Minute)); err != nil {
 		t.Fatalf("complete account generation cleanup: %v", err)
 	}
 	completedAccountDeletion, err := accounts.GetDeletionReceipt(ctx, accountDeletion.ID, accountDeletion.ReceiptToken)

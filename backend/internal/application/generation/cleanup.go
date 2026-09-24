@@ -9,6 +9,7 @@ var (
 	ErrInvalidGenerationCleanup    = errors.New("invalid generation cleanup")
 	ErrGenerationCleanupNotReady   = errors.New("generation cleanup is not ready")
 	ErrGenerationCleanupInProgress = errors.New("generation cleanup is already in progress")
+	ErrGenerationCleanupClaim      = errors.New("generation cleanup claim is stale")
 )
 
 // CleanupScope identifies the owner-facing operation that revoked access.
