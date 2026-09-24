@@ -655,6 +655,14 @@ func Identity(input CreateInput) (idempotencyKeyHash, dedupeKey string, err erro
 	return idempotencyKeyHash, dedupeKey, err
 }
 
+// CanonicalParameters normalizes a persisted parameter object to the same
+// representation used when task identity is calculated. JSONB stores an
+// equivalent object with its own whitespace, so repositories must normalize
+// it before rebuilding a task and validating its immutable facts.
+func CanonicalParameters(value []byte) ([]byte, error) {
+	return canonicalJSON(value)
+}
+
 func identity(input CreateInput) ([]byte, string, string, error) {
 	if !validID(input.OwnerID) || !validID(input.LookID) || input.LookRevision < 1 || !input.Purpose.valid() || !validToken(input.Provider, 96) || !validToken(input.Model, 128) || !validToken(input.IdempotencyKey, 256) {
 		return nil, "", "", ErrInvalidGenerationInput
