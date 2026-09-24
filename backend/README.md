@@ -53,6 +53,12 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 
 账号邮件功能需要在运行环境同时配置 `ACCOUNT_MAIL_FROM`（完整 163 邮箱）、`ACCOUNT_MAIL_AUTH_CODE`（网易客户端授权码）、`ACCOUNT_MAIL_KEY`（至少 32 随机字节的无填充 base64url）和 `ACCOUNT_MAIL_LINK_BASE`（HTTPS 应用入口）。`ACCOUNT_MAIL_SMTP_ADDR` 默认为 `smtp.163.com:465`，只使用验证证书的 TLS；缺少邮件配置时四个新端点返回 503，不会发送。授权码、挑战密钥不写入仓库或日志。验证/找回后端已支持合成环境；正式送达、App/Web 链接入口、可信代理/边缘防护、地域与生产审计仍是公开注册门禁。
 
+## 生成配置与费用边界
+
+生成相关环境变量统一由 `internal/platform/config` 解析。默认配置是 `GENERATION_ENABLED=false` 和 `GENERATION_PROVIDER_CALLS_ENABLED=false`：不会向图片/模型供应商发起请求，也不会产生供应商生成费用。预算、配额、并发、最大提交次数、供应商超时和保留期只有在显式开启 `GENERATION_ENABLED=true` 时才允许填写，并且必须通过有界校验。
+
+`GENERATION_PROVIDER_CALLS_ENABLED=true` 当前会被启动配置直接拒绝，直到 14-01 的供应商准入、代表素材 POC、真实 worker 和删除合同完成。未来开启该开关后，供应商 API 可能按其账户和价格产生费用；费用上限只能由 `GENERATION_MAX_BUDGET_MINOR_UNITS` 约束，不能把配置视为免费承诺。当前本地测试与 CI 使用合成 Provider/本地依赖，不调用付费生成服务。163 邮件也只有在完整邮件配置存在且实际调用验证/找回接口时才会发信；本切片不发送邮件，网易账号是否存在套餐或配额费用需按实际账号条款确认。
+
 ## 隐私前置 API
 
 - `GET /privacy/self-adult-declaration`
