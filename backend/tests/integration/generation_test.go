@@ -37,17 +37,23 @@ import (
 type generationRecoveryProviderStub struct{ submitCalls int }
 
 type generationFixtureResultFetcher struct {
-	objects *objectstore.Store
-	data    []byte
-	version string
+	objects       *objectstore.Store
+	data          []byte
+	version       string
+	writeThenFail bool
+	fetchCalls    int
 }
 
 func (f *generationFixtureResultFetcher) Fetch(ctx context.Context, request generationapp.FetchRequest) (generationapp.FetchedResult, error) {
+	f.fetchCalls++
 	versionID, err := f.objects.PutDerived(ctx, request.ObjectKey, bytes.NewReader(f.data), int64(len(f.data)))
 	if err != nil {
 		return generationapp.FetchedResult{}, err
 	}
 	f.version = versionID
+	if f.writeThenFail {
+		return generationapp.FetchedResult{}, errors.New("fixture fetch interrupted after object write")
+	}
 	digest := sha256.Sum256(f.data)
 	return generationapp.FetchedResult{
 		ExternalTaskID: request.ExternalTaskID,
@@ -835,13 +841,72 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("release accepted observation lease before result lease: %v", err)
 	}
 	outputAt := workflowAt.Add(7 * time.Minute)
-	resultFetcher := &generationFixtureResultFetcher{objects: objects, data: []byte("invalid jpeg")}
+	resultFetcher := &generationFixtureResultFetcher{objects: objects, data: integrationGenerationJPEG(t), writeThenFail: true}
 	resultWorker, err := generationapp.NewResultWorker(workerRepository, resultFetcher, objects, generationapp.ResultWorkerPolicy{
 		WorkerID: "worker-result", LeaseTTL: 10 * time.Minute, FetchTimeout: time.Minute,
 	})
 	if err != nil {
 		t.Fatalf("create provider-neutral result worker: %v", err)
 	}
+	initialOutputKey, err := generationapp.OutputObjectKey(paidCreated.View.Task)
+	if err != nil {
+		t.Fatalf("derive output key before result recovery: %v", err)
+	}
+	neighborKey := initialOutputKey + "/neighbor"
+	neighborData := []byte("unrelated prefix neighbor")
+	neighborVersionID, err := objects.PutDerived(ctx, neighborKey, bytes.NewReader(neighborData), int64(len(neighborData)))
+	if err != nil {
+		t.Fatalf("write unrelated output-key prefix neighbor: %v", err)
+	}
+	interruptedResult, err := resultWorker.RunOnceAt(ctx, paidCreated.View.Task.ID, outputAt)
+	if !errors.Is(err, generationapp.ErrGenerationOutputFetchUnknown) || interruptedResult.View.Task.Status != generationapp.StatusValidating || interruptedResult.View.Task.LeaseOwner != "" || interruptedResult.View.Reservation == nil || interruptedResult.View.Reservation.State != generationapp.ReservationReserved {
+		t.Fatalf("write-before-return failure did not leave the result retryable: view=%+v err=%v", interruptedResult.View, err)
+	}
+	interruptedVersionID := resultFetcher.version
+	interruptedObjectKey, err := generationapp.OutputObjectKey(interruptedResult.View.Task)
+	if err != nil || interruptedObjectKey != initialOutputKey {
+		t.Fatalf("derive interrupted result object key: %v", err)
+	}
+	interruptedObject, err := objects.OpenDerivedVersion(ctx, interruptedObjectKey, interruptedVersionID)
+	if err != nil {
+		t.Fatalf("fixture did not leave the unreported object version behind: version=%q err=%v", interruptedVersionID, err)
+	}
+	interruptedObject.Close()
+	outputAt = outputAt.Add(time.Second)
+	inventoryResult, err := resultWorker.RunOnceAt(ctx, paidCreated.View.Task.ID, outputAt)
+	if !errors.Is(err, generationapp.ErrGenerationOutputCleanupPending) || inventoryResult.View.Task.Status != generationapp.StatusValidating || inventoryResult.View.Task.LeaseOwner != "" || resultFetcher.fetchCalls != 1 {
+		t.Fatalf("existing output was not queued before a second fetch: view=%+v fetches=%d err=%v", inventoryResult.View, resultFetcher.fetchCalls, err)
+	}
+	var recoveredCleanupID string
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("task_id = ? AND scope = ?", paidCreated.View.Task.ID, string(generationapp.CleanupScopeOrphanOutput)).Pluck("id", &recoveredCleanupID).Error; err != nil || recoveredCleanupID == "" {
+		t.Fatalf("find recovered output cleanup request: id=%q err=%v", recoveredCleanupID, err)
+	}
+	recoveredCleanup, recoveredTargets, err := workerRepository.BeginTaskCleanup(ctx, recoveredCleanupID, outputAt.Add(time.Second))
+	if err != nil || len(recoveredTargets) != 1 || recoveredTargets[0].ObjectVersionID != interruptedVersionID {
+		t.Fatalf("claim recovered output version: request=%+v targets=%+v err=%v", recoveredCleanup, recoveredTargets, err)
+	}
+	recoveryCleanupExecutor, err := objectstore.NewGenerationCleanupExecutor(objects)
+	if err != nil {
+		t.Fatalf("construct cleanup executor for unreported output: %v", err)
+	}
+	if err := recoveryCleanupExecutor.DeleteObject(ctx, recoveredTargets[0]); err != nil {
+		t.Fatalf("delete recovered unreported output version: %v", err)
+	}
+	if _, err := workerRepository.CompleteTaskCleanup(ctx, recoveredCleanup, outputAt.Add(2*time.Second)); err != nil {
+		t.Fatalf("complete recovered output cleanup: %v", err)
+	}
+	if object, err := objects.OpenDerivedVersion(ctx, interruptedObjectKey, interruptedVersionID); err == nil {
+		object.Close()
+		t.Fatal("recovered cleanup left the unreported MinIO version in place")
+	}
+	neighbor, err := objects.OpenDerivedVersion(ctx, neighborKey, neighborVersionID)
+	if err != nil {
+		t.Fatalf("exact-key cleanup removed a prefix neighbor: %v", err)
+	}
+	neighbor.Close()
+	resultFetcher.writeThenFail = false
+	resultFetcher.data = []byte("invalid jpeg")
+	outputAt = outputAt.Add(3 * time.Minute)
 	failedResult, err := resultWorker.RunOnceAt(ctx, paidCreated.View.Task.ID, outputAt)
 	if !errors.Is(err, generationapp.ErrInvalidGenerationOutput) || failedResult.View.Task.Status != generationapp.StatusValidating || failedResult.View.Task.AccessRevokedAt != nil || failedResult.View.Reservation == nil || failedResult.View.Reservation.State != generationapp.ReservationReserved {
 		t.Fatalf("invalid generation output did not remain retryable with reserved quota: view=%+v err=%v", failedResult.View, err)
@@ -860,29 +925,40 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("decode orphan cleanup targets: %v", err)
 	}
 	expectedOutputKey, _ := generationapp.OutputObjectKey(paidCreated.View.Task)
-	if orphanRecord.ID == "" || orphanRecord.Status != string(generationapp.CleanupPending) || orphanRecord.AccessRevokedAt != nil || len(orphanTargets) != 1 || orphanTargets[0].ObjectKey != expectedOutputKey || orphanTargets[0].ObjectVersionID != resultFetcher.version {
+	queuedVersions := make(map[string]bool, len(orphanTargets))
+	for _, target := range orphanTargets {
+		if target.ObjectKey != expectedOutputKey {
+			t.Fatalf("orphan cleanup recorded an unexpected object key: %+v", target)
+		}
+		queuedVersions[target.ObjectVersionID] = true
+	}
+	if orphanRecord.ID == "" || orphanRecord.Status != string(generationapp.CleanupPending) || orphanRecord.AccessRevokedAt != nil || len(orphanTargets) != 2 || !queuedVersions[interruptedVersionID] || !queuedVersions[resultFetcher.version] {
 		t.Fatalf("orphan output cleanup did not retain its exact object version: record=%+v targets=%+v", orphanRecord, orphanTargets)
 	}
 	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("id = ?", orphanRecord.ID).Update("access_revoked_at", outputAt).Error; err == nil {
 		t.Fatal("PostgreSQL accepted an orphan cleanup record with access marked revoked")
 	}
 	claimedOrphan, claimedTargets, err := workerRepository.BeginTaskCleanup(ctx, orphanRecord.ID, outputAt.Add(time.Second))
-	if err != nil || claimedOrphan.Scope != generationapp.CleanupScopeOrphanOutput || len(claimedTargets) != 1 {
+	if err != nil || claimedOrphan.Scope != generationapp.CleanupScopeOrphanOutput || len(claimedTargets) != 2 {
 		t.Fatalf("claim exact orphan output cleanup: request=%+v targets=%+v err=%v", claimedOrphan, claimedTargets, err)
 	}
 	orphanCleanupExecutor, err := objectstore.NewGenerationCleanupExecutor(objects)
 	if err != nil {
 		t.Fatalf("construct generation cleanup executor for orphan: %v", err)
 	}
-	if err := orphanCleanupExecutor.DeleteObject(ctx, claimedTargets[0]); err != nil {
-		t.Fatalf("delete exact orphan output object version: %v", err)
+	for _, target := range claimedTargets {
+		if err := orphanCleanupExecutor.DeleteObject(ctx, target); err != nil {
+			t.Fatalf("delete exact orphan output object version: %v", err)
+		}
 	}
 	completedOrphan, err := workerRepository.CompleteTaskCleanup(ctx, claimedOrphan, outputAt.Add(2*time.Second))
 	if err != nil || completedOrphan.Status != generationapp.CleanupComplete {
 		t.Fatalf("complete orphan output cleanup: request=%+v err=%v", completedOrphan, err)
 	}
-	if _, err := objects.OpenDerivedVersion(ctx, expectedOutputKey, resultFetcher.version); err == nil {
-		t.Fatal("orphan cleanup left the exact unpublished MinIO version in place")
+	for _, versionID := range []string{interruptedVersionID, resultFetcher.version} {
+		if _, err := objects.OpenDerivedVersion(ctx, expectedOutputKey, versionID); err == nil {
+			t.Fatalf("orphan cleanup left unpublished MinIO version %q in place", versionID)
+		}
 	}
 	outputAt = outputAt.Add(3 * time.Minute)
 	resultFetcher.data = integrationGenerationJPEG(t)
