@@ -234,11 +234,19 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if reconciled.Task.SubmissionState != generationapp.SubmissionNotStarted || reconciled.Task.SubmissionUnknownAt != nil || reconciled.Task.SubmissionAttempt != 1 {
 		t.Fatalf("generation submission reconciliation was incorrect: %+v", reconciled.Task)
 	}
+	retryAt := workflowAt.Add(2 * time.Minute)
+	scheduled, err := workerRepository.ScheduleSubmissionRetry(ctx, workflowLease, retryAt, generationapp.RetryPolicy{MaxAttempts: 3, BaseDelay: 30 * time.Second, MaxDelay: time.Minute})
+	if err != nil {
+		t.Fatalf("schedule generation retry: %v", err)
+	}
+	if scheduled.Task.NextAttemptAt == nil || !scheduled.Task.NextAttemptAt.Equal(retryAt.Add(30*time.Second)) {
+		t.Fatalf("generation retry window was not persisted: %+v", scheduled.Task)
+	}
 	startedAgain, submissionAgain, err := workerRepository.BeginSubmission(ctx, workflowLease, workflowAt.Add(3*time.Minute))
 	if err != nil {
 		t.Fatalf("begin reconciled generation submission: %v", err)
 	}
-	if startedAgain.Task.SubmissionState != generationapp.SubmissionInFlight || startedAgain.Task.SubmissionAttempt != 2 || submissionAgain.Attempt != 2 {
+	if startedAgain.Task.SubmissionState != generationapp.SubmissionInFlight || startedAgain.Task.SubmissionAttempt != 2 || submissionAgain.Attempt != 2 || startedAgain.Task.NextAttemptAt != nil {
 		t.Fatalf("reconciled generation submission did not increment attempt: task=%+v submission=%+v", startedAgain.Task, submissionAgain)
 	}
 	external, err := workerRepository.RecordExternalTaskID(ctx, workflowLease, "provider-task-1", workflowAt.Add(4*time.Minute))
