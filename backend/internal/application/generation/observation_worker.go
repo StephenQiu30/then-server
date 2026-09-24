@@ -27,6 +27,13 @@ type ObservationWorkerRepository interface {
 	FinalizeWithoutOutput(context.Context, Lease, Status, string, time.Time) (TaskView, error)
 }
 
+// ObservationWorkerQueue is the durable scheduler boundary used by RunNext.
+// The repository only claims accepted, non-terminal tasks whose provider
+// identity can be queried; result publication remains a separate queue.
+type ObservationWorkerQueue interface {
+	ClaimNextObservationLease(context.Context, string, time.Time, time.Duration) (TaskView, Lease, bool, error)
+}
+
 // ObservationWorkerPolicy bounds a provider query. Provider calls remain
 // outside the transaction and are only enabled by a future adapter/bootstrap
 // integration; this policy itself has no network side effects.
@@ -91,6 +98,28 @@ func (w *ObservationWorker) RunOnce(ctx context.Context, taskID string) (Observa
 	if err != nil {
 		return ObservationResult{}, err
 	}
+	return w.runClaimed(ctx, view, lease)
+}
+
+// RunNext claims and processes one accepted task that is ready for a provider
+// status observation. It returns found=false when the durable queue is empty.
+func (w *ObservationWorker) RunNext(ctx context.Context) (bool, ObservationResult, error) {
+	if w == nil || w.repository == nil || w.provider == nil || w.policy.Validate() != nil {
+		return false, ObservationResult{}, ErrInvalidGenerationWorker
+	}
+	queue, ok := w.repository.(ObservationWorkerQueue)
+	if !ok {
+		return false, ObservationResult{}, ErrInvalidGenerationWorker
+	}
+	view, lease, found, err := queue.ClaimNextObservationLease(ctx, w.policy.WorkerID, w.now().UTC(), w.policy.LeaseTTL)
+	if err != nil || !found {
+		return found, ObservationResult{View: view}, err
+	}
+	result, err := w.runClaimed(ctx, view, lease)
+	return true, result, err
+}
+
+func (w *ObservationWorker) runClaimed(ctx context.Context, view TaskView, lease Lease) (ObservationResult, error) {
 	providerContext, cancel := context.WithTimeout(ctx, w.policy.ProviderTimeout)
 	remote, queryErr := w.provider.Query(providerContext, view.Task.ExternalTaskID)
 	cancel()

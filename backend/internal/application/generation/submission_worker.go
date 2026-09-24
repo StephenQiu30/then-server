@@ -32,6 +32,15 @@ type SubmissionWorkerRepository interface {
 	FinalizeWithoutOutput(context.Context, Lease, Status, string, time.Time) (TaskView, error)
 }
 
+// SubmissionWorkerQueue is the durable scheduler boundary used by RunNext.
+// A repository claims at most one eligible task with a short transaction and
+// returns the same fencing proof used by RunOnce. Keeping this optional from
+// SubmissionWorkerRepository preserves the explicit task-ID operation for
+// queue consumers while allowing a restart-safe database scan.
+type SubmissionWorkerQueue interface {
+	ClaimNextSubmissionLease(context.Context, string, time.Time, time.Duration) (TaskView, Lease, bool, error)
+}
+
 // SubmissionWorkerPolicy bounds the worker's lease and provider request. The
 // retry policy is applied only after ErrProviderNotAccepted; an unknown
 // transport outcome never receives an automatic second submit.
@@ -103,6 +112,29 @@ func (w *SubmissionWorker) RunOnce(ctx context.Context, taskID string) (Submissi
 	if err != nil {
 		return SubmissionResult{}, err
 	}
+	return w.runClaimed(ctx, view, lease)
+}
+
+// RunNext claims and processes one queued submission. It returns found=false
+// when the durable queue has no task ready at the supplied clock instant.
+// Provider calls remain entirely behind the injected Provider port.
+func (w *SubmissionWorker) RunNext(ctx context.Context) (bool, SubmissionResult, error) {
+	if w == nil || w.repository == nil || w.provider == nil || w.policy.Validate() != nil {
+		return false, SubmissionResult{}, ErrInvalidGenerationWorker
+	}
+	queue, ok := w.repository.(SubmissionWorkerQueue)
+	if !ok {
+		return false, SubmissionResult{}, ErrInvalidGenerationWorker
+	}
+	view, lease, found, err := queue.ClaimNextSubmissionLease(ctx, w.policy.WorkerID, w.now().UTC(), w.policy.LeaseTTL)
+	if err != nil || !found {
+		return found, SubmissionResult{View: view}, err
+	}
+	result, err := w.runClaimed(ctx, view, lease)
+	return true, result, err
+}
+
+func (w *SubmissionWorker) runClaimed(ctx context.Context, view TaskView, lease Lease) (SubmissionResult, error) {
 
 	// A cancellation that arrived before submit must never create a provider
 	// task. Settlement clears the lease and releases the quota atomically.

@@ -26,6 +26,13 @@ type ResultWorkerRepository interface {
 	PublishOutput(context.Context, Lease, OutputAsset, time.Time) (TaskView, error)
 }
 
+// ResultWorkerQueue is the durable scheduler boundary used by RunNext. It
+// only returns validating tasks with an accepted provider identity, so a
+// restarted result worker cannot publish a queued or running task.
+type ResultWorkerQueue interface {
+	ClaimNextResultLease(context.Context, string, time.Time, time.Duration) (TaskView, Lease, bool, error)
+}
+
 // ResultWorkerPolicy bounds the private result fetch. No provider or
 // object-store call occurs until a concrete adapter is injected by a future
 // enabled worker.
@@ -85,6 +92,28 @@ func (w *ResultWorker) RunOnce(ctx context.Context, taskID string) (ResultWorker
 	if err != nil {
 		return ResultWorkerResult{}, err
 	}
+	return w.runClaimed(ctx, view, lease)
+}
+
+// RunNext claims and processes one validating task. It returns found=false
+// when no result is ready at the current durable queue snapshot.
+func (w *ResultWorker) RunNext(ctx context.Context) (bool, ResultWorkerResult, error) {
+	if w == nil || w.repository == nil || w.fetcher == nil || w.policy.Validate() != nil {
+		return false, ResultWorkerResult{}, ErrInvalidGenerationResultWorker
+	}
+	queue, ok := w.repository.(ResultWorkerQueue)
+	if !ok {
+		return false, ResultWorkerResult{}, ErrInvalidGenerationResultWorker
+	}
+	view, lease, found, err := queue.ClaimNextResultLease(ctx, w.policy.WorkerID, w.now().UTC(), w.policy.LeaseTTL)
+	if err != nil || !found {
+		return found, ResultWorkerResult{View: view}, err
+	}
+	result, err := w.runClaimed(ctx, view, lease)
+	return true, result, err
+}
+
+func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Lease) (ResultWorkerResult, error) {
 	request := FetchRequest{
 		TaskID:         view.Task.ID,
 		ExternalTaskID: view.Task.ExternalTaskID,
