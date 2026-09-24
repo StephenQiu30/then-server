@@ -11,6 +11,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+var _ generationapp.SubmissionWorkerRepository = (*GenerationRepository)(nil)
+
 // AcquireLease claims one active generation task for a bounded worker
 // interval. It contains no provider call; the lease only fences later worker
 // state writes.
