@@ -22,6 +22,9 @@ type resultWorkerFetcherStub struct {
 	readKey     string
 	readVersion string
 	readLimit   int64
+	versions    []string
+	listErr     error
+	lists       int
 }
 
 func (r *observationWorkerRepositoryStub) RecordUnpublishedOutput(_ context.Context, lease Lease, target CleanupTarget, at time.Time) error {
@@ -41,6 +44,14 @@ func (f *resultWorkerFetcherStub) ReadOutputVersion(_ context.Context, objectKey
 		return nil, f.readErr
 	}
 	return append([]byte(nil), f.outputBytes...), nil
+}
+
+func (f *resultWorkerFetcherStub) ListOutputVersions(context.Context, string) ([]string, error) {
+	f.lists++
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return append([]string(nil), f.versions...), nil
 }
 
 func (f *resultWorkerFetcherStub) Fetch(_ context.Context, request FetchRequest) (FetchedResult, error) {
@@ -179,6 +190,41 @@ func TestResultWorkerKeepsValidatingTaskOnFetchFailure(t *testing.T) {
 	}
 	if result.View.Task.Status != StatusValidating || result.View.Task.ResultAssetID != "" || result.View.Task.LeaseOwner != "" {
 		t.Fatalf("fetch failure changed task or retained lease: %+v", result.View.Task)
+	}
+}
+
+func TestResultWorkerQueuesExistingOutputVersionsBeforeFetching(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
+	fetcher := &resultWorkerFetcherStub{versions: []string{"version-image-2", "version-image-1"}}
+	worker := newResultWorker(t, repository, fetcher)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrGenerationOutputCleanupPending) || result.View.Task.Status != StatusValidating || result.View.Task.LeaseOwner != "" {
+		t.Fatalf("existing output versions did not defer fetching: result=%+v err=%v", result, err)
+	}
+	if fetcher.lists != 1 || fetcher.fetches != 0 || fetcher.reads != 0 || len(repository.unpublishedTargets) != 2 {
+		t.Fatalf("existing output versions were not durably queued before fetching: lists=%d fetches=%d reads=%d targets=%+v", fetcher.lists, fetcher.fetches, fetcher.reads, repository.unpublishedTargets)
+	}
+	expectedKey, _ := OutputObjectKey(repository.task)
+	for index, versionID := range []string{"version-image-2", "version-image-1"} {
+		target := repository.unpublishedTargets[index]
+		if target.Kind != CleanupTargetObject || target.ID != repository.task.ID || target.ObjectKey != expectedKey || target.ObjectVersionID != versionID {
+			t.Fatalf("existing version %q was queued with the wrong target: %+v", versionID, target)
+		}
+	}
+}
+
+func TestResultWorkerRetriesWhenOutputInventoryIsUnavailable(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
+	fetcher := &resultWorkerFetcherStub{listErr: errors.New("object store unavailable")}
+	worker := newResultWorker(t, repository, fetcher)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrGenerationOutputInventoryUnknown) || result.View.Task.Status != StatusValidating || result.View.Task.LeaseOwner != "" {
+		t.Fatalf("inventory failure did not preserve a retryable validating task: result=%+v err=%v", result, err)
+	}
+	if fetcher.lists != 1 || fetcher.fetches != 0 || len(repository.unpublishedTargets) != 0 {
+		t.Fatalf("worker fetched without a complete output inventory: lists=%d fetches=%d targets=%+v", fetcher.lists, fetcher.fetches, repository.unpublishedTargets)
 	}
 }
 

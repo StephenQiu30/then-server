@@ -90,9 +90,11 @@ type FetchedResult struct {
 	Fact           OutputFact
 }
 
-// OutputVersionReader reads the exact private version returned by ResultFetcher.
-// The worker verifies the bytes independently before making the asset visible.
+// OutputVersionReader inventories versions at a task's private output key and
+// reads one exact version returned by ResultFetcher. The worker verifies the
+// bytes independently before making the asset visible.
 type OutputVersionReader interface {
+	ListOutputVersions(context.Context, string) ([]string, error)
 	ReadOutputVersion(context.Context, string, string, int64) ([]byte, error)
 }
 

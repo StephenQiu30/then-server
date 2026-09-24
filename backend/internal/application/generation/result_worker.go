@@ -14,6 +14,12 @@ var (
 	// result fetch. A queued/running task must first receive a provider success
 	// observation and enter validating.
 	ErrGenerationResultUnavailable = errors.New("generation result is not ready")
+	// ErrGenerationOutputInventoryUnknown means object storage could not provide
+	// a complete version inventory, so the worker must not create another output.
+	ErrGenerationOutputInventoryUnknown = errors.New("generation output inventory requires retry")
+	// ErrGenerationOutputCleanupPending means previously written versions were
+	// durably queued for cleanup before another fetch can safely begin.
+	ErrGenerationOutputCleanupPending = errors.New("generation output cleanup is pending")
 )
 
 // ResultWorkerRepository is the fenced persistence boundary for private
@@ -35,9 +41,7 @@ type ResultWorkerQueue interface {
 	ClaimNextResultLease(context.Context, string, time.Time, time.Duration) (TaskView, Lease, bool, error)
 }
 
-// ResultWorkerPolicy bounds the private result fetch. No provider or
-// object-store call occurs until a concrete adapter is injected by a future
-// enabled worker.
+// ResultWorkerPolicy bounds output inventory, fetch, and object reads.
 type ResultWorkerPolicy struct {
 	WorkerID     string
 	LeaseTTL     time.Duration
@@ -64,8 +68,8 @@ type ResultWorkerResult struct {
 	Outcome ResultOutcome
 }
 
-// ResultWorker fetches one validating result, verifies its immutable output
-// fact against the task, and commits the private asset through the repository.
+// ResultWorker recovers unpublished versions before fetching, verifies the
+// immutable output fact against the task, and commits the private asset.
 // It never calls Provider directly and is intentionally not started by
 // bootstrap.
 type ResultWorker struct {
@@ -155,6 +159,22 @@ func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Leas
 	}
 	fetchContext, cancel := context.WithTimeout(ctx, w.policy.FetchTimeout)
 	defer cancel()
+	versions, err := w.outputs.ListOutputVersions(fetchContext, objectKey)
+	if err != nil {
+		return w.releaseWithError(ctx, lease, view, ErrGenerationOutputInventoryUnknown, now)
+	}
+	if len(versions) > 0 {
+		for _, versionID := range versions {
+			if !validToken(versionID, 160) {
+				return w.releaseWithError(ctx, lease, view, ErrGenerationOutputInventoryUnknown, now)
+			}
+			target := CleanupTarget{Kind: CleanupTargetObject, ID: view.Task.ID, ObjectKey: objectKey, ObjectVersionID: versionID}
+			if err := w.repository.RecordUnpublishedOutput(ctx, lease, target, now().UTC()); err != nil {
+				return w.releaseWithError(ctx, lease, view, err, now)
+			}
+		}
+		return w.releaseWithError(ctx, lease, view, ErrGenerationOutputCleanupPending, now)
+	}
 	fetched, fetchErr := w.fetcher.Fetch(fetchContext, request)
 	if fetchErr != nil {
 		return w.releaseWithError(ctx, lease, view, ErrGenerationOutputFetchUnknown, now)

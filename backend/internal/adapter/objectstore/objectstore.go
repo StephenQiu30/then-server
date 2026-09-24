@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"time"
 
@@ -194,4 +195,35 @@ func (s *Store) DeleteVersion(ctx context.Context, bucket, objectKey, versionID 
 		return errors.New("object version deletion failed")
 	}
 	return nil
+}
+
+// ListOutputVersions returns immutable versions at one exact generation key.
+// Prefix neighbors and delete markers are not output data and are excluded.
+func (s *Store) ListOutputVersions(ctx context.Context, objectKey string) ([]string, error) {
+	if s == nil || s.client == nil || objectKey == "" {
+		return nil, errors.New("output version listing unavailable")
+	}
+	versions := make([]string, 0)
+	seen := make(map[string]struct{})
+	for object := range s.client.ListObjects(ctx, DerivedBucket, minio.ListObjectsOptions{Prefix: objectKey, Recursive: true, WithVersions: true}) {
+		if object.Err != nil {
+			return nil, errors.New("output version listing failed")
+		}
+		if object.Key != objectKey || object.IsDeleteMarker {
+			continue
+		}
+		if object.VersionID == "" {
+			return nil, errors.New("output version identity unavailable")
+		}
+		if _, ok := seen[object.VersionID]; ok {
+			continue
+		}
+		seen[object.VersionID] = struct{}{}
+		versions = append(versions, object.VersionID)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, errors.New("output version listing failed")
+	}
+	sort.Strings(versions)
+	return versions, nil
 }
