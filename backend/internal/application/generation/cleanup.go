@@ -234,7 +234,13 @@ func (r *CleanupRequest) Complete(at time.Time) error {
 }
 
 func (r *CleanupRequest) Fail(at time.Time, stableError string, retryAt time.Time) error {
-	if r == nil || r.Validate() != nil || r.Status != CleanupRunning || at.IsZero() || retryAt.IsZero() || !validToken(stableError, 96) || retryAt.Before(at) || at.Before(r.UpdatedAt) {
+	if r == nil || r.Validate() != nil || r.Status != CleanupRunning || at.IsZero() || at.Before(r.UpdatedAt) {
+		return ErrInvalidGenerationCleanup
+	}
+	if r.Attempts >= MaxCleanupAttempts {
+		return r.Exhaust(at)
+	}
+	if retryAt.IsZero() || !validToken(stableError, 96) || retryAt.Before(at) {
 		return ErrInvalidGenerationCleanup
 	}
 	at = at.UTC()

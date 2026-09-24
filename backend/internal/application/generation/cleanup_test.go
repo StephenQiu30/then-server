@@ -101,6 +101,25 @@ func TestCleanupRequestExhaustsAfterMaximumAttempts(t *testing.T) {
 	}
 }
 
+func TestCleanupRequestNormalizesFinalTargetFailure(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if err := task.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewCleanupRequest("cleanup-final-failure", task, CleanupScopeTask, nil, generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Status = CleanupRunning
+	request.Attempts = MaxCleanupAttempts
+	if err := request.Fail(generationTestNow.Add(2*time.Minute), "target_delete_failed", generationTestNow.Add(3*time.Minute)); err != nil {
+		t.Fatalf("final target failure was rejected: %v", err)
+	}
+	if request.Status != CleanupFailed || request.StableError != "cleanup_retry_exhausted" || request.NextAttemptAt != nil {
+		t.Fatalf("final target failure retained retry state: %+v", request)
+	}
+}
+
 func TestCleanupRequestReopensWhenLateTargetArrives(t *testing.T) {
 	task := mustTask(validCreateInput())
 	if err := task.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {
