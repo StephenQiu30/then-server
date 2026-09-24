@@ -165,7 +165,22 @@ func (r *GenerationRepository) Accept(ctx context.Context, input generationapp.C
 		if err := tx.Create(&outboxEventRecord{ID: accepted.Event.ID, EventType: accepted.Event.EventType, AggregateID: accepted.Event.AggregateID, Payload: payload, CreatedAt: accepted.Event.CreatedAt}).Error; err != nil {
 			return err
 		}
+		var persisted generationJobRecord
+		if err := tx.Where("owner_id = ? AND id = ?", input.OwnerID, accepted.Task.ID).First(&persisted).Error; err != nil {
+			return err
+		}
+		persistedTask, err := generationTaskFromRecord(persisted)
+		if err != nil {
+			return err
+		}
+		view, err := r.readTaskView(tx, persistedTask)
+		if err != nil {
+			return err
+		}
 		result = accepted
+		result.Task = view.Task
+		result.Reservation = view.Reservation
+		result.Event = accepted.Event
 		return nil
 	})
 	if err != nil {
@@ -256,7 +271,15 @@ func (r *GenerationRepository) RequestCancel(ctx context.Context, ownerID, taskI
 				return generationapp.ErrGenerationUnavailable
 			}
 		}
-		view, err = r.readTaskView(tx, task)
+		var persisted generationJobRecord
+		if err := tx.Where("owner_id = ? AND id = ?", ownerID, taskID).First(&persisted).Error; err != nil {
+			return err
+		}
+		persistedTask, err := generationTaskFromRecord(persisted)
+		if err != nil {
+			return err
+		}
+		view, err = r.readTaskView(tx, persistedTask)
 		return err
 	})
 	if err != nil {
