@@ -49,6 +49,16 @@ type OutputAsset struct {
 	PublishedAt     time.Time
 }
 
+// ValidateFor checks a persisted output against its task lineage. The task
+// state is supplied separately because output rows are immutable facts while
+// the task moves through validating and terminal states.
+func (a OutputAsset) ValidateFor(task Task) error {
+	if !task.validTaskFacts() || !validOutputAsset(task, a) {
+		return ErrInvalidGenerationOutput
+	}
+	return nil
+}
+
 // NewOutputAsset binds a validated object version to the task that produced
 // it. A task must be in validating state so the caller can commit this asset
 // and the succeeding task transition in one short database transaction.

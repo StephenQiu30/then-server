@@ -8,7 +8,7 @@ import (
 
 // Migrate keeps the development database schema aligned with the GORM records.
 func Migrate(ctx context.Context, database *gorm.DB) error {
-	return database.WithContext(ctx).AutoMigrate(
+	if err := database.WithContext(ctx).AutoMigrate(
 		&userRecord{},
 		&userProfileRecord{},
 		&wardrobeItemRecord{},
@@ -51,5 +51,22 @@ func Migrate(ctx context.Context, database *gorm.DB) error {
 		&moderationAppealRecord{},
 		&notificationRecord{},
 		&dataExportRecord{},
-	)
+		&generationJobRecord{},
+		&generationQuotaReservationRecord{},
+		&generationOutputRecord{},
+	); err != nil {
+		return err
+	}
+	// AutoMigrate does not alter an existing CHECK constraint when a new
+	// provider-neutral outbox event type is added. Keep development databases
+	// created before generation support compatible with the new event.
+	if database.Dialector.Name() == "postgres" {
+		if err := database.WithContext(ctx).Exec("ALTER TABLE outbox_events DROP CONSTRAINT IF EXISTS outbox_events_type_check").Error; err != nil {
+			return err
+		}
+		if err := database.WithContext(ctx).Exec("ALTER TABLE outbox_events ADD CONSTRAINT outbox_events_type_check CHECK (event_type IN ('media.uploaded','media.deletion_requested','community.notification_requested','generation.task_requested'))").Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

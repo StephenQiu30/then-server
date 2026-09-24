@@ -19,6 +19,7 @@ import (
 	exportapp "github.com/StephenQiu30/then-server/backend/internal/application/dataexport"
 	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
 	eventworkerapp "github.com/StephenQiu30/then-server/backend/internal/application/eventworker"
+	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 	feedbackapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitfeedback"
 	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
@@ -153,6 +154,18 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 	if err != nil {
 		return err
 	}
+	generationPolicy := generationapp.AdmissionPolicy{
+		Enabled:             cfg.Generation.Enabled,
+		ZeroCost:            cfg.Generation.Mode == config.GenerationModeLocal,
+		Currency:            cfg.Generation.Currency,
+		MaxConcurrentTasks:  cfg.Generation.MaxConcurrentTasks,
+		MaxQuotaUnits:       cfg.Generation.MaxQuotaUnits,
+		MaxBudgetMinorUnits: cfg.Generation.MaxBudgetMinorUnits,
+	}
+	generations, err := generationapp.NewService(accounts, postgres.NewGenerationRepository(pool.ORM()), generationPolicy)
+	if err != nil {
+		return err
+	}
 	var mediaHandler *httpapi.MediaHandler
 	var communityHandler *httpapi.CommunityHandler
 	var exportHandler *httpapi.DataExportHandler
@@ -179,7 +192,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 	if objects != nil {
 		accountHandler.WithAvatarObjects(objects)
 	}
-	router, err := httpapi.NewRouterWithSync(
+	router, err := httpapi.NewRouterWithGeneration(
 		startup, cfg.DocsEnabled, probes,
 		accountHandler,
 		httpapi.NewPrivacyHandler(privacy, cfg.SessionSecure),
@@ -188,7 +201,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		httpapi.NewWearEventHandler(wearEvents, cfg.SessionSecure),
 		httpapi.NewDiaryHandler(diaries, cfg.SessionSecure),
 		communityHandler, httpapi.NewFeedbackHandler(feedback, cfg.SessionSecure),
-		exportHandler, httpapi.NewSyncHandler(syncChanges, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler,
+		exportHandler, httpapi.NewSyncHandler(syncChanges, cfg.SessionSecure), httpapi.NewGenerationHandler(generations, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler,
 	)
 	if err != nil {
 		return err
