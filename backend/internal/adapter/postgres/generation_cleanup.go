@@ -16,11 +16,11 @@ type generationCleanupRequestRecord struct {
 	ID                string     `gorm:"column:id;type:uuid;primaryKey"`
 	OwnerID           string     `gorm:"column:owner_id;type:uuid;not null;index:generation_cleanup_owner_status_idx,priority:1"`
 	TaskID            string     `gorm:"column:task_id;type:uuid;not null;index:generation_cleanup_task_idx;uniqueIndex:generation_cleanup_task_scope_unique,priority:1"`
-	Scope             string     `gorm:"column:scope;type:text;not null;uniqueIndex:generation_cleanup_task_scope_unique,priority:2;check:generation_cleanup_scope_check,scope IN ('task','source','account')"`
+	Scope             string     `gorm:"column:scope;type:text;not null;uniqueIndex:generation_cleanup_task_scope_unique,priority:2;check:generation_cleanup_scope_check,scope IN ('task','source','account','orphan_output')"`
 	SourceMediaID     *string    `gorm:"column:source_media_id;type:uuid;index:generation_cleanup_source_media_idx"`
 	AccountDeletionID *string    `gorm:"column:account_deletion_id;type:uuid;index:generation_cleanup_account_deletion_idx"`
 	Status            string     `gorm:"column:status;type:text;not null;index:generation_cleanup_owner_status_idx,priority:2;check:generation_cleanup_status_check,status IN ('pending','running','complete','failed')"`
-	AccessRevokedAt   time.Time  `gorm:"column:access_revoked_at;type:timestamptz;not null"`
+	AccessRevokedAt   *time.Time `gorm:"column:access_revoked_at;type:timestamptz"`
 	CompletedAt       *time.Time `gorm:"column:completed_at;type:timestamptz"`
 	StableError       string     `gorm:"column:stable_error;type:text;not null;default:''"`
 	Attempts          int        `gorm:"column:attempts;not null;default:0;check:generation_cleanup_attempts_check,attempts >= 0 AND attempts <= 100"`
@@ -31,6 +31,117 @@ type generationCleanupRequestRecord struct {
 }
 
 func (generationCleanupRequestRecord) TableName() string { return "generation_cleanup_requests" }
+
+// RecordUnpublishedOutput durably queues one exact private object version when
+// result verification or publication fails. The task lease fences the record;
+// an already-published version is left untouched to handle ambiguous commits.
+func (r *GenerationRepository) RecordUnpublishedOutput(ctx context.Context, lease generationapp.Lease, target generationapp.CleanupTarget, at time.Time) error {
+	if r == nil || r.database == nil || at.IsZero() {
+		return generationapp.ErrGenerationUnavailable
+	}
+	if _, err := parseGenerationLeaseTaskID(lease); err != nil {
+		return err
+	}
+	if err := target.Validate(); err != nil || target.Kind != generationapp.CleanupTargetObject || target.ObjectKey == "" {
+		return generationapp.ErrInvalidGenerationCleanup
+	}
+	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var taskRecord generationJobRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", lease.TaskID).First(&taskRecord).Error; err != nil {
+			return generationLookupError(err)
+		}
+		task, err := generationTaskFromRecord(taskRecord)
+		if err != nil {
+			return err
+		}
+		if err := validateGenerationWorkerProof(task, lease, at); err != nil {
+			return err
+		}
+		expectedKey, err := generationapp.OutputObjectKey(task)
+		if err != nil || target.ObjectKey != expectedKey {
+			return generationapp.ErrInvalidGenerationCleanup
+		}
+		var published generationOutputRecord
+		if err := tx.Where("task_id = ? AND object_key = ? AND object_version_id = ?", task.ID, target.ObjectKey, target.ObjectVersionID).First(&published).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		mutationAt := at.UTC()
+		if mutationAt.Before(task.UpdatedAt) {
+			mutationAt = task.UpdatedAt
+		}
+		if task.AccessRevokedAt == nil {
+			return recordOrphanGenerationOutputInTx(tx, task, target, mutationAt)
+		}
+		return addTargetToRevokedGenerationCleanupInTx(tx, task, target, mutationAt)
+	})
+	if err != nil {
+		return generationGenerationError(err)
+	}
+	return nil
+}
+
+func recordOrphanGenerationOutputInTx(tx *gorm.DB, task generationapp.Task, target generationapp.CleanupTarget, at time.Time) error {
+	var record generationCleanupRequestRecord
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id = ? AND scope = ?", task.ID, string(generationapp.CleanupScopeOrphanOutput)).First(&record).Error
+	if err == nil {
+		request, err := generationCleanupFromRecord(record)
+		if err != nil {
+			return err
+		}
+		if err := request.AddTarget(target, at); err != nil {
+			return err
+		}
+		return updateGenerationCleanup(tx, request, record.Status, record.Attempts, record.UpdatedAt)
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	request, err := generationapp.NewOrphanOutputCleanupRequest(uuid.NewString(), task, target, at)
+	if err != nil {
+		return err
+	}
+	record, err = generationCleanupRecordFromDomain(request)
+	if err != nil {
+		return err
+	}
+	return tx.Create(&record).Error
+}
+
+func addTargetToRevokedGenerationCleanupInTx(tx *gorm.DB, task generationapp.Task, target generationapp.CleanupTarget, at time.Time) error {
+	var records []generationCleanupRequestRecord
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id = ? AND scope IN ?", task.ID, []string{string(generationapp.CleanupScopeTask), string(generationapp.CleanupScopeSource), string(generationapp.CleanupScopeAccount)}).Order("created_at ASC").Find(&records).Error; err != nil {
+		return err
+	}
+	if len(records) == 0 {
+		if _, err := ensureGenerationCleanupInTx(tx, task, generationapp.CleanupScopeTask, "", "", at); err != nil {
+			return err
+		}
+		return addTargetToRevokedGenerationCleanupInTx(tx, task, target, at)
+	}
+	for _, record := range records {
+		request, err := generationCleanupFromRecord(record)
+		if err != nil {
+			return err
+		}
+		mutationAt := at
+		if mutationAt.Before(request.UpdatedAt) {
+			mutationAt = request.UpdatedAt
+		}
+		previousUpdatedAt := request.UpdatedAt
+		if err := request.AddTarget(target, mutationAt); err != nil {
+			return err
+		}
+		if request.UpdatedAt.Equal(previousUpdatedAt) {
+			continue
+		}
+		if err := updateGenerationCleanup(tx, request, record.Status, record.Attempts, record.UpdatedAt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // RequestTaskCleanup revokes owner-facing visibility and records every known
 // object/provider target in one transaction. It intentionally does not call a
@@ -80,7 +191,16 @@ func ensureGenerationCleanupInTx(tx *gorm.DB, task generationapp.Task, scope gen
 	var existing generationCleanupRequestRecord
 	err := tx.Where("task_id = ? AND scope = ?", task.ID, string(scope)).First(&existing).Error
 	if err == nil {
-		return generationCleanupFromRecord(existing)
+		request, err := generationCleanupFromRecord(existing)
+		if err != nil {
+			return generationapp.CleanupRequest{}, err
+		}
+		if scope == generationapp.CleanupScopeAccount && accountDeletionID != "" {
+			if err := attachOrphanGenerationCleanupToAccountInTx(tx, task.ID, accountDeletionID, at); err != nil {
+				return generationapp.CleanupRequest{}, err
+			}
+		}
+		return request, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return generationapp.CleanupRequest{}, err
@@ -125,7 +245,39 @@ func ensureGenerationCleanupInTx(tx *gorm.DB, task generationapp.Task, scope gen
 	if err := tx.Create(&record).Error; err != nil {
 		return generationapp.CleanupRequest{}, err
 	}
+	if scope == generationapp.CleanupScopeAccount && accountDeletionID != "" {
+		if err := attachOrphanGenerationCleanupToAccountInTx(tx, task.ID, accountDeletionID, mutationAt); err != nil {
+			return generationapp.CleanupRequest{}, err
+		}
+	}
 	return request, nil
+}
+
+func attachOrphanGenerationCleanupToAccountInTx(tx *gorm.DB, taskID, accountDeletionID string, at time.Time) error {
+	var records []generationCleanupRequestRecord
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id = ? AND scope = ?", taskID, string(generationapp.CleanupScopeOrphanOutput)).Find(&records).Error; err != nil {
+		return err
+	}
+	for _, record := range records {
+		if record.AccountDeletionID != nil && *record.AccountDeletionID == accountDeletionID {
+			continue
+		}
+		mutationAt := at.UTC()
+		if mutationAt.Before(record.UpdatedAt) {
+			mutationAt = record.UpdatedAt
+		}
+		updated := tx.Model(&generationCleanupRequestRecord{}).Where("id = ? AND status = ? AND attempts = ? AND updated_at = ?", record.ID, record.Status, record.Attempts, record.UpdatedAt).Updates(map[string]any{
+			"account_deletion_id": accountDeletionID,
+			"updated_at":          mutationAt,
+		})
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return generationapp.ErrGenerationUnavailable
+		}
+	}
+	return nil
 }
 
 func generationCleanupTargets(database *gorm.DB, task generationapp.Task) ([]generationapp.CleanupTarget, error) {
@@ -472,8 +624,10 @@ func (r *GenerationRepository) CompleteTaskCleanup(ctx context.Context, claimed 
 		if err := updateGenerationCleanup(tx, loaded, record.Status, record.Attempts, record.UpdatedAt); err != nil {
 			return err
 		}
-		if err := tx.Where("task_id = ?", loaded.TaskID).Delete(&generationOutputRecord{}).Error; err != nil {
-			return err
+		if loaded.Scope != generationapp.CleanupScopeOrphanOutput {
+			if err := tx.Where("task_id = ?", loaded.TaskID).Delete(&generationOutputRecord{}).Error; err != nil {
+				return err
+			}
 		}
 		if loaded.AccountDeletionID != "" {
 			if err := finalizeAccountDeletionIfReady(ctx, tx, loaded.OwnerID, at); err != nil {

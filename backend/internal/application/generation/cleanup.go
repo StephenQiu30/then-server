@@ -21,9 +21,10 @@ const MaxCleanupAttempts = 100
 type CleanupScope string
 
 const (
-	CleanupScopeTask    CleanupScope = "task"
-	CleanupScopeSource  CleanupScope = "source"
-	CleanupScopeAccount CleanupScope = "account"
+	CleanupScopeTask         CleanupScope = "task"
+	CleanupScopeSource       CleanupScope = "source"
+	CleanupScopeAccount      CleanupScope = "account"
+	CleanupScopeOrphanOutput CleanupScope = "orphan_output"
 )
 
 type CleanupStatus string
@@ -107,7 +108,7 @@ type CleanupRequest struct {
 	SourceMediaID     string
 	AccountDeletionID string
 	Status            CleanupStatus
-	AccessRevokedAt   time.Time
+	AccessRevokedAt   *time.Time
 	CompletedAt       *time.Time
 	StableError       string
 	Attempts          int
@@ -118,7 +119,7 @@ type CleanupRequest struct {
 }
 
 func NewCleanupRequest(id string, task Task, scope CleanupScope, targets []CleanupTarget, at time.Time) (CleanupRequest, error) {
-	if err := task.Validate(); err != nil || !validID(id) || !validID(task.OwnerID) || !validID(task.ID) || !validCleanupScope(scope) || task.AccessRevokedAt == nil || at.IsZero() {
+	if err := task.Validate(); err != nil || !validID(id) || !validID(task.OwnerID) || !validID(task.ID) || !validCleanupScope(scope) || scope == CleanupScopeOrphanOutput || task.AccessRevokedAt == nil || at.IsZero() {
 		return CleanupRequest{}, ErrInvalidGenerationCleanup
 	}
 	at = at.UTC()
@@ -128,7 +129,7 @@ func NewCleanupRequest(id string, task Task, scope CleanupScope, targets []Clean
 		TaskID:          task.ID,
 		Scope:           scope,
 		Status:          CleanupPending,
-		AccessRevokedAt: task.AccessRevokedAt.UTC(),
+		AccessRevokedAt: cloneTime(task.AccessRevokedAt),
 		Targets:         cloneCleanupTargets(targets),
 		CreatedAt:       at,
 		UpdatedAt:       at,
@@ -139,8 +140,38 @@ func NewCleanupRequest(id string, task Task, scope CleanupScope, targets []Clean
 	return request, nil
 }
 
+// NewOrphanOutputCleanupRequest records an exact, unpublished output version.
+// Unlike owner-requested cleanup, it does not revoke the task or its visibility.
+func NewOrphanOutputCleanupRequest(id string, task Task, target CleanupTarget, at time.Time) (CleanupRequest, error) {
+	if err := task.Validate(); err != nil || task.AccessRevokedAt != nil || !validID(id) || !validID(task.OwnerID) || !validID(task.ID) || target.Kind != CleanupTargetObject || target.ObjectKey == "" || at.IsZero() {
+		return CleanupRequest{}, ErrInvalidGenerationCleanup
+	}
+	at = at.UTC()
+	request := CleanupRequest{
+		ID:        id,
+		OwnerID:   task.OwnerID,
+		TaskID:    task.ID,
+		Scope:     CleanupScopeOrphanOutput,
+		Status:    CleanupPending,
+		Targets:   []CleanupTarget{target},
+		CreatedAt: at,
+		UpdatedAt: at,
+	}
+	if err := request.Validate(); err != nil {
+		return CleanupRequest{}, err
+	}
+	return request, nil
+}
+
 func (r CleanupRequest) Validate() error {
-	if !validID(r.ID) || !validID(r.OwnerID) || !validID(r.TaskID) || !validCleanupScope(r.Scope) || (r.SourceMediaID != "" && !validID(r.SourceMediaID)) || (r.AccountDeletionID != "" && !validID(r.AccountDeletionID)) || !validCleanupStatus(r.Status) || r.AccessRevokedAt.IsZero() || r.CreatedAt.IsZero() || r.UpdatedAt.IsZero() || r.UpdatedAt.Before(r.CreatedAt) || r.AccessRevokedAt.After(r.UpdatedAt) || r.Attempts < 0 || r.Attempts > MaxCleanupAttempts || !validToken(r.StableError, 96) && r.StableError != "" {
+	if !validID(r.ID) || !validID(r.OwnerID) || !validID(r.TaskID) || !validCleanupScope(r.Scope) || (r.SourceMediaID != "" && !validID(r.SourceMediaID)) || (r.AccountDeletionID != "" && !validID(r.AccountDeletionID)) || !validCleanupStatus(r.Status) || r.CreatedAt.IsZero() || r.UpdatedAt.IsZero() || r.UpdatedAt.Before(r.CreatedAt) || r.Attempts < 0 || r.Attempts > MaxCleanupAttempts || !validToken(r.StableError, 96) && r.StableError != "" {
+		return ErrInvalidGenerationCleanup
+	}
+	if r.Scope == CleanupScopeOrphanOutput {
+		if r.AccessRevokedAt != nil || r.SourceMediaID != "" || len(r.Targets) == 0 {
+			return ErrInvalidGenerationCleanup
+		}
+	} else if r.AccessRevokedAt == nil || r.AccessRevokedAt.IsZero() || r.AccessRevokedAt.After(r.UpdatedAt) {
 		return ErrInvalidGenerationCleanup
 	}
 	if r.CompletedAt != nil {
@@ -163,6 +194,9 @@ func (r CleanupRequest) Validate() error {
 	for _, target := range r.Targets {
 		if err := target.validateForTask(r.OwnerID, r.TaskID); err != nil {
 			return err
+		}
+		if r.Scope == CleanupScopeOrphanOutput && (target.Kind != CleanupTargetObject || target.ObjectKey == "") {
+			return ErrInvalidGenerationCleanup
 		}
 		key := cleanupTargetKey(target)
 		if _, exists := seen[key]; exists {
@@ -292,7 +326,7 @@ func (r *CleanupRequest) AddTarget(target CleanupTarget, at time.Time) error {
 }
 
 func validCleanupScope(scope CleanupScope) bool {
-	return scope == CleanupScopeTask || scope == CleanupScopeSource || scope == CleanupScopeAccount
+	return scope == CleanupScopeTask || scope == CleanupScopeSource || scope == CleanupScopeAccount || scope == CleanupScopeOrphanOutput
 }
 
 func validCleanupStatus(status CleanupStatus) bool {

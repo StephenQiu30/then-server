@@ -24,6 +24,14 @@ type resultWorkerFetcherStub struct {
 	readLimit   int64
 }
 
+func (r *observationWorkerRepositoryStub) RecordUnpublishedOutput(_ context.Context, lease Lease, target CleanupTarget, at time.Time) error {
+	if err := r.task.ValidateLease(lease, at); err != nil {
+		return err
+	}
+	r.unpublishedTargets = append(r.unpublishedTargets, target)
+	return nil
+}
+
 func (f *resultWorkerFetcherStub) ReadOutputVersion(_ context.Context, objectKey, versionID string, maxBytes int64) ([]byte, error) {
 	f.reads++
 	f.readKey = objectKey
@@ -184,6 +192,25 @@ func TestResultWorkerKeepsValidatingTaskWhenOutputReadFails(t *testing.T) {
 	if !errors.Is(err, ErrGenerationOutputFetchUnknown) || result.View.Task.Status != StatusValidating || result.View.Task.LeaseOwner != "" {
 		t.Fatalf("read failure changed task or did not remain retryable: result=%+v err=%v", result, err)
 	}
+	if len(repository.unpublishedTargets) != 0 {
+		t.Fatalf("read failure queued an output whose validity is unknown: %+v", repository.unpublishedTargets)
+	}
+}
+
+func TestResultWorkerQueuesInvalidOutputVersionForCleanup(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
+	claimedBytes := validGenerationJPEG(t)
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task, claimedBytes), outputBytes: []byte("invalid jpeg")}
+	worker := newResultWorker(t, repository, fetcher)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrInvalidGenerationOutput) || result.View.Task.Status != StatusValidating || result.View.Task.LeaseOwner != "" {
+		t.Fatalf("invalid output was not rejected with its task retryable: result=%+v err=%v", result, err)
+	}
+	expectedKey, _ := OutputObjectKey(repository.task)
+	if len(repository.unpublishedTargets) != 1 || repository.unpublishedTargets[0].Kind != CleanupTargetObject || repository.unpublishedTargets[0].ID != repository.task.ID || repository.unpublishedTargets[0].ObjectKey != expectedKey || repository.unpublishedTargets[0].ObjectVersionID != "version-image-1" {
+		t.Fatalf("invalid output version was not recorded for exact cleanup: %+v", repository.unpublishedTargets)
+	}
 }
 
 func TestResultWorkerRejectsBytesThatDoNotMatchFetchedFact(t *testing.T) {
@@ -227,6 +254,9 @@ func TestResultWorkerRejectsWrongLineageOrFact(t *testing.T) {
 			}
 			if result.View.Task.Status != StatusValidating || result.View.Task.ResultAssetID != "" || result.View.Task.LeaseOwner != "" {
 				t.Fatalf("invalid result changed task or retained lease: %+v", result.View.Task)
+			}
+			if test.name == "wrong output object key" && len(repository.unpublishedTargets) != 0 {
+				t.Fatalf("foreign output key was queued for deletion: %+v", repository.unpublishedTargets)
 			}
 		})
 	}

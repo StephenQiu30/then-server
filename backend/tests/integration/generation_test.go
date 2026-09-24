@@ -156,7 +156,7 @@ func TestGenerationCleanupWorkerDeletesExactMinIOVersionAndBlocksProviderCalls(t
 			TaskID:          taskID,
 			Scope:           generationapp.CleanupScopeTask,
 			Status:          generationapp.CleanupPending,
-			AccessRevokedAt: at,
+			AccessRevokedAt: &at,
 			Targets: []generationapp.CleanupTarget{
 				{Kind: generationapp.CleanupTargetObject, ID: "00000000-0000-4000-8000-000000000914", ObjectKey: key, ObjectVersionID: firstVersion},
 				{Kind: generationapp.CleanupTargetProvider, ID: "fixture-external-task"},
@@ -678,6 +678,32 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil || !found || queuedClaim.Task.ID != created.View.Task.ID || queuedClaim.Task.Status != generationapp.StatusRunning || queuedLease.FencingToken != 1 || queuedLease.Attempt != 1 {
 		t.Fatalf("submission queue claim was incorrect: found=%v task=%+v lease=%+v err=%v", found, queuedClaim.Task, queuedLease, err)
 	}
+	orphanOutputKey, err := generationapp.OutputObjectKey(queuedClaim.Task)
+	if err != nil {
+		t.Fatalf("derive synthetic orphan output key: %v", err)
+	}
+	orphanBytes := []byte("synthetic orphan output")
+	orphanVersionID, err := objects.PutDerived(ctx, orphanOutputKey, bytes.NewReader(orphanBytes), int64(len(orphanBytes)))
+	if err != nil {
+		t.Fatalf("write synthetic orphan output version: %v", err)
+	}
+	if err := workerRepository.RecordUnpublishedOutput(ctx, queuedLease, generationapp.CleanupTarget{
+		Kind: generationapp.CleanupTargetObject, ID: queuedClaim.Task.ID, ObjectKey: orphanOutputKey, ObjectVersionID: orphanVersionID,
+	}, queuedClaimAt); err != nil {
+		t.Fatalf("record synthetic orphan output: %v", err)
+	}
+	var orphanCleanupID string
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("task_id = ? AND scope = ?", queuedClaim.Task.ID, string(generationapp.CleanupScopeOrphanOutput)).Pluck("id", &orphanCleanupID).Error; err != nil || orphanCleanupID == "" {
+		t.Fatalf("find synthetic orphan cleanup: id=%q err=%v", orphanCleanupID, err)
+	}
+	claimedOrphan, _, err := workerRepository.BeginTaskCleanup(ctx, orphanCleanupID, queuedClaimAt.Add(time.Second))
+	if err != nil {
+		t.Fatalf("claim synthetic orphan cleanup: %v", err)
+	}
+	orphanFailedAt := queuedClaimAt.Add(2 * time.Second)
+	if _, err := workerRepository.FailTaskCleanup(ctx, claimedOrphan, orphanFailedAt, "target_delete_failed", orphanFailedAt.Add(24*time.Hour)); err != nil {
+		t.Fatalf("delay synthetic orphan cleanup: %v", err)
+	}
 	if _, err := workerRepository.ReleaseLease(ctx, queuedLease, queuedClaimAt); err != nil {
 		t.Fatalf("release queued submission claim: %v", err)
 	}
@@ -809,16 +835,60 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("release accepted observation lease before result lease: %v", err)
 	}
 	outputAt := workflowAt.Add(7 * time.Minute)
-	resultFetcher := &generationFixtureResultFetcher{objects: objects, data: integrationGenerationJPEG(t)}
+	resultFetcher := &generationFixtureResultFetcher{objects: objects, data: []byte("invalid jpeg")}
 	resultWorker, err := generationapp.NewResultWorker(workerRepository, resultFetcher, objects, generationapp.ResultWorkerPolicy{
 		WorkerID: "worker-result", LeaseTTL: 10 * time.Minute, FetchTimeout: time.Minute,
 	})
 	if err != nil {
 		t.Fatalf("create provider-neutral result worker: %v", err)
 	}
+	failedResult, err := resultWorker.RunOnceAt(ctx, paidCreated.View.Task.ID, outputAt)
+	if !errors.Is(err, generationapp.ErrInvalidGenerationOutput) || failedResult.View.Task.Status != generationapp.StatusValidating || failedResult.View.Task.AccessRevokedAt != nil || failedResult.View.Reservation == nil || failedResult.View.Reservation.State != generationapp.ReservationReserved {
+		t.Fatalf("invalid generation output did not remain retryable with reserved quota: view=%+v err=%v", failedResult.View, err)
+	}
+	var orphanRecord struct {
+		ID              string
+		Status          string
+		AccessRevokedAt *time.Time
+		Targets         []byte
+	}
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Select("id, status, access_revoked_at, targets").Where("task_id = ? AND scope = ?", paidCreated.View.Task.ID, string(generationapp.CleanupScopeOrphanOutput)).Scan(&orphanRecord).Error; err != nil {
+		t.Fatalf("load durable orphan output cleanup: %v", err)
+	}
+	var orphanTargets []generationapp.CleanupTarget
+	if err := json.Unmarshal(orphanRecord.Targets, &orphanTargets); err != nil {
+		t.Fatalf("decode orphan cleanup targets: %v", err)
+	}
+	expectedOutputKey, _ := generationapp.OutputObjectKey(paidCreated.View.Task)
+	if orphanRecord.ID == "" || orphanRecord.Status != string(generationapp.CleanupPending) || orphanRecord.AccessRevokedAt != nil || len(orphanTargets) != 1 || orphanTargets[0].ObjectKey != expectedOutputKey || orphanTargets[0].ObjectVersionID != resultFetcher.version {
+		t.Fatalf("orphan output cleanup did not retain its exact object version: record=%+v targets=%+v", orphanRecord, orphanTargets)
+	}
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("id = ?", orphanRecord.ID).Update("access_revoked_at", outputAt).Error; err == nil {
+		t.Fatal("PostgreSQL accepted an orphan cleanup record with access marked revoked")
+	}
+	claimedOrphan, claimedTargets, err := workerRepository.BeginTaskCleanup(ctx, orphanRecord.ID, outputAt.Add(time.Second))
+	if err != nil || claimedOrphan.Scope != generationapp.CleanupScopeOrphanOutput || len(claimedTargets) != 1 {
+		t.Fatalf("claim exact orphan output cleanup: request=%+v targets=%+v err=%v", claimedOrphan, claimedTargets, err)
+	}
+	orphanCleanupExecutor, err := objectstore.NewGenerationCleanupExecutor(objects)
+	if err != nil {
+		t.Fatalf("construct generation cleanup executor for orphan: %v", err)
+	}
+	if err := orphanCleanupExecutor.DeleteObject(ctx, claimedTargets[0]); err != nil {
+		t.Fatalf("delete exact orphan output object version: %v", err)
+	}
+	completedOrphan, err := workerRepository.CompleteTaskCleanup(ctx, claimedOrphan, outputAt.Add(2*time.Second))
+	if err != nil || completedOrphan.Status != generationapp.CleanupComplete {
+		t.Fatalf("complete orphan output cleanup: request=%+v err=%v", completedOrphan, err)
+	}
+	if _, err := objects.OpenDerivedVersion(ctx, expectedOutputKey, resultFetcher.version); err == nil {
+		t.Fatal("orphan cleanup left the exact unpublished MinIO version in place")
+	}
+	outputAt = outputAt.Add(3 * time.Minute)
+	resultFetcher.data = integrationGenerationJPEG(t)
 	result, err := resultWorker.RunOnceAt(ctx, paidCreated.View.Task.ID, outputAt)
 	if err != nil {
-		t.Fatalf("run provider-neutral result worker: %v", err)
+		t.Fatalf("run provider-neutral result worker after orphan cleanup: %v", err)
 	}
 	published := result.View
 	outputObjectKey := published.Asset.ObjectKey
@@ -1181,17 +1251,31 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin account deletion with generation cleanup: %v", err)
 	}
-	if accountDeletion.Status != accountapp.AccountDeletionPending || accountDeletion.GenerationCount != 1 || accountDeletion.RemainingGenerationCount != 1 || accountDeletion.Phase != "generation_cleanup" {
+	if accountDeletion.Status != accountapp.AccountDeletionPending || accountDeletion.GenerationCount != 2 || accountDeletion.RemainingGenerationCount != 2 || accountDeletion.Phase != "generation_cleanup" {
 		t.Fatalf("account deletion did not wait for generation cleanup: %+v", accountDeletion)
 	}
-	var accountCleanupID string
-	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("account_deletion_id = ?", accountDeletion.ID).Pluck("id", &accountCleanupID).Error; err != nil {
+	var accountCleanupIDs []string
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("account_deletion_id = ?", accountDeletion.ID).Pluck("id", &accountCleanupIDs).Error; err != nil || len(accountCleanupIDs) != 2 {
 		t.Fatalf("find account generation cleanup request: %v", err)
 	}
 	accountCleanupAt := accountDeletion.RequestedAt.Add(time.Minute)
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("id = ?", orphanCleanupID).Update("next_attempt_at", accountCleanupAt.Add(24*time.Hour)).Error; err != nil {
+		t.Fatalf("hold orphan cleanup while account cleanup converges: %v", err)
+	}
 	found, err = cleanupWorker.RunOnceAt(ctx, accountCleanupAt)
 	if err != nil || !found {
 		t.Fatalf("run account generation cleanup worker: found=%v err=%v", found, err)
+	}
+	pendingAccountDeletion, err := accounts.GetDeletionReceipt(ctx, accountDeletion.ID, accountDeletion.ReceiptToken)
+	if err != nil || pendingAccountDeletion.Status != accountapp.AccountDeletionPending || pendingAccountDeletion.RemainingGenerationCount != 1 {
+		t.Fatalf("account deletion did not wait for its orphan output cleanup: receipt=%+v err=%v", pendingAccountDeletion, err)
+	}
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("id = ?", orphanCleanupID).Update("next_attempt_at", accountCleanupAt.Add(time.Second)).Error; err != nil {
+		t.Fatalf("make linked orphan cleanup eligible: %v", err)
+	}
+	found, err = cleanupWorker.RunOnceAt(ctx, accountCleanupAt.Add(2*time.Minute))
+	if err != nil || !found {
+		t.Fatalf("run linked orphan output cleanup worker: found=%v err=%v", found, err)
 	}
 	completedAccountDeletion, err := accounts.GetDeletionReceipt(ctx, accountDeletion.ID, accountDeletion.ReceiptToken)
 	if err != nil {

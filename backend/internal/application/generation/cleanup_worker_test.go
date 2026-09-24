@@ -58,7 +58,7 @@ func (s *cleanupWorkerExecutorStub) DeleteProviderTask(_ context.Context, target
 }
 
 func cleanupWorkerRequest(at time.Time) CleanupRequest {
-	return CleanupRequest{ID: "00000000-0000-4000-8000-000000000001", OwnerID: "00000000-0000-4000-8000-000000000002", TaskID: "00000000-0000-4000-8000-000000000003", Scope: CleanupScopeTask, Status: CleanupRunning, AccessRevokedAt: at, Attempts: 2, CreatedAt: at, UpdatedAt: at}
+	return CleanupRequest{ID: "00000000-0000-4000-8000-000000000001", OwnerID: "00000000-0000-4000-8000-000000000002", TaskID: "00000000-0000-4000-8000-000000000003", Scope: CleanupScopeTask, Status: CleanupRunning, AccessRevokedAt: timePtr(at), Attempts: 2, CreatedAt: at, UpdatedAt: at}
 }
 
 func TestCleanupWorkerExecutesAllTargetsBeforeCompletion(t *testing.T) {

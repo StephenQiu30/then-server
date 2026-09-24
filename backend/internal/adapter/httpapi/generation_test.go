@@ -45,7 +45,7 @@ func (s *generationHTTPStub) Cancel(context.Context, string, string) (generation
 }
 
 func (s *generationHTTPStub) Delete(context.Context, string, string) (generationapp.DeleteResult, error) {
-	return generationapp.DeleteResult{View: s.view, Cleanup: generationapp.CleanupRequest{ID: "66666666-6666-4666-8666-666666666666", Status: generationapp.CleanupPending, AccessRevokedAt: s.view.Task.CreatedAt, CreatedAt: s.view.Task.CreatedAt, UpdatedAt: s.view.Task.CreatedAt}}, s.err
+	return generationapp.DeleteResult{View: s.view, Cleanup: generationapp.CleanupRequest{ID: "66666666-6666-4666-8666-666666666666", Status: generationapp.CleanupPending, AccessRevokedAt: &s.view.Task.CreatedAt, CreatedAt: s.view.Task.CreatedAt, UpdatedAt: s.view.Task.CreatedAt}}, s.err
 }
 
 func (s *generationHTTPStub) ListUnknown(_ context.Context, token string, _ int, _ *string) (generationapp.UnknownSubmissionPage, error) {
@@ -130,7 +130,7 @@ func TestGenerationHTTPContractUsesSessionAndMapsTaskOperations(t *testing.T) {
 		t.Fatalf("create response leaked private fields or omitted task id: %s", response.Body.String())
 	}
 	cleanupAt := service.view.Task.CreatedAt.Add(time.Minute)
-	service.view.Cleanup = &generationapp.CleanupRequest{ID: "66666666-6666-4666-8666-666666666666", Status: generationapp.CleanupPending, AccessRevokedAt: cleanupAt, CreatedAt: cleanupAt, UpdatedAt: cleanupAt}
+	service.view.Cleanup = &generationapp.CleanupRequest{ID: "66666666-6666-4666-8666-666666666666", Status: generationapp.CleanupPending, AccessRevokedAt: &cleanupAt, CreatedAt: cleanupAt, UpdatedAt: cleanupAt}
 
 	for _, operation := range []struct {
 		name   string
