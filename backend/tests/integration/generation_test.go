@@ -317,6 +317,33 @@ func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database
 		t.Fatalf("owner HTTP list mismatch: page=%+v err=%v body=%s", page, err, listResponse.Body.String())
 	}
 
+	changedPolicyWithSameKey := strings.ReplaceAll(body, "local-image-v1", "local-image-v2")
+	changedPolicyWithSameKey = strings.ReplaceAll(changedPolicyWithSameKey, "00000000-0000-4000-8000-000000000904", "00000000-0000-4000-8000-000000000905")
+	policyConflictResponse := httptest.NewRecorder()
+	router.ServeHTTP(policyConflictResponse, request(http.MethodPost, "/generation-jobs", ownerToken, changedPolicyWithSameKey))
+	if policyConflictResponse.Code != http.StatusConflict {
+		t.Fatalf("same idempotency key with a changed consent policy status=%d body=%s", policyConflictResponse.Code, policyConflictResponse.Body.String())
+	}
+
+	changedPolicyWithNewKey := strings.ReplaceAll(changedPolicyWithSameKey, "generation-http-request", "generation-http-policy-v2")
+	policyChangedResponse := httptest.NewRecorder()
+	router.ServeHTTP(policyChangedResponse, request(http.MethodPost, "/generation-jobs", ownerToken, changedPolicyWithNewKey))
+	if policyChangedResponse.Code != http.StatusAccepted {
+		t.Fatalf("new consent policy request status=%d body=%s", policyChangedResponse.Code, policyChangedResponse.Body.String())
+	}
+	policyChanged := decodeJob(policyChangedResponse)
+	if policyChanged.ID == created.ID || policyChanged.Reused || policyChanged.Match != generationapp.RequestMatchNone {
+		t.Fatalf("changed consent policy reused the previous generation task: created=%+v changed=%+v", created, policyChanged)
+	}
+	var persistedPolicy struct{ Consent []byte }
+	if err := database.WithContext(ctx).Table("generation_jobs").Select("consent").Where("id = ?", policyChanged.ID).Take(&persistedPolicy).Error; err != nil {
+		t.Fatalf("read task accepted under changed consent policy: %v", err)
+	}
+	var acceptedPolicy generationapp.ConsentReceipt
+	if err := json.Unmarshal(persistedPolicy.Consent, &acceptedPolicy); err != nil || acceptedPolicy.PolicyVersion != "local-image-v2" {
+		t.Fatalf("new task did not persist the confirmed consent policy: receipt=%+v err=%v", acceptedPolicy, err)
+	}
+
 	cancelResponse := httptest.NewRecorder()
 	router.ServeHTTP(cancelResponse, request(http.MethodPost, "/generation-jobs/"+created.ID+"/cancel", ownerToken, ""))
 	if cancelResponse.Code != http.StatusAccepted {

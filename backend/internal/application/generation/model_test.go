@@ -677,6 +677,17 @@ func TestClassifyRequestSeparatesReplayConflictAndContentDedupe(t *testing.T) {
 	if err != nil || match != RequestMatchContentDedupe {
 		t.Fatalf("new key with same content classified as %q, error=%v", match, err)
 	}
+	policyChanged := validCreateInput()
+	policyChanged.Consent.PolicyVersion = "generation-v2"
+	match, err = ClassifyRequest(existing, policyChanged)
+	if err != nil || match != RequestMatchIdempotencyConflict {
+		t.Fatalf("same idempotency key with a changed consent policy classified as %q, error=%v", match, err)
+	}
+	policyChanged.IdempotencyKey = "request-3"
+	match, err = ClassifyRequest(existing, policyChanged)
+	if err != nil || match != RequestMatchNone {
+		t.Fatalf("new key with a changed consent policy reused an old task as %q, error=%v", match, err)
+	}
 	otherOwner := validCreateInput()
 	otherOwner.OwnerID = "owner-2"
 	match, err = ClassifyRequest(existing, otherOwner)
