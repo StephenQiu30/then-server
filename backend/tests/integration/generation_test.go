@@ -319,6 +319,17 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		ImageSHA256:  asset.SHA256,
 	}
 	modelInput.Consent = generationapp.ConsentReceipt{ID: "00000000-0000-4000-8000-000000000402", Purpose: generationapp.PurposeModel, PolicyVersion: "local-model-v1", AcceptedAt: acceptedAt}
+	if _, err := paidGenerations.Create(ctx, first.Token, modelInput); !errors.Is(err, generationapp.ErrGenerationSourceUnavailable) {
+		t.Fatalf("cross-owner model source was accepted with error %v", err)
+	}
+	invalidSource := modelInput
+	invalidSource.IdempotencyKey = "generation-model-hash-mismatch"
+	invalidSource.Inputs.References = append([]generationapp.InputReference(nil), modelInput.Inputs.References...)
+	invalidSource.Inputs.ImageSHA256 = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	invalidSource.Inputs.References[0].SHA256 = invalidSource.Inputs.ImageSHA256
+	if _, err := paidGenerations.Create(ctx, second.Token, invalidSource); !errors.Is(err, generationapp.ErrGenerationSourceUnavailable) {
+		t.Fatalf("model source hash mismatch was accepted with error %v", err)
+	}
 	modelCreated, err := paidGenerations.Create(ctx, second.Token, modelInput)
 	if err != nil {
 		t.Fatalf("accept dependent model task: %v", err)
@@ -335,6 +346,11 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 	if dependentModel.Cleanup == nil || dependentModel.Cleanup.Scope != generationapp.CleanupScopeTask || dependentModel.Cleanup.Status != generationapp.CleanupPending || dependentModel.Task.CancelRequestedAt == nil {
 		t.Fatalf("source cleanup did not cascade to dependent model: %+v", dependentModel)
+	}
+	revokedModelInput := modelInput
+	revokedModelInput.IdempotencyKey = "generation-model-after-source-revocation"
+	if _, err := paidGenerations.Create(ctx, second.Token, revokedModelInput); !errors.Is(err, generationapp.ErrGenerationSourceUnavailable) {
+		t.Fatalf("revoked source was reused for a new model task with error %v", err)
 	}
 
 	deletedView, deletedCleanup, err := workerRepository.RequestTaskCleanup(ctx, second.User.ID, paidCreated.View.Task.ID, deletionAt)
