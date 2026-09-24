@@ -91,6 +91,7 @@ func (w *ResultWorker) RunOnce(ctx context.Context, taskID string) (ResultWorker
 		Purpose:        view.Task.Purpose,
 		LookID:         view.Task.LookID,
 		LookRevision:   view.Task.LookRevision,
+		Inputs:         cloneSnapshot(view.Task.Inputs),
 	}
 	fetchContext, cancel := context.WithTimeout(ctx, w.policy.FetchTimeout)
 	fetched, fetchErr := w.fetcher.Fetch(fetchContext, request)
@@ -98,7 +99,7 @@ func (w *ResultWorker) RunOnce(ctx context.Context, taskID string) (ResultWorker
 	if fetchErr != nil {
 		return w.releaseWithError(ctx, lease, view, ErrGenerationOutputFetchUnknown)
 	}
-	if fetched.ExternalTaskID != view.Task.ExternalTaskID || !validToken(fetched.ExternalTaskID, 256) {
+	if !fetchedResultMatches(view.Task, fetched) {
 		return w.releaseWithError(ctx, lease, view, ErrInvalidProviderObservation)
 	}
 	publishedAt := w.now().UTC()
@@ -111,6 +112,25 @@ func (w *ResultWorker) RunOnce(ctx context.Context, taskID string) (ResultWorker
 		return w.releaseWithError(ctx, lease, view, err)
 	}
 	return ResultWorkerResult{View: published, Outcome: ResultOutcomePublished}, nil
+}
+
+func fetchedResultMatches(task Task, fetched FetchedResult) bool {
+	return validID(fetched.TaskID) && fetched.TaskID == task.ID &&
+		fetched.ExternalTaskID == task.ExternalTaskID && validToken(fetched.ExternalTaskID, 256) &&
+		fetched.Purpose == task.Purpose && fetched.LookID == task.LookID && fetched.LookRevision == task.LookRevision &&
+		inputSnapshotsEqual(task.Inputs, fetched.Inputs)
+}
+
+func inputSnapshotsEqual(left, right InputSnapshot) bool {
+	if left.LookID != right.LookID || left.LookRevision != right.LookRevision || left.ImageAssetID != right.ImageAssetID || left.ImageSHA256 != right.ImageSHA256 || len(left.References) != len(right.References) {
+		return false
+	}
+	for index := range left.References {
+		if left.References[index] != right.References[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (w *ResultWorker) releaseWithError(ctx context.Context, lease Lease, view TaskView, resultErr error) (ResultWorkerResult, error) {

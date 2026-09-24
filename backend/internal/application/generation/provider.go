@@ -68,13 +68,20 @@ type FetchRequest struct {
 	Purpose        Purpose
 	LookID         string
 	LookRevision   int
+	Inputs         InputSnapshot
 }
 
 // FetchedResult is returned after an adapter has downloaded and validated the
-// provider bytes into a private object version. The application worker still
-// verifies the task lineage and commits the output atomically.
+// provider bytes into a private object version. The echoed immutable identity
+// lets the application worker reject a result fetched for another task before
+// it commits the output atomically.
 type FetchedResult struct {
 	ExternalTaskID string
+	TaskID         string
+	Purpose        Purpose
+	LookID         string
+	LookRevision   int
+	Inputs         InputSnapshot
 	Fact           OutputFact
 }
 
