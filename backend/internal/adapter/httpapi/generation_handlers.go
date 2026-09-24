@@ -148,6 +148,9 @@ func generationJobResponse(view generationapp.TaskView) GenerationJobResponse {
 		externalTaskID, resultAssetID = "", ""
 	}
 	response := GenerationJobResponse{ID: task.ID, LookID: task.LookID, LookRevision: task.LookRevision, Purpose: task.Purpose, Provider: task.Provider, Model: task.Model, Status: task.Status, StatusRevision: task.StatusRevision, SubmissionState: task.SubmissionState, SubmissionAttempt: task.SubmissionAttempt, ExternalTaskID: externalTaskID, ResultAssetID: resultAssetID, FailureCode: task.FailureCode, CancelRequestedAt: task.CancelRequestedAt, AccessRevokedAt: task.AccessRevokedAt, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt, Match: generationapp.RequestMatchNone}
+	if view.Cleanup != nil {
+		response.Cleanup = generationCleanupResponse(*view.Cleanup)
+	}
 	if view.Reservation != nil {
 		reservation := view.Reservation
 		response.Reservation = &GenerationReservationResponse{ID: reservation.ID, State: reservation.State, ReservedQuotaUnits: reservation.ReservedQuotaUnits, EstimatedMinorUnits: reservation.EstimatedMinorUnits, Currency: reservation.Currency, StateRevision: reservation.StateRevision, CreatedAt: reservation.CreatedAt, UpdatedAt: reservation.UpdatedAt}

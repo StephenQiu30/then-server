@@ -333,6 +333,20 @@ func (r *GenerationRepository) readTaskView(database *gorm.DB, task generationap
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return generationapp.TaskView{}, generationapp.ErrGenerationUnavailable
 	}
+	var cleanup generationCleanupRequestRecord
+	if err := database.
+		Where("task_id = ? AND scope IN ?", task.ID, []string{string(generationapp.CleanupScopeTask), string(generationapp.CleanupScopeSource), string(generationapp.CleanupScopeAccount)}).
+		Order("CASE scope WHEN 'task' THEN 1 WHEN 'source' THEN 2 WHEN 'account' THEN 3 ELSE 4 END").
+		Order("created_at DESC").
+		First(&cleanup).Error; err == nil {
+		domain, err := generationCleanupFromRecord(cleanup)
+		if err != nil {
+			return generationapp.TaskView{}, err
+		}
+		view.Cleanup = &domain
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return generationapp.TaskView{}, generationapp.ErrGenerationUnavailable
+	}
 	return view, nil
 }
 

@@ -34,6 +34,7 @@ type TaskView struct {
 	Task        Task
 	Reservation *QuotaReservation
 	Asset       *OutputAsset
+	Cleanup     *CleanupRequest
 }
 
 type TaskPage struct {

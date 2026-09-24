@@ -295,7 +295,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request generation cleanup: %v", err)
 	}
-	if deletedView.Task.AccessRevokedAt == nil || deletedView.Asset != nil || deletedCleanup.Status != generationapp.CleanupPending || len(deletedCleanup.Targets) != 2 {
+	if deletedView.Task.AccessRevokedAt == nil || deletedView.Asset != nil || deletedView.Cleanup == nil || deletedView.Cleanup.ID != deletedCleanup.ID || deletedCleanup.Status != generationapp.CleanupPending || len(deletedCleanup.Targets) != 2 {
 		t.Fatalf("generation cleanup did not revoke access or retain targets: view=%+v cleanup=%+v", deletedView, deletedCleanup)
 	}
 	claimedCleanup, targets, err := workerRepository.BeginTaskCleanup(ctx, deletedCleanup.ID, deletedCleanup.AccessRevokedAt.Add(time.Minute))
@@ -316,7 +316,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload revoked generation task: %v", err)
 	}
-	if loadedDeleted.Task.AccessRevokedAt == nil || loadedDeleted.Asset != nil {
+	if loadedDeleted.Task.AccessRevokedAt == nil || loadedDeleted.Asset != nil || loadedDeleted.Cleanup == nil || loadedDeleted.Cleanup.Status != generationapp.CleanupComplete {
 		t.Fatalf("revoked generation output became visible again: %+v", loadedDeleted)
 	}
 	var outputCount int64
