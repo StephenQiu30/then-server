@@ -370,6 +370,9 @@ func finalizeAccountDeletionIfReady(ctx context.Context, tx *gorm.DB, userID str
 	if err := tx.Where("owner_id = ?", userID).Delete(&generationOutputRecord{}).Error; err != nil {
 		return err
 	}
+	if err := tx.Where("task_id IN (SELECT id FROM generation_jobs WHERE owner_id = ?)", userID).Delete(&generationSubmissionReconciliationRecord{}).Error; err != nil {
+		return err
+	}
 	if err := tx.Where("owner_id = ?", userID).Delete(&generationQuotaReservationRecord{}).Error; err != nil {
 		return err
 	}

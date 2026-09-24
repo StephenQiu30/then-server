@@ -28,6 +28,8 @@ type Repository interface {
 	List(context.Context, string, int, *string) (TaskPage, error)
 	RequestCancel(context.Context, string, string, time.Time) (TaskView, error)
 	RequestTaskCleanup(context.Context, string, string, time.Time) (TaskView, CleanupRequest, error)
+	ListUnknown(context.Context, string, int, *string) (UnknownSubmissionPage, error)
+	ReconcileUnknown(context.Context, string, ReconcileUnknownInput, time.Time) (SubmissionReconciliation, error)
 }
 
 type TaskView struct {

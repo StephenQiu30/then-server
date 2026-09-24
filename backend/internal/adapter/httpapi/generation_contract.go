@@ -126,3 +126,59 @@ type generationJobPageOutput struct {
 	RequestID string                    `header:"X-Request-ID"`
 	Body      GenerationJobPageResponse `json:"body"`
 }
+
+type ListUnknownSubmissionsRequest struct {
+	Session string `cookie:"then_session" hidden:"true"`
+	Limit   int    `query:"limit" default:"20" minimum:"1" maximum:"100"`
+	AfterID string `query:"after_id" format:"uuid" required:"false"`
+}
+
+type UnknownSubmissionResponse struct {
+	ID                string                `json:"id" format:"uuid"`
+	Purpose           generationapp.Purpose `json:"purpose" enum:"image,model"`
+	Provider          string                `json:"provider"`
+	Model             string                `json:"model"`
+	StatusRevision    int                   `json:"status_revision" minimum:"1"`
+	SubmissionAttempt int                   `json:"submission_attempt" minimum:"1"`
+	UnknownAt         time.Time             `json:"unknown_at" format:"date-time"`
+	CancelRequestedAt *time.Time            `json:"cancel_requested_at,omitempty" format:"date-time"`
+	AccessRevokedAt   *time.Time            `json:"access_revoked_at,omitempty" format:"date-time"`
+	CreatedAt         time.Time             `json:"created_at" format:"date-time"`
+	UpdatedAt         time.Time             `json:"updated_at" format:"date-time"`
+}
+
+type UnknownSubmissionPageResponse struct {
+	Jobs        []UnknownSubmissionResponse `json:"jobs" maxItems:"100"`
+	NextAfterID *string                     `json:"next_after_id,omitempty" format:"uuid"`
+}
+
+type unknownSubmissionPageOutput struct {
+	RequestID string                        `header:"X-Request-ID"`
+	Body      UnknownSubmissionPageResponse `json:"body"`
+}
+
+type ReconcileUnknownSubmissionRequest struct {
+	ExpectedRevision  int                                  `json:"expected_revision" minimum:"1"`
+	Decision          generationapp.SubmissionDecision     `json:"decision" enum:"accepted,not_accepted"`
+	ExternalTaskID    string                               `json:"external_task_id,omitempty" maxLength:"256"`
+	EvidenceType      generationapp.SubmissionEvidenceType `json:"evidence_type" enum:"provider_console,provider_query,support_case"`
+	EvidenceReference string                               `json:"evidence_reference" pattern:"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"`
+}
+
+type reconcileUnknownSubmissionInput struct {
+	Session string `cookie:"then_session" hidden:"true"`
+	ID      string `path:"job_id" format:"uuid"`
+	Body    ReconcileUnknownSubmissionRequest
+}
+
+type SubmissionReconciliationResponse struct {
+	AuditID    string                           `json:"audit_id" format:"uuid"`
+	Decision   generationapp.SubmissionDecision `json:"decision" enum:"accepted,not_accepted"`
+	RecordedAt time.Time                        `json:"recorded_at" format:"date-time"`
+	Job        GenerationJobResponse            `json:"job"`
+}
+
+type submissionReconciliationOutput struct {
+	RequestID string                           `header:"X-Request-ID"`
+	Body      SubmissionReconciliationResponse `json:"body"`
+}

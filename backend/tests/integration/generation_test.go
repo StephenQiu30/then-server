@@ -770,4 +770,153 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("unknown task remained eligible for submission: found=%v err=%v", found, err)
 	}
 
+	if err := database.WithContext(ctx).Table("users").Where("id = ?", third.User.ID).Update("role", "admin").Error; err != nil {
+		t.Fatalf("grant test administrator role: %v", err)
+	}
+	adminGenerations, err := generationapp.NewService(accounts, workerRepository, paidPolicy)
+	if err != nil {
+		t.Fatalf("construct admin generation service: %v", err)
+	}
+	unknownTask := func(key string) (generationapp.TaskView, generationapp.Lease) {
+		t.Helper()
+		request := paidInput
+		request.IdempotencyKey = key
+		request.Parameters = []byte(`{"seed":"` + key + `"}`)
+		created, err := adminGenerations.Create(ctx, third.Token, request)
+		if err != nil {
+			t.Fatalf("create %s reconciliation task: %v", key, err)
+		}
+		at := time.Now().UTC()
+		_, lease, err := workerRepository.AcquireLease(ctx, created.View.Task.ID, "worker-"+key, at, 10*time.Minute)
+		if err != nil {
+			t.Fatalf("acquire %s reconciliation lease: %v", key, err)
+		}
+		if _, _, err := workerRepository.BeginSubmission(ctx, lease, at); err != nil {
+			t.Fatalf("begin %s reconciliation submission: %v", key, err)
+		}
+		if _, err := workerRepository.MarkSubmissionUnknown(ctx, lease, at); err != nil {
+			t.Fatalf("mark %s reconciliation submission unknown: %v", key, err)
+		}
+		view, err := workerRepository.Get(ctx, third.User.ID, created.View.Task.ID)
+		if err != nil {
+			t.Fatalf("reload %s unknown submission: %v", key, err)
+		}
+		return view, lease
+	}
+	evidence := func(taskID string, revision int, decision generationapp.SubmissionDecision, externalID, reference string) generationapp.ReconcileUnknownInput {
+		return generationapp.ReconcileUnknownInput{TaskID: taskID, ExpectedRevision: revision, Decision: decision, ExternalTaskID: externalID, EvidenceType: generationapp.SubmissionEvidenceProviderQuery, EvidenceReference: reference}
+	}
+
+	acceptedUnknown, acceptedLease := unknownTask("admin-accepted")
+	unknownPage, err := adminGenerations.ListUnknown(ctx, third.Token, 20, nil)
+	if err != nil {
+		t.Fatalf("list unknown submissions as admin: %v", err)
+	}
+	foundAcceptedUnknown := false
+	for _, item := range unknownPage.Items {
+		if item.ID == acceptedUnknown.Task.ID {
+			foundAcceptedUnknown = true
+			break
+		}
+	}
+	if !foundAcceptedUnknown {
+		t.Fatalf("admin listing omitted unknown submission %s: %+v", acceptedUnknown.Task.ID, unknownPage)
+	}
+	if _, err := adminGenerations.ReconcileUnknown(ctx, third.Token, evidence(acceptedUnknown.Task.ID, acceptedUnknown.Task.StatusRevision, generationapp.SubmissionDecisionAccepted, "provider-admin-accepted", "query-admin-accepted")); !errors.Is(err, generationapp.ErrGenerationLeaseHeld) {
+		t.Fatalf("active lease was not rejected: %v", err)
+	}
+	if _, err := workerRepository.ReleaseLease(ctx, acceptedLease, time.Now().UTC()); err != nil {
+		t.Fatalf("release active lease before admin reconciliation: %v", err)
+	}
+	acceptedCurrent, err := workerRepository.Get(ctx, third.User.ID, acceptedUnknown.Task.ID)
+	if err != nil {
+		t.Fatalf("reload unknown submission after lease release: %v", err)
+	}
+	if _, err := adminGenerations.ReconcileUnknown(ctx, third.Token, evidence(acceptedUnknown.Task.ID, acceptedUnknown.Task.StatusRevision, generationapp.SubmissionDecisionAccepted, "provider-admin-accepted", "query-admin-stale")); !errors.Is(err, generationapp.ErrGenerationRevisionConflict) {
+		t.Fatalf("stale revision was not rejected: %v", err)
+	}
+	acceptedResult, err := adminGenerations.ReconcileUnknown(ctx, third.Token, evidence(acceptedUnknown.Task.ID, acceptedCurrent.Task.StatusRevision, generationapp.SubmissionDecisionAccepted, "provider-admin-accepted", "query-admin-accepted"))
+	if err != nil {
+		t.Fatalf("record confirmed provider acceptance: %v", err)
+	}
+	if acceptedResult.View.Task.SubmissionState != generationapp.SubmissionAccepted || acceptedResult.View.Task.ExternalTaskID != "provider-admin-accepted" || acceptedResult.View.Task.LeaseOwner != "" || acceptedResult.AuditID == "" {
+		t.Fatalf("accepted reconciliation did not attach provider identity and audit: %+v", acceptedResult)
+	}
+	if _, err := generations.ListUnknown(ctx, second.Token, 20, nil); !errors.Is(err, generationapp.ErrGenerationForbidden) {
+		t.Fatalf("non-admin unknown listing returned %v", err)
+	}
+	finishAcceptedAt := time.Now().UTC()
+	_, finishAcceptedLease, err := workerRepository.AcquireLease(ctx, acceptedUnknown.Task.ID, "worker-admin-accepted-finished", finishAcceptedAt, time.Minute)
+	if err != nil {
+		t.Fatalf("acquire accepted reconciliation task for test settlement: %v", err)
+	}
+	if _, err := workerRepository.FinalizeWithoutOutput(ctx, finishAcceptedLease, generationapp.StatusFailed, "test_settled", finishAcceptedAt); err != nil {
+		t.Fatalf("settle accepted reconciliation fixture: %v", err)
+	}
+
+	rejectedUnknown, rejectedLease := unknownTask("admin-not-accepted")
+	if _, err := workerRepository.ReleaseLease(ctx, rejectedLease, time.Now().UTC()); err != nil {
+		t.Fatalf("release not-accepted lease: %v", err)
+	}
+	rejectedCurrent, err := workerRepository.Get(ctx, third.User.ID, rejectedUnknown.Task.ID)
+	if err != nil {
+		t.Fatalf("reload not-accepted unknown submission: %v", err)
+	}
+	rejectedResult, err := adminGenerations.ReconcileUnknown(ctx, third.Token, evidence(rejectedUnknown.Task.ID, rejectedCurrent.Task.StatusRevision, generationapp.SubmissionDecisionNotAccepted, "", "query-admin-negative"))
+	if err != nil {
+		t.Fatalf("record confirmed non-acceptance: %v", err)
+	}
+	if rejectedResult.View.Task.Status != generationapp.StatusFailed || rejectedResult.View.Task.FailureCode != "submission_not_accepted" || rejectedResult.View.Task.SubmissionState != generationapp.SubmissionNotStarted || rejectedResult.View.Reservation == nil || rejectedResult.View.Reservation.State != generationapp.ReservationReleased {
+		t.Fatalf("not-accepted reconciliation did not fail and release quota: %+v", rejectedResult.View)
+	}
+
+	revokedUnknown, revokedLease := unknownTask("admin-accepted-revoked")
+	revoked, err := adminGenerations.Delete(ctx, third.Token, revokedUnknown.Task.ID)
+	if err != nil {
+		t.Fatalf("revoke unknown submission before late acceptance: %v", err)
+	}
+	if revoked.View.Task.AccessRevokedAt == nil || revoked.Cleanup.Status != generationapp.CleanupPending {
+		t.Fatalf("unknown submission was not revoked before late acceptance: %+v", revoked)
+	}
+	if _, err := workerRepository.ReleaseLease(ctx, revokedLease, time.Now().UTC()); err != nil {
+		t.Fatalf("release revoked submission lease: %v", err)
+	}
+	revokedCurrent, err := workerRepository.Get(ctx, third.User.ID, revokedUnknown.Task.ID)
+	if err != nil {
+		t.Fatalf("reload revoked unknown submission: %v", err)
+	}
+	lateResult, err := adminGenerations.ReconcileUnknown(ctx, third.Token, evidence(revokedUnknown.Task.ID, revokedCurrent.Task.StatusRevision, generationapp.SubmissionDecisionAccepted, "provider-admin-late", "query-admin-late"))
+	if err != nil {
+		t.Fatalf("record late provider acceptance after revocation: %v", err)
+	}
+	if lateResult.View.Cleanup == nil || lateResult.View.Cleanup.Status != generationapp.CleanupPending || len(lateResult.View.Cleanup.Targets) != 1 || lateResult.View.Cleanup.Targets[0].ID != "provider-admin-late" {
+		t.Fatalf("late accepted identity was not added to cleanup: %+v", lateResult.View.Cleanup)
+	}
+
+	revokedRejected, revokedRejectedLease := unknownTask("admin-not-accepted-revoked")
+	if _, err := adminGenerations.Delete(ctx, third.Token, revokedRejected.Task.ID); err != nil {
+		t.Fatalf("revoke unknown submission before negative reconciliation: %v", err)
+	}
+	if _, err := workerRepository.ReleaseLease(ctx, revokedRejectedLease, time.Now().UTC()); err != nil {
+		t.Fatalf("release revoked negative submission lease: %v", err)
+	}
+	revokedRejectedCurrent, err := workerRepository.Get(ctx, third.User.ID, revokedRejected.Task.ID)
+	if err != nil {
+		t.Fatalf("reload revoked negative submission: %v", err)
+	}
+	reconciledCanceled, err := adminGenerations.ReconcileUnknown(ctx, third.Token, evidence(revokedRejected.Task.ID, revokedRejectedCurrent.Task.StatusRevision, generationapp.SubmissionDecisionNotAccepted, "", "query-admin-revoked-negative"))
+	if err != nil {
+		t.Fatalf("record non-acceptance for revoked task: %v", err)
+	}
+	if reconciledCanceled.View.Task.Status != generationapp.StatusCanceled || reconciledCanceled.View.Task.FailureCode != "" || reconciledCanceled.View.Reservation == nil || reconciledCanceled.View.Reservation.State != generationapp.ReservationReleased {
+		t.Fatalf("revoked not-accepted submission did not cancel and release quota: %+v", reconciledCanceled.View)
+	}
+	var reconciliationAuditCount int64
+	if err := database.WithContext(ctx).Table("generation_submission_reconciliations").Where("actor_id = ?", third.User.ID).Count(&reconciliationAuditCount).Error; err != nil {
+		t.Fatalf("count reconciliation audit rows: %v", err)
+	}
+	if reconciliationAuditCount != 4 {
+		t.Fatalf("expected four atomic reconciliation audit rows, got %d", reconciliationAuditCount)
+	}
+
 }

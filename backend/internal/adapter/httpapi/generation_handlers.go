@@ -17,6 +17,8 @@ type GenerationHTTPService interface {
 	List(context.Context, string, int, *string) (generationapp.TaskPage, error)
 	Cancel(context.Context, string, string) (generationapp.TaskView, error)
 	Delete(context.Context, string, string) (generationapp.DeleteResult, error)
+	ListUnknown(context.Context, string, int, *string) (generationapp.UnknownSubmissionPage, error)
+	ReconcileUnknown(context.Context, string, generationapp.ReconcileUnknownInput) (generationapp.SubmissionReconciliation, error)
 }
 
 type GenerationHandler struct {
@@ -112,6 +114,36 @@ func (h *GenerationHandler) delete(ctx context.Context, input *generationJobInpu
 	return &generationJobOutput{RequestID: requestID(ctx), Body: response}, nil
 }
 
+func (h *GenerationHandler) listUnknown(ctx context.Context, input *ListUnknownSubmissionsRequest) (*unknownSubmissionPageOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	var after *string
+	if input.AfterID != "" {
+		after = &input.AfterID
+	}
+	page, err := h.service.ListUnknown(ctx, input.Session, input.Limit, after)
+	if err != nil {
+		return nil, h.error(ctx, err)
+	}
+	jobs := make([]UnknownSubmissionResponse, 0, len(page.Items))
+	for _, item := range page.Items {
+		jobs = append(jobs, UnknownSubmissionResponse{ID: item.ID, Purpose: item.Purpose, Provider: item.Provider, Model: item.Model, StatusRevision: item.StatusRevision, SubmissionAttempt: item.SubmissionAttempt, UnknownAt: item.UnknownAt, CancelRequestedAt: item.CancelRequestedAt, AccessRevokedAt: item.AccessRevokedAt, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+	}
+	return &unknownSubmissionPageOutput{RequestID: requestID(ctx), Body: UnknownSubmissionPageResponse{Jobs: jobs, NextAfterID: page.NextAfterID}}, nil
+}
+
+func (h *GenerationHandler) reconcileUnknown(ctx context.Context, input *reconcileUnknownSubmissionInput) (*submissionReconciliationOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	result, err := h.service.ReconcileUnknown(ctx, input.Session, generationapp.ReconcileUnknownInput{TaskID: input.ID, ExpectedRevision: input.Body.ExpectedRevision, Decision: input.Body.Decision, ExternalTaskID: input.Body.ExternalTaskID, EvidenceType: input.Body.EvidenceType, EvidenceReference: input.Body.EvidenceReference})
+	if err != nil {
+		return nil, h.error(ctx, err)
+	}
+	return &submissionReconciliationOutput{RequestID: requestID(ctx), Body: SubmissionReconciliationResponse{AuditID: result.AuditID, Decision: result.Decision, RecordedAt: result.RecordedAt, Job: generationJobResponse(result.View)}}, nil
+}
+
 func (h *GenerationHandler) available(ctx context.Context, session string) error {
 	if h == nil || h.service == nil {
 		return newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
@@ -126,11 +158,13 @@ func (h *GenerationHandler) error(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, accountapp.ErrAuthentication):
 		return authenticatedSessionError(ctx, h.secureCookie)
+	case errors.Is(err, generationapp.ErrGenerationForbidden):
+		return newErrorResponse(http.StatusForbidden, requestID(ctx))
 	case errors.Is(err, generationapp.ErrInvalidGenerationInput):
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
 	case errors.Is(err, generationapp.ErrGenerationNotFound):
 		return newErrorResponse(http.StatusNotFound, requestID(ctx))
-	case errors.Is(err, generationapp.ErrGenerationIdempotencyConflict), errors.Is(err, generationapp.ErrGenerationNotCancellable), errors.Is(err, generationapp.ErrGenerationQuotaExceeded), errors.Is(err, generationapp.ErrGenerationBudgetExceeded), errors.Is(err, generationapp.ErrGenerationConcurrency), errors.Is(err, generationapp.ErrGenerationCurrency), errors.Is(err, generationapp.ErrGenerationCleanupInProgress), errors.Is(err, generationapp.ErrGenerationSourceUnavailable):
+	case errors.Is(err, generationapp.ErrGenerationIdempotencyConflict), errors.Is(err, generationapp.ErrGenerationNotCancellable), errors.Is(err, generationapp.ErrGenerationQuotaExceeded), errors.Is(err, generationapp.ErrGenerationBudgetExceeded), errors.Is(err, generationapp.ErrGenerationConcurrency), errors.Is(err, generationapp.ErrGenerationCurrency), errors.Is(err, generationapp.ErrGenerationCleanupInProgress), errors.Is(err, generationapp.ErrGenerationSourceUnavailable), errors.Is(err, generationapp.ErrGenerationRevisionConflict), errors.Is(err, generationapp.ErrGenerationLeaseHeld), errors.Is(err, generationapp.ErrGenerationLeaseExpired), errors.Is(err, generationapp.ErrInvalidGenerationState), errors.Is(err, generationapp.ErrExternalTaskConflict):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Generation request conflicts with the current task or admission limits."
 		return response

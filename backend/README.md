@@ -78,7 +78,15 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 - `PUT /wardrobe/items/{item_id}`
 - `DELETE /wardrobe/items/{item_id}`
 
-当前运行时 OpenAPI 文档版本为 0.26.0，共 120 个 operation，覆盖账号邮件、衣橱归档/恢复与状态筛选、计划、实际事件、反馈统计、私人日记、服务端增量读取与社区互动治理，并保持业务路径无版本前缀。本人资源更新必须提交 `expected_revision`；公开帖子只包含批准版本的公开字段，来源日记、媒体 ID、owner、对象 key、对象 version 和同意记录不进入公开响应，HttpOnly 会话 Cookie 不进入生成客户端参数。
+当前运行时 OpenAPI 文档版本为 0.27.0，共 127 个 operation、95 条路径，覆盖账号邮件/会话、衣橱归档恢复与状态筛选、计划、实际事件、反馈统计、日记、增量读取、社区治理和生成任务，并保持业务路径无版本前缀。本人资源更新必须提交 `expected_revision`；公开帖子只包含批准版本的公开字段，来源日记、媒体 ID、owner、对象 key、对象 version 和同意记录不进入公开响应，HttpOnly 会话 Cookie 不进入生成客户端参数。
+
+## 生成任务对账 API
+
+- `POST /generation-jobs`、`GET /generation-jobs`、`GET /generation-jobs/{job_id}`、`POST /generation-jobs/{job_id}/cancel`、`DELETE /generation-jobs/{job_id}` 提供本人任务接纳、查询、取消与撤销。
+- `GET /admin/generation/submission-reconciliations` 仅管理员可分页读取待核对的 `unknown` 提交；响应不包含用户输入快照、参数或账号资料。
+- `POST /admin/generation-jobs/{job_id}/submission-reconciliation` 依据任务 revision、决定、证据类型和非敏感证据编号核对受理结果。确认受理可记录外部任务 ID 并接入既有清理；确认未受理会终结任务并释放额度。任务与审计记录在 then-server 现有 PostgreSQL 事务中提交。
+
+对账只更新本地任务业务状态，不访问 Provider、不自动重提，也不会产生图片/模型供应商费用。生成配置仍默认关闭；真实生成需要单独完成供应商、素材、预算及删除准入。
 
 ## 账号穿搭计划 API
 

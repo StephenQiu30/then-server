@@ -20,14 +20,21 @@ func (s generationServiceAuthStub) CurrentUser(context.Context, string) (account
 }
 
 type generationServiceRepositoryStub struct {
-	acceptCalls int
-	getCalls    int
-	listCalls   int
-	cancelCalls int
-	input       CreateInput
-	policy      AdmissionPolicy
-	result      AcceptanceResult
-	view        TaskView
+	acceptCalls         int
+	getCalls            int
+	listCalls           int
+	cancelCalls         int
+	input               CreateInput
+	policy              AdmissionPolicy
+	result              AcceptanceResult
+	view                TaskView
+	unknownCalls        int
+	reconcileCalls      int
+	unknownPage         UnknownSubmissionPage
+	reconciliation      SubmissionReconciliation
+	reconciliationActor string
+	reconciliationInput ReconcileUnknownInput
+	reconciliationErr   error
 }
 
 func (s *generationServiceRepositoryStub) Accept(_ context.Context, input CreateInput, policy AdmissionPolicy, reservationID, outboxID string, at time.Time) (AcceptanceResult, error) {
@@ -62,6 +69,18 @@ func (s *generationServiceRepositoryStub) RequestCancel(context.Context, string,
 
 func (s *generationServiceRepositoryStub) RequestTaskCleanup(context.Context, string, string, time.Time) (TaskView, CleanupRequest, error) {
 	return s.view, CleanupRequest{ID: "cleanup-1", OwnerID: s.view.Task.OwnerID, TaskID: s.view.Task.ID, Scope: CleanupScopeTask, Status: CleanupPending, AccessRevokedAt: generationTestNow, CreatedAt: generationTestNow, UpdatedAt: generationTestNow}, nil
+}
+
+func (s *generationServiceRepositoryStub) ListUnknown(context.Context, string, int, *string) (UnknownSubmissionPage, error) {
+	s.unknownCalls++
+	return s.unknownPage, nil
+}
+
+func (s *generationServiceRepositoryStub) ReconcileUnknown(_ context.Context, actorID string, input ReconcileUnknownInput, _ time.Time) (SubmissionReconciliation, error) {
+	s.reconcileCalls++
+	s.reconciliationActor = actorID
+	s.reconciliationInput = input
+	return s.reconciliation, s.reconciliationErr
 }
 
 func serviceTestInput() CreateServiceInput {
@@ -149,6 +168,51 @@ func TestServiceValidatesResourceIDsBeforeRepositoryCalls(t *testing.T) {
 	}
 	if repository.getCalls != 0 || repository.listCalls != 0 || repository.cancelCalls != 0 {
 		t.Fatal("invalid resource id reached repository")
+	}
+}
+
+func TestServiceUnknownSubmissionOperationsRequireAdminAndValidatedEvidence(t *testing.T) {
+	adminID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	taskID := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	repository := &generationServiceRepositoryStub{}
+	adminAuth := generationServiceAuthStub{user: accountapp.User{ID: adminID, Role: accountapp.AccountAdmin, Status: accountapp.AccountActive}}
+	service, err := NewService(adminAuth, repository, AdmissionPolicy{Enabled: true, ZeroCost: true, MaxConcurrentTasks: 1, MaxQuotaUnits: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.now = func() time.Time { return generationTestNow }
+	if _, err := service.ListUnknown(context.Background(), "admin-session", 20, nil); err != nil || repository.unknownCalls != 1 {
+		t.Fatalf("admin unknown listing error=%v calls=%d", err, repository.unknownCalls)
+	}
+	input := ReconcileUnknownInput{TaskID: taskID, ExpectedRevision: 4, Decision: SubmissionDecisionAccepted, ExternalTaskID: "provider-task-7", EvidenceType: SubmissionEvidenceProviderQuery, EvidenceReference: "query-2026-09-25-7"}
+	if _, err := service.ReconcileUnknown(context.Background(), "admin-session", input); err != nil {
+		t.Fatalf("admin reconciliation error=%v", err)
+	}
+	if repository.reconcileCalls != 1 || repository.reconciliationActor != adminID || repository.reconciliationInput != input {
+		t.Fatalf("repository received unexpected reconciliation: calls=%d actor=%q input=%+v", repository.reconcileCalls, repository.reconciliationActor, repository.reconciliationInput)
+	}
+	invalid := input
+	invalid.EvidenceReference = "https://provider.example/private?token=secret"
+	if _, err := service.ReconcileUnknown(context.Background(), "admin-session", invalid); !errors.Is(err, ErrInvalidGenerationInput) {
+		t.Fatalf("invalid evidence reference error=%v", err)
+	}
+	if repository.reconcileCalls != 1 {
+		t.Fatal("invalid evidence reached repository")
+	}
+
+	moderator := generationServiceAuthStub{user: accountapp.User{ID: adminID, Role: accountapp.AccountModerator, Status: accountapp.AccountActive}}
+	moderatorService, err := NewService(moderator, repository, AdmissionPolicy{Enabled: true, ZeroCost: true, MaxConcurrentTasks: 1, MaxQuotaUnits: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := moderatorService.ListUnknown(context.Background(), "moderator-session", 20, nil); !errors.Is(err, ErrGenerationForbidden) {
+		t.Fatalf("moderator listing error=%v", err)
+	}
+	if _, err := moderatorService.ReconcileUnknown(context.Background(), "moderator-session", input); !errors.Is(err, ErrGenerationForbidden) {
+		t.Fatalf("moderator reconciliation error=%v", err)
+	}
+	if repository.unknownCalls != 1 || repository.reconcileCalls != 1 {
+		t.Fatal("moderator reached reconciliation repository")
 	}
 }
 

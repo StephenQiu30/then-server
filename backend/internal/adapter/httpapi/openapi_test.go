@@ -192,10 +192,10 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.26.0" || operations != 125 {
-		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d", spec.OpenAPI, spec.Info.Version, operations)
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.27.0" || operations != 127 || len(spec.Paths) != 95 {
+		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d paths=%d", spec.OpenAPI, spec.Info.Version, operations, len(spec.Paths))
 	}
-	for _, operationID := range []string{"listCurrentUserSessions", "revokeCurrentUserSession"} {
+	for _, operationID := range []string{"listCurrentUserSessions", "revokeCurrentUserSession", "listUnknownGenerationSubmissions", "reconcileUnknownGenerationSubmission"} {
 		if !identifiers[operationID] {
 			t.Fatalf("generated contract is missing session operation %s", operationID)
 		}

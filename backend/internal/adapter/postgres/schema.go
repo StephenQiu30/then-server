@@ -55,6 +55,7 @@ func Migrate(ctx context.Context, database *gorm.DB) error {
 		&generationQuotaReservationRecord{},
 		&generationOutputRecord{},
 		&generationCleanupRequestRecord{},
+		&generationSubmissionReconciliationRecord{},
 	); err != nil {
 		return err
 	}
