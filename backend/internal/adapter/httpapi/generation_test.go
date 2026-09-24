@@ -114,6 +114,8 @@ func TestGenerationHTTPContractUsesSessionAndMapsTaskOperations(t *testing.T) {
 	if strings.Contains(response.Body.String(), "owner_id") || !strings.Contains(response.Body.String(), service.view.Task.ID) {
 		t.Fatalf("create response leaked private fields or omitted task id: %s", response.Body.String())
 	}
+	cleanupAt := service.view.Task.CreatedAt.Add(time.Minute)
+	service.view.Cleanup = &generationapp.CleanupRequest{ID: "66666666-6666-4666-8666-666666666666", Status: generationapp.CleanupPending, AccessRevokedAt: cleanupAt, CreatedAt: cleanupAt, UpdatedAt: cleanupAt}
 
 	for _, operation := range []struct {
 		name   string
@@ -134,6 +136,9 @@ func TestGenerationHTTPContractUsesSessionAndMapsTaskOperations(t *testing.T) {
 			}
 			if strings.Contains(response.Body.String(), "owner_id") {
 				t.Fatal("generation response exposed owner id")
+			}
+			if operation.name == "get" && !strings.Contains(response.Body.String(), `"cleanup"`) {
+				t.Fatalf("generation get response omitted cleanup state: %s", response.Body.String())
 			}
 		})
 	}
