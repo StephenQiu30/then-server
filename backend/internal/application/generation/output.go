@@ -9,8 +9,10 @@ import (
 var ErrInvalidGenerationOutput = errors.New("invalid generation output")
 
 const (
-	OutputContentTypeJPEG = "image/jpeg"
-	OutputContentTypeGLB  = "model/gltf-binary"
+	OutputContentTypeJPEG               = "image/jpeg"
+	OutputContentTypeGLB                = "model/gltf-binary"
+	MaxGenerationImageOutputBytes int64 = 12 * 1024 * 1024
+	MaxGenerationModelOutputBytes int64 = 10 * 1024 * 1024
 )
 
 // OutputFact is the verified private object-store fact supplied by a worker.
@@ -159,9 +161,9 @@ func validOutputFact(purpose Purpose, fact OutputFact) bool {
 	}
 	switch purpose {
 	case PurposeImage:
-		return fact.ContentType == OutputContentTypeJPEG
+		return fact.ContentType == OutputContentTypeJPEG && fact.ByteSize <= MaxGenerationImageOutputBytes
 	case PurposeModel:
-		return fact.ContentType == OutputContentTypeGLB
+		return fact.ContentType == OutputContentTypeGLB && fact.ByteSize <= MaxGenerationModelOutputBytes
 	default:
 		return false
 	}

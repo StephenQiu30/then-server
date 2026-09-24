@@ -84,7 +84,7 @@ type generationOutputRecord struct {
 	SourceImageAssetID string    `gorm:"column:source_image_asset_id;type:text"`
 	SourceImageSHA256  string    `gorm:"column:source_image_sha256;type:char(64)"`
 	ContentType        string    `gorm:"column:content_type;type:text;not null;check:generation_outputs_content_type_check,content_type IN ('image/jpeg','model/gltf-binary')"`
-	ByteSize           int64     `gorm:"column:byte_size;not null;check:generation_outputs_byte_size_check,byte_size > 0"`
+	ByteSize           int64     `gorm:"column:byte_size;not null;check:generation_outputs_size_limit_check,((content_type = 'image/jpeg' AND byte_size BETWEEN 1 AND 12582912) OR (content_type = 'model/gltf-binary' AND byte_size BETWEEN 1 AND 10485760))"`
 	SHA256             string    `gorm:"column:sha256;type:char(64);not null"`
 	ObjectKey          string    `gorm:"column:object_key;type:text;not null;default:''"`
 	ObjectVersionID    string    `gorm:"column:object_version_id;type:text;not null"`
