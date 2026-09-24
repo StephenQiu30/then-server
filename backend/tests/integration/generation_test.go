@@ -1128,12 +1128,10 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("account_deletion_id = ?", accountDeletion.ID).Pluck("id", &accountCleanupID).Error; err != nil {
 		t.Fatalf("find account generation cleanup request: %v", err)
 	}
-	accountCleanup, _, err := workerRepository.BeginTaskCleanup(ctx, accountCleanupID, accountDeletion.RequestedAt.Add(time.Minute))
-	if err != nil {
-		t.Fatalf("begin account generation cleanup: %v", err)
-	}
-	if _, err := workerRepository.CompleteTaskCleanup(ctx, accountCleanup, accountCleanup.UpdatedAt.Add(time.Minute)); err != nil {
-		t.Fatalf("complete account generation cleanup: %v", err)
+	accountCleanupAt := accountDeletion.RequestedAt.Add(time.Minute)
+	found, err = cleanupWorker.RunOnceAt(ctx, accountCleanupAt)
+	if err != nil || !found {
+		t.Fatalf("run account generation cleanup worker: found=%v err=%v", found, err)
 	}
 	completedAccountDeletion, err := accounts.GetDeletionReceipt(ctx, accountDeletion.ID, accountDeletion.ReceiptToken)
 	if err != nil {
@@ -1141,6 +1139,20 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 	if completedAccountDeletion.Status != accountapp.AccountDeletionComplete || completedAccountDeletion.RemainingGenerationCount != 0 || completedAccountDeletion.Phase != "complete" {
 		t.Fatalf("account deletion did not complete after generation cleanup: %+v", completedAccountDeletion)
+	}
+	var remainingAccountTasks int64
+	if err := database.WithContext(ctx).Table("generation_jobs").Where("owner_id = ?", first.User.ID).Count(&remainingAccountTasks).Error; err != nil {
+		t.Fatalf("count generation tasks after account deletion: %v", err)
+	}
+	if remainingAccountTasks != 0 {
+		t.Fatalf("account generation tasks remained after deletion receipt completion: %d", remainingAccountTasks)
+	}
+	var remainingAccountCleanup int64
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("account_deletion_id = ?", accountDeletion.ID).Count(&remainingAccountCleanup).Error; err != nil {
+		t.Fatalf("count generation cleanup rows after account deletion: %v", err)
+	}
+	if remainingAccountCleanup != 0 {
+		t.Fatalf("account cleanup evidence remained after completion: %d", remainingAccountCleanup)
 	}
 
 	lateInput := input
