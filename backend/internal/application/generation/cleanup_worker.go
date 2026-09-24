@@ -132,6 +132,32 @@ func (w *CleanupWorker) RunOnce(ctx context.Context) (bool, error) {
 	return true, err
 }
 
+// Run polls the durable cleanup queue until cancellation. It drains ready
+// work immediately and sleeps only when no request is currently claimable.
+func (w *CleanupWorker) Run(ctx context.Context, pollInterval time.Duration) error {
+	if w == nil || pollInterval <= 0 {
+		return ErrInvalidGenerationCleanupWorker
+	}
+	for {
+		found, err := w.RunOnce(ctx)
+		if err != nil {
+			return err
+		}
+		if found {
+			continue
+		}
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil
+		case <-timer.C:
+		}
+	}
+}
+
 func (w *CleanupWorker) deleteTarget(ctx context.Context, ownerID, taskID string, target CleanupTarget) error {
 	if err := target.validateForTask(ownerID, taskID); err != nil {
 		return &CleanupTargetError{Code: "invalid_target", Err: err}

@@ -159,3 +159,20 @@ func (s *Store) DeleteAllVersions(ctx context.Context, bucket, objectKey string)
 	}
 	return nil
 }
+
+// DeleteVersion removes only the object version captured by a cleanup
+// manifest. A missing version is already in the desired state; unrelated
+// storage failures remain retryable.
+func (s *Store) DeleteVersion(ctx context.Context, bucket, objectKey, versionID string) error {
+	if s == nil || s.client == nil || (bucket != RawBucket && bucket != DerivedBucket) || objectKey == "" || versionID == "" {
+		return errors.New("object version deletion invalid")
+	}
+	if err := s.client.RemoveObject(ctx, bucket, objectKey, minio.RemoveObjectOptions{VersionID: versionID}); err != nil {
+		response := minio.ToErrorResponse(err)
+		if response.Code == "NoSuchKey" || response.Code == "NoSuchVersion" {
+			return nil
+		}
+		return errors.New("object version deletion failed")
+	}
+	return nil
+}

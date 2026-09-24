@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/httpapi"
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/messagequeue"
@@ -71,6 +72,7 @@ func Run(log *slog.Logger) error {
 		}
 	}
 	var runner *eventworkerapp.Runner
+	var cleanupWorker *generationapp.CleanupWorker
 	var broker *messagequeue.Broker
 	if cfg.Role == "worker" || cfg.Role == "all" {
 		broker, err = messagequeue.Open(startup, cfg.KafkaBrokers, cfg.KafkaTopicPrefix)
@@ -82,25 +84,61 @@ func Run(log *slog.Logger) error {
 		if err != nil {
 			return err
 		}
+		cleanupExecutor, executorErr := objectstore.NewGenerationCleanupExecutor(objects)
+		if executorErr != nil {
+			return executorErr
+		}
+		cleanupWorker, err = generationapp.NewCleanupWorker(
+			postgres.NewGenerationRepository(pool.ORM()),
+			cleanupExecutor,
+			generationapp.CleanupRetryPolicy{LeaseTTL: time.Minute, BaseDelay: 5 * time.Second, MaxDelay: 5 * time.Minute},
+		)
+		if err != nil {
+			return err
+		}
 	}
 	if cfg.Role == "worker" {
 		log.Info("worker_started", "role", cfg.Role)
-		err = runner.Run(ctx)
+		err = runWorkers(ctx, runner.Run, func(ctx context.Context) error { return cleanupWorker.Run(ctx, time.Second) })
 		log.Info("worker_stopped")
 		return err
 	}
 	if cfg.Role == "all" {
-		combined, cancelCombined := context.WithCancel(ctx)
-		defer cancelCombined()
-		results := make(chan error, 2)
-		go func() { results <- runner.Run(combined) }()
-		go func() { results <- runAPI(combined, startup, cfg, pool, objects, log) }()
-		err = <-results
-		cancelCombined()
-		<-results
+		err = runWorkers(
+			ctx,
+			runner.Run,
+			func(ctx context.Context) error { return cleanupWorker.Run(ctx, time.Second) },
+			func(ctx context.Context) error { return runAPI(ctx, startup, cfg, pool, objects, log) },
+		)
 		return err
 	}
 	return runAPI(ctx, startup, cfg, pool, objects, log)
+}
+
+func runWorkers(ctx context.Context, workers ...func(context.Context) error) error {
+	if len(workers) == 0 {
+		return nil
+	}
+	work, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan error, len(workers))
+	for _, worker := range workers {
+		go func(run func(context.Context) error) { results <- run(work) }(worker)
+	}
+	first := <-results
+	cancel()
+	for range len(workers) - 1 {
+		result := <-results
+		if first == nil || errors.Is(first, context.Canceled) {
+			if result != nil && !errors.Is(result, context.Canceled) {
+				first = result
+			}
+		}
+	}
+	if ctx.Err() != nil || errors.Is(first, context.Canceled) {
+		return nil
+	}
+	return first
 }
 
 func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool, objects *objectstore.Store, log *slog.Logger) error {
