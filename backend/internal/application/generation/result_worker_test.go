@@ -10,10 +10,12 @@ import (
 type resultWorkerFetcherStub struct {
 	result  FetchedResult
 	err     error
+	request FetchRequest
 	fetches int
 }
 
-func (f *resultWorkerFetcherStub) Fetch(_ context.Context, _ FetchRequest) (FetchedResult, error) {
+func (f *resultWorkerFetcherStub) Fetch(_ context.Context, request FetchRequest) (FetchedResult, error) {
+	f.request = request
 	f.fetches++
 	if f.err != nil {
 		return FetchedResult{}, f.err
@@ -77,7 +79,7 @@ func newResultWorker(t *testing.T, repository *observationWorkerRepositoryStub, 
 
 func TestResultWorkerPublishesValidatedOutputAtomically(t *testing.T) {
 	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
-	fetcher := &resultWorkerFetcherStub{result: FetchedResult{ExternalTaskID: "provider-job-1", Fact: imageOutputFact()}}
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task)}
 	worker := newResultWorker(t, repository, fetcher)
 
 	result, err := worker.RunOnce(context.Background(), repository.task.ID)
@@ -87,7 +89,7 @@ func TestResultWorkerPublishesValidatedOutputAtomically(t *testing.T) {
 	if result.Outcome != ResultOutcomePublished || result.View.Task.Status != StatusSucceeded || result.View.Task.ResultAssetID == "" || result.View.Asset == nil {
 		t.Fatalf("unexpected result publication: %+v", result)
 	}
-	if result.View.Task.LeaseOwner != "" || fetcher.fetches != 1 {
+	if result.View.Task.LeaseOwner != "" || fetcher.fetches != 1 || fetcher.request.TaskID != repository.task.ID || fetcher.request.LookID != repository.task.LookID || fetcher.request.LookRevision != repository.task.LookRevision || !inputSnapshotsEqual(fetcher.request.Inputs, repository.task.Inputs) {
 		t.Fatalf("publication retained lease or fetched unexpected count: task=%+v fetches=%d", result.View.Task, fetcher.fetches)
 	}
 }
@@ -109,15 +111,22 @@ func TestResultWorkerKeepsValidatingTaskOnFetchFailure(t *testing.T) {
 func TestResultWorkerRejectsWrongLineageOrFact(t *testing.T) {
 	tests := []struct {
 		name   string
-		result FetchedResult
+		mutate func(*FetchedResult)
 	}{
-		{name: "external identity", result: FetchedResult{ExternalTaskID: "other-task", Fact: imageOutputFact()}},
-		{name: "wrong content type", result: FetchedResult{ExternalTaskID: "provider-job-1", Fact: modelOutputFact()}},
+		{name: "external identity", mutate: func(result *FetchedResult) { result.ExternalTaskID = "other-task" }},
+		{name: "task identity", mutate: func(result *FetchedResult) { result.TaskID = "other-task" }},
+		{name: "purpose", mutate: func(result *FetchedResult) { result.Purpose = PurposeModel }},
+		{name: "look identity", mutate: func(result *FetchedResult) { result.LookID = "other-look" }},
+		{name: "look revision", mutate: func(result *FetchedResult) { result.LookRevision++ }},
+		{name: "input snapshot", mutate: func(result *FetchedResult) { result.Inputs.References[0].Revision++ }},
+		{name: "wrong content type", mutate: func(result *FetchedResult) { result.Fact = modelOutputFact() }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
-			fetcher := &resultWorkerFetcherStub{result: test.result}
+			resultFact := fetchedImageResult(repository.task)
+			test.mutate(&resultFact)
+			fetcher := &resultWorkerFetcherStub{result: resultFact}
 			worker := newResultWorker(t, repository, fetcher)
 
 			result, err := worker.RunOnce(context.Background(), repository.task.ID)
@@ -133,7 +142,7 @@ func TestResultWorkerRejectsWrongLineageOrFact(t *testing.T) {
 
 func TestResultWorkerRejectsTaskBeforeValidating(t *testing.T) {
 	repository := &observationWorkerRepositoryStub{task: acceptedObservationTask(t)}
-	fetcher := &resultWorkerFetcherStub{result: FetchedResult{ExternalTaskID: "provider-job-1", Fact: imageOutputFact()}}
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task)}
 	worker := newResultWorker(t, repository, fetcher)
 
 	result, err := worker.RunOnce(context.Background(), repository.task.ID)
@@ -142,5 +151,17 @@ func TestResultWorkerRejectsTaskBeforeValidating(t *testing.T) {
 	}
 	if result.View.Task.ID != "" || fetcher.fetches != 0 {
 		t.Fatalf("non-validating task was fetched or returned as claimed: %+v fetches=%d", result, fetcher.fetches)
+	}
+}
+
+func fetchedImageResult(task Task) FetchedResult {
+	return FetchedResult{
+		ExternalTaskID: task.ExternalTaskID,
+		TaskID:         task.ID,
+		Purpose:        task.Purpose,
+		LookID:         task.LookID,
+		LookRevision:   task.LookRevision,
+		Inputs:         cloneSnapshot(task.Inputs),
+		Fact:           imageOutputFact(),
 	}
 }
