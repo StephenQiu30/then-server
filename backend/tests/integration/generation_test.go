@@ -289,8 +289,37 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("generation output settlement replay was not idempotent: %+v", replayedOutput)
 	}
 
+	modelInput := paidInput
+	modelInput.IdempotencyKey = "generation-model-dependent"
+	modelInput.Purpose = generationapp.PurposeModel
+	modelInput.Model = "look-model-v1"
+	modelInput.Parameters = []byte(`{"seed":"model"}`)
+	modelInput.Inputs = generationapp.InputSnapshot{
+		LookID:       paidInput.LookID,
+		LookRevision: paidInput.LookRevision,
+		References:   []generationapp.InputReference{{MediaID: asset.ID, Role: generationapp.InputRoleLookImage, Ordinal: 0, Revision: 1, SHA256: asset.SHA256}},
+		ImageAssetID: asset.ID,
+		ImageSHA256:  asset.SHA256,
+	}
+	modelInput.Consent = generationapp.ConsentReceipt{ID: "00000000-0000-4000-8000-000000000402", Purpose: generationapp.PurposeModel, PolicyVersion: "local-model-v1", AcceptedAt: acceptedAt}
+	modelCreated, err := paidGenerations.Create(ctx, second.Token, modelInput)
+	if err != nil {
+		t.Fatalf("accept dependent model task: %v", err)
+	}
 	deletionAt := published.Task.UpdatedAt.Add(time.Minute)
 	workerRepository = store.NewGenerationRepository(database)
+	sourceRequests, err := workerRepository.RequestSourceCleanup(ctx, second.User.ID, paidInput.Inputs.References[0].MediaID, deletionAt)
+	if err != nil || len(sourceRequests) != 1 || sourceRequests[0].TaskID != paidCreated.View.Task.ID || sourceRequests[0].Scope != generationapp.CleanupScopeSource {
+		t.Fatalf("source cleanup did not claim the image task: requests=%+v err=%v", sourceRequests, err)
+	}
+	dependentModel, err := workerRepository.Get(ctx, second.User.ID, modelCreated.View.Task.ID)
+	if err != nil {
+		t.Fatalf("reload dependent model cleanup: %v", err)
+	}
+	if dependentModel.Cleanup == nil || dependentModel.Cleanup.Scope != generationapp.CleanupScopeTask || dependentModel.Cleanup.Status != generationapp.CleanupPending || dependentModel.Task.CancelRequestedAt == nil {
+		t.Fatalf("source cleanup did not cascade to dependent model: %+v", dependentModel)
+	}
+
 	deletedView, deletedCleanup, err := workerRepository.RequestTaskCleanup(ctx, second.User.ID, paidCreated.View.Task.ID, deletionAt)
 	if err != nil {
 		t.Fatalf("request generation cleanup: %v", err)
@@ -391,7 +420,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if loaded.Task.CancelRequestedAt == nil || loaded.Task.StatusRevision != 2 {
 		t.Fatalf("canceled generation task was not durable: %+v", loaded.Task)
 	}
-	sourceRequests, err := workerRepository.RequestSourceCleanup(ctx, first.User.ID, "00000000-0000-4000-8000-000000000201", loaded.Task.UpdatedAt.Add(time.Minute))
+	sourceRequests, err = workerRepository.RequestSourceCleanup(ctx, first.User.ID, "00000000-0000-4000-8000-000000000201", loaded.Task.UpdatedAt.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("request source generation cleanup: %v", err)
 	}

@@ -155,10 +155,7 @@ func requestGenerationSourceCleanupInTx(tx *gorm.DB, ownerID, mediaID string, at
 		if err != nil {
 			return err
 		}
-		if !generationTaskReferencesMedia(task, mediaID) {
-			continue
-		}
-		if _, err := ensureGenerationCleanupInTx(tx, task, generationapp.CleanupScopeSource, mediaID, "", at); err != nil {
+		if err := requestGenerationSourceCleanupForTaskInTx(tx, task, mediaID, at); err != nil {
 			return err
 		}
 	}
@@ -191,6 +188,9 @@ func (r *GenerationRepository) RequestSourceCleanup(ctx context.Context, ownerID
 				return err
 			}
 			requests = append(requests, request)
+			if err := requestGenerationDependentModelCleanupInTx(tx, task, at); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -198,6 +198,23 @@ func (r *GenerationRepository) RequestSourceCleanup(ctx context.Context, ownerID
 		return nil, generationGenerationError(err)
 	}
 	return requests, nil
+}
+
+func requestGenerationSourceCleanupForTaskInTx(tx *gorm.DB, task generationapp.Task, mediaID string, at time.Time) error {
+	if !generationTaskReferencesMedia(task, mediaID) {
+		return nil
+	}
+	if _, err := ensureGenerationCleanupInTx(tx, task, generationapp.CleanupScopeSource, mediaID, "", at); err != nil {
+		return err
+	}
+	return requestGenerationDependentModelCleanupInTx(tx, task, at)
+}
+
+func requestGenerationDependentModelCleanupInTx(tx *gorm.DB, task generationapp.Task, at time.Time) error {
+	if task.Purpose != generationapp.PurposeImage || task.ResultAssetID == "" {
+		return nil
+	}
+	return requestDependentModelCleanupInTx(tx, task.OwnerID, task.ResultAssetID, at)
 }
 
 func requestGenerationAccountCleanupInTx(tx *gorm.DB, ownerID, accountDeletionID string, at time.Time) error {
