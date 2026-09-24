@@ -183,6 +183,14 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 
 	workerRepository := store.NewGenerationRepository(database)
+	queuedClaimAt := created.View.Task.UpdatedAt
+	queuedClaim, queuedLease, found, err := workerRepository.ClaimNextSubmissionLease(ctx, "worker-queue", queuedClaimAt, time.Minute)
+	if err != nil || !found || queuedClaim.Task.ID != created.View.Task.ID || queuedClaim.Task.Status != generationapp.StatusRunning || queuedLease.FencingToken != 1 || queuedLease.Attempt != 1 {
+		t.Fatalf("submission queue claim was incorrect: found=%v task=%+v lease=%+v err=%v", found, queuedClaim.Task, queuedLease, err)
+	}
+	if _, err := workerRepository.ReleaseLease(ctx, queuedLease, queuedClaimAt); err != nil {
+		t.Fatalf("release queued submission claim: %v", err)
+	}
 	if _, _, err := workerRepository.AcquireObservationLease(ctx, paidCreated.View.Task.ID, "observe-before-accept", paidCreated.View.Task.UpdatedAt.Add(time.Minute), time.Minute); !errors.Is(err, generationapp.ErrGenerationObservationUnavailable) {
 		t.Fatalf("queued generation task was eligible for observation: %v", err)
 	}
@@ -191,7 +199,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("reload queued generation task: %v", err)
 	}
 	if queuedView.Task.Status != generationapp.StatusQueued || queuedView.Task.LeaseOwner != "" {
-		t.Fatalf("observation claim mutated queued task: %+v", queuedView.Task)
+		t.Fatalf("observation claim mutated paid task unexpectedly: %+v", queuedView.Task)
 	}
 	leaseAt := paidCreated.View.Task.UpdatedAt.Add(time.Minute)
 	leased, lease, err := workerRepository.AcquireLease(ctx, paidCreated.View.Task.ID, "worker-a", leaseAt, time.Minute)
@@ -283,14 +291,21 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if external.Task.SubmissionState != generationapp.SubmissionAccepted || external.Task.ExternalTaskID != "provider-task-1" || external.Task.SubmissionAttempt != 2 {
 		t.Fatalf("generation provider identity was not persisted: %+v", external.Task)
 	}
-	observed, err := workerRepository.ApplyProviderState(ctx, workflowLease, "provider-task-1", generationapp.StatusValidating, "", workflowAt.Add(5*time.Minute))
+	if _, err := workerRepository.ReleaseLease(ctx, workflowLease, workflowAt.Add(4*time.Minute)); err != nil {
+		t.Fatalf("release provider submission lease before observation claim: %v", err)
+	}
+	observed, observationLease, found, err := workerRepository.ClaimNextObservationLease(ctx, "worker-observer", workflowAt.Add(5*time.Minute), 10*time.Minute)
+	if err != nil || !found || observed.Task.Status != generationapp.StatusRunning || observationLease.Owner != "worker-observer" {
+		t.Fatalf("observation queue claim was incorrect: found=%v task=%+v lease=%+v err=%v", found, observed.Task, observationLease, err)
+	}
+	observed, err = workerRepository.ApplyProviderState(ctx, observationLease, "provider-task-1", generationapp.StatusValidating, "", workflowAt.Add(5*time.Minute))
 	if err != nil {
 		t.Fatalf("apply generation provider state: %v", err)
 	}
 	if observed.Task.Status != generationapp.StatusValidating || observed.Task.ExternalTaskID != "provider-task-1" || observed.Task.SubmissionState != generationapp.SubmissionAccepted {
 		t.Fatalf("generation provider state observation was not persisted: %+v", observed.Task)
 	}
-	if _, err := workerRepository.ReleaseLease(ctx, workflowLease, workflowAt.Add(5*time.Minute)); err != nil {
+	if _, err := workerRepository.ReleaseLease(ctx, observationLease, workflowAt.Add(5*time.Minute)); err != nil {
 		t.Fatalf("release generation observation lease: %v", err)
 	}
 	observedView, observationLease, err := workerRepository.AcquireObservationLease(ctx, paidCreated.View.Task.ID, "worker-observer", workflowAt.Add(6*time.Minute), 10*time.Minute)
@@ -303,9 +318,9 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if _, err := workerRepository.ReleaseLease(ctx, observationLease, workflowAt.Add(6*time.Minute)); err != nil {
 		t.Fatalf("release accepted observation lease before result lease: %v", err)
 	}
-	resultView, resultLease, err := workerRepository.AcquireResultLease(ctx, paidCreated.View.Task.ID, "worker-result", workflowAt.Add(6*time.Minute), 10*time.Minute)
-	if err != nil {
-		t.Fatalf("acquire validating generation result lease: %v", err)
+	resultView, resultLease, found, err := workerRepository.ClaimNextResultLease(ctx, "worker-result", workflowAt.Add(6*time.Minute), 10*time.Minute)
+	if err != nil || !found {
+		t.Fatalf("claim validating generation result lease: found=%v err=%v", found, err)
 	}
 	outputAt := workflowAt.Add(7 * time.Minute)
 	asset, err := generationapp.NewOutputAsset(
@@ -454,7 +469,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request generation cancellation: %v", err)
 	}
-	if canceled.Task.CancelRequestedAt == nil || canceled.Task.Status != generationapp.StatusQueued || canceled.Task.StatusRevision != 2 {
+	if canceled.Task.CancelRequestedAt == nil || canceled.Task.Status != generationapp.StatusRunning || canceled.Task.StatusRevision != 4 {
 		t.Fatalf("cancellation did not persist the request: %+v", canceled.Task)
 	}
 	canceledAgain, err := generations.Cancel(ctx, first.Token, created.View.Task.ID)
@@ -476,7 +491,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload canceled generation task: %v", err)
 	}
-	if loaded.Task.CancelRequestedAt == nil || loaded.Task.StatusRevision != 2 {
+	if loaded.Task.CancelRequestedAt == nil || loaded.Task.StatusRevision != 4 {
 		t.Fatalf("canceled generation task was not durable: %+v", loaded.Task)
 	}
 	sourceRequests, err = workerRepository.RequestSourceCleanup(ctx, first.User.ID, "00000000-0000-4000-8000-000000000201", loaded.Task.UpdatedAt.Add(time.Minute))

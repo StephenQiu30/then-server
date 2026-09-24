@@ -12,8 +12,11 @@ import (
 )
 
 var _ generationapp.SubmissionWorkerRepository = (*GenerationRepository)(nil)
+var _ generationapp.SubmissionWorkerQueue = (*GenerationRepository)(nil)
 var _ generationapp.ObservationWorkerRepository = (*GenerationRepository)(nil)
+var _ generationapp.ObservationWorkerQueue = (*GenerationRepository)(nil)
 var _ generationapp.ResultWorkerRepository = (*GenerationRepository)(nil)
+var _ generationapp.ResultWorkerQueue = (*GenerationRepository)(nil)
 
 // AcquireLease claims one active generation task for a bounded worker
 // interval. It contains no provider call; the lease only fences later worker
@@ -91,6 +94,86 @@ func (r *GenerationRepository) AcquireResultLease(ctx context.Context, taskID, o
 		}
 		return nil
 	})
+}
+
+// ClaimNextSubmissionLease atomically selects one ready submission task. The
+// row lock and lease predicate make concurrent workers skip each other, while
+// the domain lease still fences a worker recovered after expiry.
+func (r *GenerationRepository) ClaimNextSubmissionLease(ctx context.Context, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
+	return r.claimNextLease(ctx, owner, at, ttl, func(query *gorm.DB) *gorm.DB {
+		return query.Where("status IN ? AND submission_state = ? AND external_task_id = '' AND access_revoked_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= ?) AND (lease_until IS NULL OR lease_until <= ?)",
+			[]string{string(generationapp.StatusQueued), string(generationapp.StatusRunning)}, string(generationapp.SubmissionNotStarted), at, at)
+	})
+}
+
+// ClaimNextObservationLease atomically selects one running task with an
+// accepted provider identity. Validating tasks are left to the result queue;
+// this prevents status polling from competing with output publication.
+func (r *GenerationRepository) ClaimNextObservationLease(ctx context.Context, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
+	return r.claimNextLease(ctx, owner, at, ttl, func(query *gorm.DB) *gorm.DB {
+		return query.Where("status = ? AND submission_state = ? AND external_task_id <> '' AND access_revoked_at IS NULL AND (lease_until IS NULL OR lease_until <= ?)",
+			string(generationapp.StatusRunning), string(generationapp.SubmissionAccepted), at)
+	})
+}
+
+// ClaimNextResultLease atomically selects one validating task whose provider
+// identity is already accepted. Revoked tasks stay available to cleanup but
+// can never trigger another output fetch.
+func (r *GenerationRepository) ClaimNextResultLease(ctx context.Context, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
+	return r.claimNextLease(ctx, owner, at, ttl, func(query *gorm.DB) *gorm.DB {
+		return query.Where("status = ? AND submission_state = ? AND external_task_id <> '' AND access_revoked_at IS NULL AND (lease_until IS NULL OR lease_until <= ?)",
+			string(generationapp.StatusValidating), string(generationapp.SubmissionAccepted), at)
+	})
+}
+
+func (r *GenerationRepository) claimNextLease(ctx context.Context, owner string, at time.Time, ttl time.Duration, filter func(*gorm.DB) *gorm.DB) (generationapp.TaskView, generationapp.Lease, bool, error) {
+	if r == nil || r.database == nil {
+		return generationapp.TaskView{}, generationapp.Lease{}, false, generationapp.ErrGenerationUnavailable
+	}
+	if owner == "" || at.IsZero() || ttl <= 0 || filter == nil {
+		return generationapp.TaskView{}, generationapp.Lease{}, false, generationapp.ErrInvalidGenerationLease
+	}
+	var view generationapp.TaskView
+	var lease generationapp.Lease
+	found := false
+	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record generationJobRecord
+		query := filter(tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})).
+			Order("created_at ASC").Order("id ASC").Limit(1)
+		if err := query.First(&record).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		found = true
+		task, err := generationTaskFromRecord(record)
+		if err != nil {
+			return err
+		}
+		previousRevision := task.StatusRevision
+		lease, err = task.AcquireLease(owner, at, ttl)
+		if err != nil {
+			return err
+		}
+		if err := updateGenerationTask(tx, task, previousRevision); err != nil {
+			return err
+		}
+		persisted, err := generationTaskByID(tx, task.ID)
+		if err != nil {
+			return err
+		}
+		lease, err = persisted.CurrentLease()
+		if err != nil {
+			return err
+		}
+		view, err = r.readTaskView(tx, persisted)
+		return err
+	})
+	if err != nil {
+		return generationapp.TaskView{}, generationapp.Lease{}, false, generationWorkerError(err)
+	}
+	return view, lease, found, nil
 }
 
 // RenewLease extends the current lease without changing its fencing token.

@@ -55,6 +55,14 @@ func (r *submissionWorkerRepositoryStub) AcquireLease(_ context.Context, _ strin
 	return r.view(), lease, nil
 }
 
+func (r *submissionWorkerRepositoryStub) ClaimNextSubmissionLease(_ context.Context, owner string, at time.Time, ttl time.Duration) (TaskView, Lease, bool, error) {
+	if r.task.Status != StatusQueued && r.task.Status != StatusRunning || r.task.SubmissionState != SubmissionNotStarted || r.task.ExternalTaskID != "" || r.task.AccessRevokedAt != nil || (r.task.NextAttemptAt != nil && at.Before(*r.task.NextAttemptAt)) {
+		return TaskView{}, Lease{}, false, nil
+	}
+	view, lease, err := r.AcquireLease(context.Background(), r.task.ID, owner, at, ttl)
+	return view, lease, err == nil, err
+}
+
 func (r *submissionWorkerRepositoryStub) ReleaseLease(_ context.Context, lease Lease, at time.Time) (TaskView, error) {
 	if err := r.task.ReleaseLease(lease, at); err != nil {
 		return TaskView{}, err
@@ -175,6 +183,19 @@ func TestSubmissionWorkerRecordsAcceptedIdentityBeforeReleasingLease(t *testing.
 	}
 	if replayed.Outcome != SubmissionOutcomeAlreadyAccepted || provider.calls != 1 {
 		t.Fatalf("accepted task was submitted again: outcome=%s calls=%d", replayed.Outcome, provider.calls)
+	}
+}
+
+func TestSubmissionWorkerRunNextClaimsDurableQueue(t *testing.T) {
+	provider := &submissionWorkerProviderStub{}
+	worker, repository, _ := newSubmissionWorkerTest(t, provider, mustTask(validCreateInput()), submissionWorkerPolicy())
+
+	found, result, err := worker.RunNext(context.Background())
+	if err != nil || !found || result.Outcome != SubmissionOutcomeAccepted || repository.task.ExternalTaskID != "provider-1" {
+		t.Fatalf("RunNext() = found=%v result=%+v err=%v", found, result, err)
+	}
+	if repository.lease != nil || provider.calls != 1 {
+		t.Fatalf("RunNext() retained lease or submitted unexpected count: lease=%+v calls=%d", repository.lease, provider.calls)
 	}
 }
 

@@ -43,6 +43,14 @@ func (r *observationWorkerRepositoryStub) AcquireObservationLease(_ context.Cont
 	return TaskView{Task: r.task, Reservation: r.reservation}, lease, nil
 }
 
+func (r *observationWorkerRepositoryStub) ClaimNextObservationLease(_ context.Context, owner string, at time.Time, ttl time.Duration) (TaskView, Lease, bool, error) {
+	if r.task.Status != StatusRunning || r.task.ExternalTaskID == "" || r.task.SubmissionState != SubmissionAccepted || r.task.AccessRevokedAt != nil {
+		return TaskView{}, Lease{}, false, nil
+	}
+	view, lease, err := r.AcquireObservationLease(context.Background(), r.task.ID, owner, at, ttl)
+	return view, lease, err == nil, err
+}
+
 func (r *observationWorkerRepositoryStub) ReleaseLease(_ context.Context, lease Lease, at time.Time) (TaskView, error) {
 	if err := r.task.ReleaseLease(lease, at); err != nil {
 		return TaskView{}, err
@@ -123,6 +131,20 @@ func TestObservationWorkerMapsProviderSuccessToValidatingWithoutPublishing(t *te
 	}
 	if provider.queries != 1 {
 		t.Fatalf("provider queries = %d, want 1", provider.queries)
+	}
+}
+
+func TestObservationWorkerRunNextClaimsRunningQueue(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: acceptedObservationTask(t)}
+	provider := &observationWorkerProviderStub{remote: RemoteTask{ExternalTaskID: "provider-job-1", State: StatusRunning}}
+	worker := newObservationWorker(t, repository, provider)
+
+	found, result, err := worker.RunNext(context.Background())
+	if err != nil || !found || result.Outcome != ObservationOutcomeRunning || result.View.Task.Status != StatusRunning {
+		t.Fatalf("RunNext() = found=%v result=%+v err=%v", found, result, err)
+	}
+	if provider.queries != 1 || repository.task.LeaseOwner != "" {
+		t.Fatalf("RunNext() did not query and release exactly once: queries=%d task=%+v", provider.queries, repository.task)
 	}
 }
 

@@ -34,6 +34,14 @@ func (r *observationWorkerRepositoryStub) AcquireResultLease(_ context.Context, 
 	return TaskView{Task: r.task, Reservation: r.reservation}, lease, nil
 }
 
+func (r *observationWorkerRepositoryStub) ClaimNextResultLease(_ context.Context, owner string, at time.Time, ttl time.Duration) (TaskView, Lease, bool, error) {
+	if r.task.Status != StatusValidating || r.task.ExternalTaskID == "" || r.task.SubmissionState != SubmissionAccepted || r.task.AccessRevokedAt != nil {
+		return TaskView{}, Lease{}, false, nil
+	}
+	view, lease, err := r.AcquireResultLease(context.Background(), r.task.ID, owner, at, ttl)
+	return view, lease, err == nil, err
+}
+
 func (r *observationWorkerRepositoryStub) PublishOutput(_ context.Context, lease Lease, asset OutputAsset, at time.Time) (TaskView, error) {
 	if err := r.task.ValidateLease(lease, at); err != nil {
 		return TaskView{}, err
@@ -91,6 +99,20 @@ func TestResultWorkerPublishesValidatedOutputAtomically(t *testing.T) {
 	}
 	if result.View.Task.LeaseOwner != "" || fetcher.fetches != 1 || fetcher.request.TaskID != repository.task.ID || fetcher.request.LookID != repository.task.LookID || fetcher.request.LookRevision != repository.task.LookRevision || !inputSnapshotsEqual(fetcher.request.Inputs, repository.task.Inputs) {
 		t.Fatalf("publication retained lease or fetched unexpected count: task=%+v fetches=%d", result.View.Task, fetcher.fetches)
+	}
+}
+
+func TestResultWorkerRunNextClaimsValidatingQueue(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task)}
+	worker := newResultWorker(t, repository, fetcher)
+
+	found, result, err := worker.RunNext(context.Background())
+	if err != nil || !found || result.Outcome != ResultOutcomePublished || repository.task.Status != StatusSucceeded {
+		t.Fatalf("RunNext() = found=%v result=%+v err=%v", found, result, err)
+	}
+	if fetcher.fetches != 1 || repository.task.LeaseOwner != "" {
+		t.Fatalf("RunNext() did not publish and release exactly once: fetches=%d task=%+v", fetcher.fetches, repository.task)
 	}
 }
 
