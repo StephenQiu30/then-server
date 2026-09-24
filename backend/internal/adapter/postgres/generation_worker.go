@@ -283,6 +283,11 @@ func generationWorkerError(err error) error {
 	if errors.Is(err, generationapp.ErrGenerationNotFound) ||
 		errors.Is(err, generationapp.ErrGenerationUnavailable) ||
 		errors.Is(err, generationapp.ErrInvalidGenerationInput) ||
+		errors.Is(err, generationapp.ErrInvalidGenerationOutput) ||
+		errors.Is(err, generationapp.ErrInvalidGenerationSettlement) ||
+		errors.Is(err, generationapp.ErrGenerationSettlementConflict) ||
+		errors.Is(err, generationapp.ErrInvalidQuotaReservation) ||
+		errors.Is(err, generationapp.ErrQuotaReservationClosed) ||
 		errors.Is(err, generationapp.ErrGenerationNotSubmittable) ||
 		errors.Is(err, generationapp.ErrSubmissionInProgress) ||
 		errors.Is(err, generationapp.ErrSubmissionOutcomeUnknown) ||
