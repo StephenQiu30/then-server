@@ -14,12 +14,16 @@ import (
 )
 
 type generationHTTPStub struct {
-	createToken string
-	createInput generationapp.CreateServiceInput
-	create      generationapp.CreateResult
-	page        generationapp.TaskPage
-	view        generationapp.TaskView
-	err         error
+	createToken    string
+	createInput    generationapp.CreateServiceInput
+	create         generationapp.CreateResult
+	page           generationapp.TaskPage
+	view           generationapp.TaskView
+	unknownPage    generationapp.UnknownSubmissionPage
+	unknownToken   string
+	reconcileToken string
+	reconcileInput generationapp.ReconcileUnknownInput
+	err            error
 }
 
 func (s *generationHTTPStub) Create(_ context.Context, token string, input generationapp.CreateServiceInput) (generationapp.CreateResult, error) {
@@ -42,6 +46,17 @@ func (s *generationHTTPStub) Cancel(context.Context, string, string) (generation
 
 func (s *generationHTTPStub) Delete(context.Context, string, string) (generationapp.DeleteResult, error) {
 	return generationapp.DeleteResult{View: s.view, Cleanup: generationapp.CleanupRequest{ID: "66666666-6666-4666-8666-666666666666", Status: generationapp.CleanupPending, AccessRevokedAt: s.view.Task.CreatedAt, CreatedAt: s.view.Task.CreatedAt, UpdatedAt: s.view.Task.CreatedAt}}, s.err
+}
+
+func (s *generationHTTPStub) ListUnknown(_ context.Context, token string, _ int, _ *string) (generationapp.UnknownSubmissionPage, error) {
+	s.unknownToken = token
+	return s.unknownPage, s.err
+}
+
+func (s *generationHTTPStub) ReconcileUnknown(_ context.Context, token string, input generationapp.ReconcileUnknownInput) (generationapp.SubmissionReconciliation, error) {
+	s.reconcileToken = token
+	s.reconcileInput = input
+	return generationapp.SubmissionReconciliation{View: s.view, AuditID: "77777777-7777-4777-8777-777777777777", Decision: input.Decision, RecordedAt: s.view.Task.CreatedAt}, s.err
 }
 
 func generationHTTPFixture() generationapp.TaskView {
@@ -174,6 +189,50 @@ func TestGenerationHTTPContractMapsDisabledAndConflictErrors(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"CONFLICT"`) {
 		t.Fatalf("source conflict status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestGenerationHTTPContractMapsAdminSubmissionReconciliation(t *testing.T) {
+	service := &generationHTTPStub{view: generationHTTPFixture()}
+	service.unknownPage = generationapp.UnknownSubmissionPage{Items: []generationapp.UnknownSubmission{{
+		ID: service.view.Task.ID, Purpose: generationapp.PurposeImage, Provider: "fixture", Model: "fixture-image-v1",
+		StatusRevision: 5, SubmissionAttempt: 1, UnknownAt: service.view.Task.CreatedAt,
+		CreatedAt: service.view.Task.CreatedAt, UpdatedAt: service.view.Task.CreatedAt,
+	}}}
+	router := generationRouter(t, service)
+
+	list := httptest.NewRecorder()
+	router.ServeHTTP(list, generationSessionRequest(http.MethodGet, "/admin/generation/submission-reconciliations?limit=20", ""))
+	if list.Code != http.StatusOK || service.unknownToken != "synthetic-session" || !strings.Contains(list.Body.String(), service.view.Task.ID) {
+		t.Fatalf("unknown submission listing status=%d token=%q body=%s", list.Code, service.unknownToken, list.Body.String())
+	}
+	for _, privateField := range []string{"owner_id", "inputs", "parameters", "email"} {
+		if strings.Contains(list.Body.String(), privateField) {
+			t.Fatalf("unknown submission listing exposed %s: %s", privateField, list.Body.String())
+		}
+	}
+
+	body := `{"expected_revision":5,"decision":"accepted","external_task_id":"fixture-task-1","evidence_type":"provider_query","evidence_reference":"query-2026-09-25-1"}`
+	request := generationSessionRequest(http.MethodPost, "/admin/generation-jobs/11111111-1111-4111-8111-111111111111/submission-reconciliation", body)
+	reconciled := httptest.NewRecorder()
+	router.ServeHTTP(reconciled, request)
+	if reconciled.Code != http.StatusOK || service.reconcileToken != "synthetic-session" || service.reconcileInput.ExpectedRevision != 5 || service.reconcileInput.Decision != generationapp.SubmissionDecisionAccepted || service.reconcileInput.ExternalTaskID != "fixture-task-1" {
+		t.Fatalf("reconciliation status=%d token=%q input=%+v body=%s", reconciled.Code, service.reconcileToken, service.reconcileInput, reconciled.Body.String())
+	}
+	if !strings.Contains(reconciled.Body.String(), `"audit_id":"77777777-7777-4777-8777-777777777777"`) || strings.Contains(reconciled.Body.String(), "evidence_reference") {
+		t.Fatalf("reconciliation response did not return receipt-only confirmation: %s", reconciled.Body.String())
+	}
+
+	service.err = generationapp.ErrGenerationForbidden
+	for _, operation := range []struct{ method, path, body string }{
+		{http.MethodGet, "/admin/generation/submission-reconciliations", ""},
+		{http.MethodPost, "/admin/generation-jobs/11111111-1111-4111-8111-111111111111/submission-reconciliation", body},
+	} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, generationSessionRequest(operation.method, operation.path, operation.body))
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("admin operation status=%d expected=403 body=%s", response.Code, response.Body.String())
+		}
 	}
 }
 

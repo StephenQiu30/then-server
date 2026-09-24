@@ -29,6 +29,8 @@ var (
 	ErrExternalTaskConflict        = errors.New("external generation task conflict")
 	ErrGenerationOutputRequired    = errors.New("validated generation output is required before success")
 	ErrGenerationSourceUnavailable = errors.New("generation source image is unavailable")
+	ErrGenerationForbidden         = errors.New("generation operation requires an administrator")
+	ErrGenerationRevisionConflict  = errors.New("generation task revision is stale")
 )
 
 // RetryPolicy bounds safe, known-not-accepted submission retries. The policy
