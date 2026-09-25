@@ -221,23 +221,12 @@ func ensureGenerationCleanupInTx(tx *gorm.DB, task generationapp.Task, scope gen
 		}
 	}
 	if task.StatusRevision != oldRevision {
-		if task.Status == generationapp.StatusQueued && task.SubmissionState == generationapp.SubmissionNotStarted && task.ExternalTaskID == "" && task.LeaseUntil == nil {
-			reservation, err := lockedGenerationReservation(tx, task.ID)
-			if err != nil {
-				return generationapp.CleanupRequest{}, err
-			}
-			previousReservationRevision := 0
-			if reservation != nil {
-				previousReservationRevision = reservation.StateRevision
-			}
-			settlement, err := generationapp.FinalizeWithoutOutput(task, reservation, generationapp.StatusCanceled, "", mutationAt)
-			if err != nil {
-				return generationapp.CleanupRequest{}, err
-			}
-			if err := persistGenerationSettlement(tx, task, oldRevision, reservation, previousReservationRevision, settlement); err != nil {
-				return generationapp.CleanupRequest{}, err
-			}
-			task = settlement.Task
+		settledTask, finalized, err := settleUnsubmittedGenerationCancellationInTx(tx, task, oldRevision, mutationAt)
+		if err != nil {
+			return generationapp.CleanupRequest{}, err
+		}
+		if finalized {
+			task = settledTask
 		} else if err := updateGenerationTask(tx, task, oldRevision); err != nil {
 			return generationapp.CleanupRequest{}, err
 		}

@@ -396,13 +396,21 @@ func (r *GenerationRepository) RequestCancel(ctx context.Context, ownerID, taskI
 			return err
 		}
 		if task.StatusRevision != oldRevision {
-			updates := map[string]any{"cancel_requested_at": task.CancelRequestedAt, "access_revoked_at": task.AccessRevokedAt, "status_revision": task.StatusRevision, "updated_at": task.UpdatedAt}
-			updated := tx.Model(&generationJobRecord{}).Where("owner_id = ? AND id = ? AND status_revision = ?", ownerID, taskID, oldRevision).Updates(updates)
-			if updated.Error != nil {
-				return updated.Error
+			settledTask, finalized, err := settleUnsubmittedGenerationCancellationInTx(tx, task, oldRevision, at.UTC())
+			if err != nil {
+				return err
 			}
-			if updated.RowsAffected != 1 {
-				return generationapp.ErrGenerationUnavailable
+			if finalized {
+				task = settledTask
+			} else {
+				updates := map[string]any{"cancel_requested_at": task.CancelRequestedAt, "access_revoked_at": task.AccessRevokedAt, "status_revision": task.StatusRevision, "updated_at": task.UpdatedAt}
+				updated := tx.Model(&generationJobRecord{}).Where("owner_id = ? AND id = ? AND status_revision = ?", ownerID, taskID, oldRevision).Updates(updates)
+				if updated.Error != nil {
+					return updated.Error
+				}
+				if updated.RowsAffected != 1 {
+					return generationapp.ErrGenerationUnavailable
+				}
 			}
 		}
 		var persisted generationJobRecord
