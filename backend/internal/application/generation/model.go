@@ -693,11 +693,17 @@ func (t *Task) ApplyProviderState(externalID string, next Status, failureCode st
 // RequestCancel records a cancellation request without claiming that the
 // provider has already stopped or that cleanup has completed.
 func (t *Task) RequestCancel(at time.Time) error {
-	if t == nil || t.Status.terminal() || at.IsZero() {
+	if t == nil || at.IsZero() {
 		return ErrGenerationNotCancellable
 	}
 	if !t.validTaskFacts() {
 		return ErrInvalidGenerationState
+	}
+	if t.Status == StatusCanceled {
+		return nil
+	}
+	if t.Status.terminal() {
+		return ErrGenerationNotCancellable
 	}
 	if t.CancelRequestedAt != nil {
 		return nil

@@ -1049,6 +1049,10 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil || settledCancellation.Task.Status != generationapp.StatusCanceled || settledCancellation.Task.CancelRequestedAt == nil || settledCancellation.Reservation == nil || settledCancellation.Reservation.State != generationapp.ReservationReleased {
 		t.Fatalf("unsubmitted cancellation did not atomically release quota: view=%+v err=%v", settledCancellation, err)
 	}
+	cancelReplay, err := paidGenerations.Cancel(ctx, second.Token, queuedCancel.View.Task.ID)
+	if err != nil || cancelReplay.Task.StatusRevision != settledCancellation.Task.StatusRevision || cancelReplay.Task.Status != generationapp.StatusCanceled || cancelReplay.Reservation == nil || cancelReplay.Reservation.State != generationapp.ReservationReleased {
+		t.Fatalf("repeated cancellation changed the settled task or quota: view=%+v err=%v", cancelReplay, err)
+	}
 	quotaProbe := queuedCancelInput
 	quotaProbe.IdempotencyKey = "generation-cancel-released-quota-probe"
 	quotaProbe.Parameters = []byte(`{"seed":"cancel-released-quota-probe"}`)
