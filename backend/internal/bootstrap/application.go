@@ -73,6 +73,7 @@ func Run(log *slog.Logger) error {
 	}
 	var runner *eventworkerapp.Runner
 	var cleanupWorker *generationapp.CleanupWorker
+	var generationWorkers []func(context.Context) error
 	var broker *messagequeue.Broker
 	if cfg.Role == "worker" || cfg.Role == "all" {
 		broker, err = messagequeue.Open(startup, cfg.KafkaBrokers, cfg.KafkaTopicPrefix)
@@ -96,20 +97,23 @@ func Run(log *slog.Logger) error {
 		if err != nil {
 			return err
 		}
+		generationWorkers, err = newGenerationWorkerRunners(cfg, pool.ORM(), objects, log)
+		if err != nil {
+			return err
+		}
 	}
 	if cfg.Role == "worker" {
 		log.Info("worker_started", "role", cfg.Role)
-		err = runWorkers(ctx, runner.Run, func(ctx context.Context) error { return cleanupWorker.Run(ctx, time.Second) })
+		workers := []func(context.Context) error{runner.Run, func(ctx context.Context) error { return cleanupWorker.Run(ctx, time.Second) }}
+		workers = append(workers, generationWorkers...)
+		err = runWorkers(ctx, workers...)
 		log.Info("worker_stopped")
 		return err
 	}
 	if cfg.Role == "all" {
-		err = runWorkers(
-			ctx,
-			runner.Run,
-			func(ctx context.Context) error { return cleanupWorker.Run(ctx, time.Second) },
-			func(ctx context.Context) error { return runAPI(ctx, startup, cfg, pool, objects, log) },
-		)
+		workers := []func(context.Context) error{runner.Run, func(ctx context.Context) error { return cleanupWorker.Run(ctx, time.Second) }, func(ctx context.Context) error { return runAPI(ctx, startup, cfg, pool, objects, log) }}
+		workers = append(workers, generationWorkers...)
+		err = runWorkers(ctx, workers...)
 		return err
 	}
 	return runAPI(ctx, startup, cfg, pool, objects, log)
@@ -192,15 +196,8 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 	if err != nil {
 		return err
 	}
-	generationPolicy := generationapp.AdmissionPolicy{
-		Enabled:             cfg.Generation.Enabled,
-		ZeroCost:            cfg.Generation.Mode == config.GenerationModeLocal,
-		Currency:            cfg.Generation.Currency,
-		MaxConcurrentTasks:  cfg.Generation.MaxConcurrentTasks,
-		MaxQuotaUnits:       cfg.Generation.MaxQuotaUnits,
-		MaxBudgetMinorUnits: cfg.Generation.MaxBudgetMinorUnits,
-	}
-	generations, err := generationapp.NewService(accounts, postgres.NewGenerationRepository(pool.ORM()), generationPolicy)
+	generationPolicy, generationCostEstimator := generationAdmissionPolicy(cfg.Generation)
+	generations, err := generationapp.NewServiceWithCostEstimator(accounts, postgres.NewGenerationRepository(pool.ORM()), generationPolicy, generationCostEstimator)
 	if err != nil {
 		return err
 	}

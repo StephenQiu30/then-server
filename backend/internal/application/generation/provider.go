@@ -27,7 +27,7 @@ var (
 	ErrGenerationCancellationUnknown = errors.New("generation cancellation requires retry")
 )
 
-// Provider is the only application port a future provider adapter may satisfy.
+// Provider is the only application port a provider adapter may satisfy.
 // It carries immutable metadata and never exposes HTTP or SDK types to the
 // application package.
 type Provider interface {

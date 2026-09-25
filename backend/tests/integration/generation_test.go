@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/StephenQiu30/then-server/backend/internal/adapter/generationfixture"
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/httpapi"
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/objectstore"
 	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
@@ -2176,4 +2177,144 @@ func integrationGenerationJPEG(t *testing.T) []byte {
 		t.Fatalf("normalize synthetic generation JPEG: %v", err)
 	}
 	return data
+}
+
+func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	password := rand.Text()
+	postgresContainer := integrationContainer(t, ctx, testcontainers.ContainerRequest{
+		Image:        "postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636",
+		Env:          map[string]string{"POSTGRES_USER": "then_test", "POSTGRES_DB": "then_test", "POSTGRES_PASSWORD": password},
+		ExposedPorts: []string{"5432/tcp"},
+		WaitingFor:   wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(time.Minute),
+	})
+	databaseAddress := mappedAddress(t, ctx, postgresContainer, "5432/tcp")
+	databaseURL := "postgres://then_test:" + url.QueryEscape(password) + "@" + databaseAddress + "/then_test?sslmode=disable"
+	database, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatalf("open worker workflow database: %v", err)
+	}
+	if err := store.Migrate(ctx, database); err != nil {
+		t.Fatalf("migrate worker workflow database: %v", err)
+	}
+
+	objectStorePassword := rand.Text()
+	objectStoreContainer := integrationContainer(t, ctx, testcontainers.ContainerRequest{
+		Image:        "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+		Cmd:          []string{"server", "/data"},
+		Env:          map[string]string{"MINIO_ROOT_USER": "then_test", "MINIO_ROOT_PASSWORD": objectStorePassword},
+		ExposedPorts: []string{"9000/tcp"},
+		WaitingFor:   wait.ForHTTP("/minio/health/live").WithPort("9000/tcp").WithStartupTimeout(time.Minute),
+	})
+	objectStoreAddress := mappedAddress(t, ctx, objectStoreContainer, "9000/tcp")
+	objects, err := objectstore.Open(ctx, objectStoreAddress, "then_test", objectStorePassword, false)
+	if err != nil {
+		t.Fatalf("open worker workflow object store: %v", err)
+	}
+
+	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
+	if err != nil {
+		t.Fatalf("construct worker workflow account service: %v", err)
+	}
+	owner, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "generation-worker@example.test", DisplayName: "Generation Worker", Password: "generation-worker-password"})
+	if err != nil {
+		t.Fatalf("register worker workflow owner: %v", err)
+	}
+	repository := store.NewGenerationRepository(database)
+	generations, err := generationapp.NewService(accounts, repository, generationapp.AdmissionPolicy{Enabled: true, ZeroCost: true, MaxConcurrentTasks: 2, MaxQuotaUnits: 2})
+	if err != nil {
+		t.Fatalf("construct worker workflow generation service: %v", err)
+	}
+	lookID := uuid.NewString()
+	inputs := generationapp.InputSnapshot{
+		LookID:       lookID,
+		LookRevision: 3,
+		References: []generationapp.InputReference{
+			{MediaID: uuid.NewString(), Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: strings.Repeat("a", 64)},
+			{MediaID: uuid.NewString(), Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 2, SHA256: strings.Repeat("b", 64)},
+		},
+	}
+	seedGenerationInputMedia(t, ctx, database, owner.User.ID, inputs.References)
+	foreignProviderTask, err := generations.Create(ctx, owner.Token, generationapp.CreateServiceInput{
+		IdempotencyKey: uuid.NewString(),
+		LookID:         lookID,
+		LookRevision:   inputs.LookRevision,
+		Purpose:        generationapp.PurposeImage,
+		Provider:       "seedream",
+		Model:          "remote-image-v1",
+		Parameters:     []byte(`{"seed":"must-remain-untouched"}`),
+		Inputs:         inputs,
+		Consent: generationapp.ConsentReceipt{
+			ID: uuid.NewString(), Purpose: generationapp.PurposeImage,
+			PolicyVersion: "local-image-v1", AcceptedAt: time.Now().UTC().Add(-time.Second),
+		},
+	})
+	if err != nil || foreignProviderTask.View.Task.Status != generationapp.StatusQueued {
+		t.Fatalf("create foreign provider isolation task: view=%+v err=%v", foreignProviderTask.View, err)
+	}
+	created, err := generations.Create(ctx, owner.Token, generationapp.CreateServiceInput{
+		IdempotencyKey: uuid.NewString(),
+		LookID:         lookID,
+		LookRevision:   inputs.LookRevision,
+		Purpose:        generationapp.PurposeImage,
+		Provider:       generationfixture.ProviderName,
+		Model:          generationfixture.ImageModel,
+		Parameters:     []byte(`{"seed":"worker-workflow"}`),
+		Inputs:         inputs,
+		Consent: generationapp.ConsentReceipt{
+			ID: uuid.NewString(), Purpose: generationapp.PurposeImage,
+			PolicyVersion: "local-image-v1", AcceptedAt: time.Now().UTC().Add(-time.Second),
+		},
+	})
+	if err != nil || created.View.Task.Status != generationapp.StatusQueued || created.View.Reservation != nil {
+		t.Fatalf("create zero-cost worker workflow task: view=%+v err=%v", created.View, err)
+	}
+
+	fixture, err := generationfixture.New(objects)
+	if err != nil {
+		t.Fatalf("construct local fixture generation adapter: %v", err)
+	}
+	submissionWorker, err := generationapp.NewSubmissionWorker(repository, fixture, generationapp.SubmissionWorkerPolicy{
+		WorkerID: "workflow-submitter", Provider: generationfixture.ProviderName, LeaseTTL: time.Minute, ProviderTimeout: time.Second,
+		Retry: generationapp.RetryPolicy{MaxAttempts: 2, BaseDelay: time.Second, MaxDelay: time.Minute},
+	})
+	if err != nil {
+		t.Fatalf("construct submission worker: %v", err)
+	}
+	found, submitted, err := submissionWorker.RunNext(ctx)
+	if err != nil || !found || submitted.Outcome != generationapp.SubmissionOutcomeAccepted || submitted.View.Task.SubmissionState != generationapp.SubmissionAccepted || !strings.HasPrefix(submitted.View.Task.ExternalTaskID, "fixture:") || submitted.View.Task.LeaseOwner != "" {
+		t.Fatalf("submitter did not persist accepted provider identity and release lease: found=%v result=%+v err=%v", found, submitted, err)
+	}
+
+	observationWorker, err := generationapp.NewObservationWorker(repository, fixture, generationapp.ObservationWorkerPolicy{
+		WorkerID: "workflow-observer", Provider: generationfixture.ProviderName, LeaseTTL: time.Minute, ProviderTimeout: time.Second, PollInterval: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("construct observation worker: %v", err)
+	}
+	found, observed, err := observationWorker.RunNext(ctx)
+	if err != nil || !found || observed.Outcome != generationapp.ObservationOutcomeValidating || observed.View.Task.Status != generationapp.StatusValidating || observed.View.Task.LeaseOwner != "" {
+		t.Fatalf("observer did not move provider success to validating: found=%v result=%+v err=%v", found, observed, err)
+	}
+
+	resultWorker, err := generationapp.NewResultWorker(repository, fixture, objects, generationapp.ResultWorkerPolicy{
+		WorkerID: "workflow-result", Provider: generationfixture.ProviderName, LeaseTTL: time.Minute, FetchTimeout: time.Second, RetryDelay: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("construct result worker: %v", err)
+	}
+	found, published, err := resultWorker.RunNext(ctx)
+	if err != nil || !found || published.Outcome != generationapp.ResultOutcomePublished || published.View.Task.Status != generationapp.StatusSucceeded || published.View.Asset == nil || published.View.Task.ResultAssetID != published.View.Asset.ID || published.View.Task.LeaseOwner != "" {
+		t.Fatalf("result worker did not validate and publish fixture output: found=%v result=%+v err=%v", found, published, err)
+	}
+	outputBytes, err := objects.ReadOutputVersion(ctx, published.View.Asset.ObjectKey, published.View.Asset.ObjectVersionID, generationapp.MaxGenerationImageOutputBytes)
+	if err != nil || len(outputBytes) != int(published.View.Asset.ByteSize) {
+		t.Fatalf("published private output version was not readable: bytes=%d asset=%+v err=%v", len(outputBytes), published.View.Asset, err)
+	}
+	untouchedForeignTask, err := repository.Get(ctx, owner.User.ID, foreignProviderTask.View.Task.ID)
+	if err != nil || untouchedForeignTask.Task.Status != generationapp.StatusQueued || untouchedForeignTask.Task.SubmissionState != generationapp.SubmissionNotStarted || untouchedForeignTask.Task.ExternalTaskID != "" || untouchedForeignTask.Task.LeaseOwner != "" {
+		t.Fatalf("local fixture workers changed a foreign provider task: view=%+v err=%v", untouchedForeignTask, err)
+	}
 }

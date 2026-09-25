@@ -41,18 +41,25 @@ type SubmissionWorkerQueue interface {
 	ClaimNextSubmissionLease(context.Context, string, time.Time, time.Duration) (TaskView, Lease, bool, error)
 }
 
+// ProviderScopedSubmissionWorkerQueue lets a worker poll only tasks belonging
+// to its configured provider adapter.
+type ProviderScopedSubmissionWorkerQueue interface {
+	ClaimNextSubmissionLeaseForProvider(context.Context, string, string, time.Time, time.Duration) (TaskView, Lease, bool, error)
+}
+
 // SubmissionWorkerPolicy bounds the worker's lease and provider request. The
 // retry policy is applied only after ErrProviderNotAccepted; an unknown
 // transport outcome never receives an automatic second submit.
 type SubmissionWorkerPolicy struct {
 	WorkerID        string
+	Provider        string
 	LeaseTTL        time.Duration
 	ProviderTimeout time.Duration
 	Retry           RetryPolicy
 }
 
 func (p SubmissionWorkerPolicy) Validate() error {
-	if !validID(p.WorkerID) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.ProviderTimeout <= 0 || p.ProviderTimeout > 10*time.Minute {
+	if !validID(p.WorkerID) || (p.Provider != "" && !validToken(p.Provider, 96)) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.ProviderTimeout <= 0 || p.ProviderTimeout > 10*time.Minute {
 		return ErrInvalidGenerationWorker
 	}
 	if err := p.Retry.Validate(); err != nil {
@@ -79,9 +86,8 @@ type SubmissionResult struct {
 	Outcome SubmissionOutcome
 }
 
-// SubmissionWorker performs one fenced submit attempt for a task ID. It is
-// deliberately not started by bootstrap: concrete provider adapters and the
-// generation outbox consumer remain gated by the 14-01 provider/POC work.
+// SubmissionWorker performs one fenced submit attempt for a task ID. Bootstrap
+// currently assembles it only with the zero-cost local fixture adapter.
 type SubmissionWorker struct {
 	repository SubmissionWorkerRepository
 	provider   Provider
@@ -122,11 +128,23 @@ func (w *SubmissionWorker) RunNext(ctx context.Context) (bool, SubmissionResult,
 	if w == nil || w.repository == nil || w.provider == nil || w.policy.Validate() != nil {
 		return false, SubmissionResult{}, ErrInvalidGenerationWorker
 	}
-	queue, ok := w.repository.(SubmissionWorkerQueue)
-	if !ok {
-		return false, SubmissionResult{}, ErrInvalidGenerationWorker
+	var view TaskView
+	var lease Lease
+	var found bool
+	var err error
+	if w.policy.Provider != "" {
+		queue, ok := w.repository.(ProviderScopedSubmissionWorkerQueue)
+		if !ok {
+			return false, SubmissionResult{}, ErrInvalidGenerationWorker
+		}
+		view, lease, found, err = queue.ClaimNextSubmissionLeaseForProvider(ctx, w.policy.WorkerID, w.policy.Provider, w.now().UTC(), w.policy.LeaseTTL)
+	} else {
+		queue, ok := w.repository.(SubmissionWorkerQueue)
+		if !ok {
+			return false, SubmissionResult{}, ErrInvalidGenerationWorker
+		}
+		view, lease, found, err = queue.ClaimNextSubmissionLease(ctx, w.policy.WorkerID, w.now().UTC(), w.policy.LeaseTTL)
 	}
-	view, lease, found, err := queue.ClaimNextSubmissionLease(ctx, w.policy.WorkerID, w.now().UTC(), w.policy.LeaseTTL)
 	if err != nil || !found {
 		return found, SubmissionResult{View: view}, err
 	}

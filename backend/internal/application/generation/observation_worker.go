@@ -35,18 +35,24 @@ type ObservationWorkerQueue interface {
 	ClaimNextObservationLease(context.Context, string, time.Time, time.Duration) (TaskView, Lease, bool, error)
 }
 
-// ObservationWorkerPolicy bounds a provider query. Provider calls remain
-// outside the transaction and are only enabled by a future adapter/bootstrap
-// integration; this policy itself has no network side effects.
+// ProviderScopedObservationWorkerQueue prevents a provider adapter from
+// polling task identities owned by another provider.
+type ProviderScopedObservationWorkerQueue interface {
+	ClaimNextObservationLeaseForProvider(context.Context, string, string, time.Time, time.Duration) (TaskView, Lease, bool, error)
+}
+
+// ObservationWorkerPolicy bounds one provider query. Provider calls remain
+// outside the transaction; the current runtime uses only the local fixture.
 type ObservationWorkerPolicy struct {
 	WorkerID        string
+	Provider        string
 	LeaseTTL        time.Duration
 	ProviderTimeout time.Duration
 	PollInterval    time.Duration
 }
 
 func (p ObservationWorkerPolicy) Validate() error {
-	if !validID(p.WorkerID) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.ProviderTimeout <= 0 || p.ProviderTimeout > 10*time.Minute || p.PollInterval <= 0 || p.PollInterval > maxWorkerRetryDelay {
+	if !validID(p.WorkerID) || (p.Provider != "" && !validToken(p.Provider, 96)) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.ProviderTimeout <= 0 || p.ProviderTimeout > 10*time.Minute || p.PollInterval <= 0 || p.PollInterval > maxWorkerRetryDelay {
 		return ErrInvalidGenerationWorker
 	}
 	return nil
@@ -109,11 +115,23 @@ func (w *ObservationWorker) RunNext(ctx context.Context) (bool, ObservationResul
 	if w == nil || w.repository == nil || w.provider == nil || w.policy.Validate() != nil {
 		return false, ObservationResult{}, ErrInvalidGenerationWorker
 	}
-	queue, ok := w.repository.(ObservationWorkerQueue)
-	if !ok {
-		return false, ObservationResult{}, ErrInvalidGenerationWorker
+	var view TaskView
+	var lease Lease
+	var found bool
+	var err error
+	if w.policy.Provider != "" {
+		queue, ok := w.repository.(ProviderScopedObservationWorkerQueue)
+		if !ok {
+			return false, ObservationResult{}, ErrInvalidGenerationWorker
+		}
+		view, lease, found, err = queue.ClaimNextObservationLeaseForProvider(ctx, w.policy.WorkerID, w.policy.Provider, w.now().UTC(), w.policy.LeaseTTL)
+	} else {
+		queue, ok := w.repository.(ObservationWorkerQueue)
+		if !ok {
+			return false, ObservationResult{}, ErrInvalidGenerationWorker
+		}
+		view, lease, found, err = queue.ClaimNextObservationLease(ctx, w.policy.WorkerID, w.now().UTC(), w.policy.LeaseTTL)
 	}
-	view, lease, found, err := queue.ClaimNextObservationLease(ctx, w.policy.WorkerID, w.now().UTC(), w.policy.LeaseTTL)
 	if err != nil || !found {
 		return found, ObservationResult{View: view}, err
 	}
