@@ -83,7 +83,7 @@ func (s *MediaService) CreateMediaUpload(ctx context.Context, token string, inpu
 		}
 		return MediaUpload{}, ErrInvalidMediaInput
 	}
-	if input.Purpose == MediaPurposeAvatarSourcePreparation {
+	if input.Purpose == MediaPurposeAvatarSourcePreparation || input.Purpose == MediaPurposeGenerationInput && input.Category == MediaCategoryPersonPhoto {
 		confirmed, err := s.repository.IsSelfAdultConfirmed(ctx, user.ID)
 		if err != nil {
 			return MediaUpload{}, err
@@ -159,10 +159,17 @@ func (s *MediaService) GetDeletionRequest(ctx context.Context, token, requestID 
 }
 
 func validConsentInput(input CreateConsentInput) bool {
-	return input.Purpose == MediaPurposeAvatarSourcePreparation &&
-		input.Category == MediaCategoryPersonPhoto &&
-		input.PolicyVersion == CurrentMediaPolicyVersion &&
-		input.ActivelyAgreed && !input.TrainingAllowed
+	if !input.ActivelyAgreed || input.TrainingAllowed {
+		return false
+	}
+	switch input.Purpose {
+	case MediaPurposeAvatarSourcePreparation:
+		return input.Category == MediaCategoryPersonPhoto && input.PolicyVersion == CurrentMediaPolicyVersion
+	case MediaPurposeGenerationInput:
+		return (input.Category == MediaCategoryPersonPhoto || input.Category == MediaCategoryOrdinaryImage) && input.PolicyVersion == CurrentGenerationInputPolicyVersion
+	default:
+		return false
+	}
 }
 
 func validUploadInput(input CreateMediaUploadInput) bool {
@@ -171,9 +178,11 @@ func validUploadInput(input CreateMediaUploadInput) bool {
 	}
 	switch input.Purpose {
 	case MediaPurposeAvatarSourcePreparation:
-		return input.ConsentID != ""
+		return input.ConsentID != "" && (input.Category == "" || input.Category == MediaCategoryPersonPhoto)
+	case MediaPurposeGenerationInput:
+		return input.ConsentID != "" && (input.Category == MediaCategoryPersonPhoto || input.Category == MediaCategoryOrdinaryImage)
 	case MediaPurposeDiaryImage, MediaPurposeCommunityPublish, MediaPurposeProfileAvatar:
-		return input.ConsentID == ""
+		return input.ConsentID == "" && input.Category == ""
 	default:
 		return false
 	}

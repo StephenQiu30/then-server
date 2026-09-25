@@ -7,6 +7,7 @@ import (
 
 const (
 	MediaPurposeAvatarSourcePreparation       = "avatar_source_preparation"
+	MediaPurposeGenerationInput               = "generation_input"
 	MediaPurposeDiaryImage                    = "diary_image"
 	MediaPurposeCommunityPublish              = "community_publish"
 	MediaPurposeProfileAvatar                 = "profile_avatar"
@@ -16,6 +17,7 @@ const (
 	MediaRegionLocalDevelopment               = "local-development"
 	MediaContentTypeJPEG                      = "image/jpeg"
 	CurrentMediaPolicyVersion                 = "person-photo-v1"
+	CurrentGenerationInputPolicyVersion       = "generation-input-v1"
 	MaxPersonPhotoBytes                 int64 = 12 * 1024 * 1024
 	MaxPersonPhotoPixels                int64 = 24_000_000
 	UploadIntentLifetime                      = 10 * time.Minute
@@ -93,6 +95,7 @@ func (status MediaStatus) CanTransitionTo(next MediaStatus) bool {
 type CreateMediaUploadInput struct {
 	ConsentID   string
 	Purpose     string
+	Category    string
 	ContentType string
 	ByteSize    int64
 	SHA256      string

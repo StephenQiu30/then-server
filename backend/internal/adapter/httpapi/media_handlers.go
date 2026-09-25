@@ -76,7 +76,7 @@ func (h *MediaHandler) createUpload(ctx context.Context, input *createMediaUploa
 	if r.ConsentID != nil {
 		consentID = *r.ConsentID
 	}
-	upload, err := h.service.CreateMediaUpload(ctx, input.Session, mediaapp.CreateMediaUploadInput{ConsentID: consentID, Purpose: r.Purpose, ContentType: r.ContentType, ByteSize: r.ByteSize, SHA256: r.SHA256})
+	upload, err := h.service.CreateMediaUpload(ctx, input.Session, mediaapp.CreateMediaUploadInput{ConsentID: consentID, Purpose: r.Purpose, Category: r.Category, ContentType: r.ContentType, ByteSize: r.ByteSize, SHA256: r.SHA256})
 	if err != nil {
 		return nil, h.mediaError(ctx, err)
 	}

@@ -116,6 +116,55 @@ func TestMediaServiceReturnsOnlySignedUploadResponse(t *testing.T) {
 	}
 }
 
+func TestGenerationInputUploadsRequirePurposeScopedConsentAndCategory(t *testing.T) {
+	for _, category := range []string{MediaCategoryPersonPhoto, MediaCategoryOrdinaryImage} {
+		t.Run(category, func(t *testing.T) {
+			repository := &mediaRepositoryStub{adult: true, media: MediaAsset{ID: "media-id", Purpose: MediaPurposeGenerationInput, Category: category}}
+			objects := &mediaObjectStoreStub{upload: SignedUpload{Method: "PUT", URL: "http://127.0.0.1/signed"}}
+			service, err := NewMediaService(&mediaAuthenticatorStub{user: accountapp.User{ID: "owner"}}, repository, objects)
+			if err != nil {
+				t.Fatal(err)
+			}
+			consent, err := service.CreateConsent(context.Background(), "session", CreateConsentInput{
+				Purpose: MediaPurposeGenerationInput, Category: category,
+				PolicyVersion: CurrentGenerationInputPolicyVersion, ActivelyAgreed: true,
+			})
+			if err != nil || repository.createCalls != 1 {
+				t.Fatalf("generation input consent was not accepted: consent=%+v err=%v", consent, err)
+			}
+			_, err = service.CreateMediaUpload(context.Background(), "session", CreateMediaUploadInput{
+				ConsentID: "consent-id", Purpose: MediaPurposeGenerationInput, Category: category,
+				ContentType: MediaContentTypeJPEG, ByteSize: 1024,
+				SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			})
+			if err != nil || repository.mediaInput.Category != category || repository.mediaInput.ConsentID != "consent-id" {
+				t.Fatalf("generation input upload lost its category or consent: input=%+v err=%v", repository.mediaInput, err)
+			}
+			if category == MediaCategoryPersonPhoto && repository.adultCalls != 1 {
+				t.Fatalf("person input did not require current adult declaration: calls=%d", repository.adultCalls)
+			}
+			if category == MediaCategoryOrdinaryImage && repository.adultCalls != 0 {
+				t.Fatalf("ordinary garment input unexpectedly required adult declaration: calls=%d", repository.adultCalls)
+			}
+		})
+	}
+}
+
+func TestGenerationInputConsentRejectsTrainingOrUnsupportedCategory(t *testing.T) {
+	for _, input := range []CreateConsentInput{
+		{Purpose: MediaPurposeGenerationInput, Category: MediaCategoryPersonPhoto, PolicyVersion: CurrentGenerationInputPolicyVersion, ActivelyAgreed: true, TrainingAllowed: true},
+		{Purpose: MediaPurposeGenerationInput, Category: "", PolicyVersion: CurrentGenerationInputPolicyVersion, ActivelyAgreed: true},
+	} {
+		service, err := NewMediaService(&mediaAuthenticatorStub{user: accountapp.User{ID: "owner"}}, &mediaRepositoryStub{}, &mediaObjectStoreStub{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.CreateConsent(context.Background(), "session", input); !errors.Is(err, ErrInvalidMediaInput) {
+			t.Fatalf("invalid generation-input consent was accepted: %+v err=%v", input, err)
+		}
+	}
+}
+
 func TestOrdinaryImagesDoNotReusePersonPhotoConsentGate(t *testing.T) {
 	for _, purpose := range []string{MediaPurposeDiaryImage, MediaPurposeProfileAvatar} {
 		repository := &mediaRepositoryStub{adult: false, media: MediaAsset{ID: "media-id", Purpose: purpose, Category: MediaCategoryOrdinaryImage}}

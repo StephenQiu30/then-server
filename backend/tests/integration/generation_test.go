@@ -27,6 +27,9 @@ import (
 	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
 	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
 	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
+	"github.com/google/uuid"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"gorm.io/driver/postgres"
@@ -205,6 +208,10 @@ func TestGenerationCleanupWorkerDeletesExactMinIOVersionAndBlocksProviderCalls(t
 
 func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database *gorm.DB, service *generationapp.Service, ownerID, ownerToken, otherToken string) {
 	t.Helper()
+	seedGenerationInputMedia(t, ctx, database, ownerID, []generationapp.InputReference{
+		{MediaID: "00000000-0000-4000-8000-000000000902", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: strings.Repeat("a", 64)},
+		{MediaID: "00000000-0000-4000-8000-000000000903", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 1, SHA256: strings.Repeat("b", 64)},
+	})
 
 	router, err := httpapi.NewRouterWithGeneration(
 		ctx,
@@ -440,6 +447,10 @@ func generationOutputAccessRequest(method, taskID, token string) *http.Request {
 
 func verifyGenerationHTTPQuotaPersistence(t *testing.T, ctx context.Context, database *gorm.DB, service *generationapp.Service, ownerID, ownerToken string) {
 	t.Helper()
+	seedGenerationInputMedia(t, ctx, database, ownerID, []generationapp.InputReference{
+		{MediaID: "00000000-0000-4000-8000-000000000912", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: strings.Repeat("a", 64)},
+		{MediaID: "00000000-0000-4000-8000-000000000913", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 1, SHA256: strings.Repeat("b", 64)},
+	})
 
 	router, err := httpapi.NewRouterWithGeneration(
 		ctx,
@@ -508,6 +519,158 @@ func verifyGenerationHTTPQuotaPersistence(t *testing.T, ctx context.Context, dat
 	}
 	if err := database.WithContext(ctx).Table("generation_quota_reservations").Where("owner_id = ? AND state = ?", ownerID, string(generationapp.ReservationReserved)).Count(&reservations).Error; err != nil || reservations != 1 {
 		t.Fatalf("HTTP retry or rejection changed active reservations: count=%d err=%v", reservations, err)
+	}
+}
+
+func seedGenerationInputMedia(t *testing.T, ctx context.Context, database *gorm.DB, ownerID string, references []generationapp.InputReference) {
+	t.Helper()
+
+	mediaRepository := store.NewMediaRepository(database)
+	privacyRepository := store.NewPrivacyRepository(database)
+	at := time.Now().UTC()
+	for _, reference := range references {
+		category := ""
+		switch reference.Role {
+		case generationapp.InputRolePerson:
+			category = mediaapp.MediaCategoryPersonPhoto
+			if _, err := privacyRepository.ConfirmSelfAdultDeclaration(ctx, ownerID, privacyapp.CurrentSelfAdultPolicyVersion, at); err != nil {
+				t.Fatalf("confirm synthetic adult declaration: %v", err)
+			}
+		case generationapp.InputRoleGarment:
+			category = mediaapp.MediaCategoryOrdinaryImage
+		default:
+			t.Fatalf("unsupported generation fixture role %q", reference.Role)
+		}
+
+		consent, err := mediaRepository.CreateConsent(ctx, ownerID, mediaapp.CreateConsentInput{
+			Purpose:         mediaapp.MediaPurposeGenerationInput,
+			Category:        category,
+			PolicyVersion:   mediaapp.CurrentGenerationInputPolicyVersion,
+			ActivelyAgreed:  true,
+			TrainingAllowed: false,
+		}, at)
+		if err != nil {
+			t.Fatalf("create synthetic generation-input consent: %v", err)
+		}
+
+		var existing int64
+		if err := database.WithContext(ctx).Table("media_assets").Where("id = ?", reference.MediaID).Count(&existing).Error; err != nil {
+			t.Fatalf("check synthetic generation media: %v", err)
+		}
+		if existing != 0 {
+			continue
+		}
+		rawObjectKey := "owners/" + ownerID + "/media/" + reference.MediaID + "/source.jpg"
+		if err := database.WithContext(ctx).Table("media_assets").Create(map[string]any{
+			"id": reference.MediaID, "owner_id": ownerID, "consent_id": consent.ID,
+			"purpose": mediaapp.MediaPurposeGenerationInput, "category": category,
+			"content_type": mediaapp.MediaContentTypeJPEG, "byte_size": int64(128), "sha256": reference.SHA256,
+			"raw_object_key": rawObjectKey, "object_version_id": "source-version-" + reference.MediaID,
+			"status": string(mediaapp.MediaReady), "stable_reason": "", "pixel_width": 10, "pixel_height": 10,
+			"upload_expires_at": at.Add(mediaapp.UploadIntentLifetime), "created_at": at, "updated_at": at,
+		}).Error; err != nil {
+			t.Fatalf("insert synthetic ready generation media: %v", err)
+		}
+		if err := database.WithContext(ctx).Table("media_derivations").Create(map[string]any{
+			"id": uuid.NewString(), "media_id": reference.MediaID,
+			"object_key":        "media/" + reference.MediaID + "/normalized.jpg",
+			"object_version_id": "normalized-version-" + reference.MediaID, "created_at": at,
+		}).Error; err != nil {
+			t.Fatalf("insert synthetic normalized generation media: %v", err)
+		}
+	}
+}
+
+func removeSyntheticGenerationInputMedia(t *testing.T, ctx context.Context, database *gorm.DB, ownerID string, references []generationapp.InputReference) {
+	t.Helper()
+	for _, reference := range references {
+		if err := database.WithContext(ctx).Table("media_derivations").Where("media_id = ?", reference.MediaID).Delete(map[string]any{}).Error; err != nil {
+			t.Fatalf("remove synthetic generation derivation: %v", err)
+		}
+		if err := database.WithContext(ctx).Table("media_assets").Where("id = ? AND owner_id = ?", reference.MediaID, ownerID).Delete(map[string]any{}).Error; err != nil {
+			t.Fatalf("remove synthetic generation input: %v", err)
+		}
+	}
+}
+
+func verifyGenerationInputAdmissionGuards(t *testing.T, ctx context.Context, database *gorm.DB, service *generationapp.Service, ownerToken, ownerID string, input generationapp.CreateServiceInput, foreignMediaID string) {
+	t.Helper()
+	personMediaID := input.Inputs.References[0].MediaID
+	garmentMediaID := input.Inputs.References[1].MediaID
+	reject := func(name string, references []generationapp.InputReference) {
+		t.Helper()
+		candidate := input
+		candidate.IdempotencyKey = "generation-input-guard-" + name
+		candidate.Parameters = []byte(`{"guard":"` + name + `"}`)
+		candidate.Inputs.References = append([]generationapp.InputReference(nil), references...)
+		if _, err := service.Create(ctx, ownerToken, candidate); !errors.Is(err, generationapp.ErrGenerationSourceUnavailable) {
+			t.Fatalf("%s generation source was not rejected: %v", name, err)
+		}
+	}
+
+	wrongHash := append([]generationapp.InputReference(nil), input.Inputs.References...)
+	wrongHash[0].SHA256 = strings.Repeat("c", 64)
+	reject("hash-mismatch", wrongHash)
+
+	wrongOwner := append([]generationapp.InputReference(nil), input.Inputs.References...)
+	wrongOwner[0].MediaID = foreignMediaID
+	reject("cross-owner", wrongOwner)
+
+	if err := database.WithContext(ctx).Table("media_assets").Where("id = ?", personMediaID).Update("status", string(mediaapp.MediaChecking)).Error; err != nil {
+		t.Fatalf("mark synthetic person media unvalidated: %v", err)
+	}
+	reject("unvalidated", input.Inputs.References)
+	if err := database.WithContext(ctx).Table("media_assets").Where("id = ?", personMediaID).Update("status", string(mediaapp.MediaReady)).Error; err != nil {
+		t.Fatalf("restore synthetic person media status: %v", err)
+	}
+
+	if err := database.WithContext(ctx).Table("media_assets").Where("id = ?", garmentMediaID).Update("source_deleted_at", time.Now().UTC()).Error; err != nil {
+		t.Fatalf("mark synthetic garment source deleted: %v", err)
+	}
+	reject("deleted-source", input.Inputs.References)
+	if err := database.WithContext(ctx).Table("media_assets").Where("id = ?", garmentMediaID).Update("source_deleted_at", nil).Error; err != nil {
+		t.Fatalf("restore synthetic garment source: %v", err)
+	}
+
+	if err := database.WithContext(ctx).Table("media_assets").Where("id = ?", personMediaID).Update("purpose", mediaapp.MediaPurposeAvatarSourcePreparation).Error; err != nil {
+		t.Fatalf("change synthetic person media purpose: %v", err)
+	}
+	reject("wrong-purpose", input.Inputs.References)
+	if err := database.WithContext(ctx).Table("media_assets").Where("id = ?", personMediaID).Update("purpose", mediaapp.MediaPurposeGenerationInput).Error; err != nil {
+		t.Fatalf("restore synthetic person media purpose: %v", err)
+	}
+
+	var consentID string
+	if err := database.WithContext(ctx).Table("media_assets").Select("consent_id").Where("id = ?", personMediaID).Scan(&consentID).Error; err != nil || consentID == "" {
+		t.Fatalf("read synthetic person media consent: id=%q err=%v", consentID, err)
+	}
+	withdrawnAt := time.Now().UTC()
+	if err := database.WithContext(ctx).Table("consent_records").Where("id = ?", consentID).Update("withdrawn_at", withdrawnAt).Error; err != nil {
+		t.Fatalf("withdraw synthetic generation-input consent: %v", err)
+	}
+	reject("withdrawn-consent", input.Inputs.References)
+	if err := database.WithContext(ctx).Table("consent_records").Where("id = ?", consentID).Update("withdrawn_at", nil).Error; err != nil {
+		t.Fatalf("restore synthetic generation-input consent: %v", err)
+	}
+
+	if err := database.WithContext(ctx).Table("self_adult_declarations").Where("user_id = ? AND policy_version = ?", ownerID, privacyapp.CurrentSelfAdultPolicyVersion).Update("withdrawn_at", withdrawnAt).Error; err != nil {
+		t.Fatalf("withdraw synthetic adult declaration: %v", err)
+	}
+	reject("withdrawn-adult-declaration", input.Inputs.References)
+	if _, err := store.NewPrivacyRepository(database).ConfirmSelfAdultDeclaration(ctx, ownerID, privacyapp.CurrentSelfAdultPolicyVersion, time.Now().UTC()); err != nil {
+		t.Fatalf("restore synthetic adult declaration: %v", err)
+	}
+
+	if err := database.WithContext(ctx).Table("media_derivations").Where("media_id = ?", garmentMediaID).Delete(map[string]any{}).Error; err != nil {
+		t.Fatalf("remove synthetic normalized derivation: %v", err)
+	}
+	reject("missing-normalized-derivation", input.Inputs.References)
+	if err := database.WithContext(ctx).Table("media_derivations").Create(map[string]any{
+		"id": uuid.NewString(), "media_id": garmentMediaID,
+		"object_key":        "media/" + garmentMediaID + "/normalized.jpg",
+		"object_version_id": "normalized-version-" + garmentMediaID, "created_at": time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatalf("restore synthetic normalized derivation: %v", err)
 	}
 }
 
@@ -595,6 +758,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		},
 		Consent: generationapp.ConsentReceipt{ID: "00000000-0000-4000-8000-000000000301", Purpose: generationapp.PurposeImage, PolicyVersion: "local-image-v1", AcceptedAt: acceptedAt},
 	}
+	seedGenerationInputMedia(t, ctx, database, first.User.ID, input.Inputs.References)
 
 	created, err := generations.Create(ctx, first.Token, input)
 	if err != nil {
@@ -686,6 +850,12 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	paidInput := input
 	paidInput.IdempotencyKey = "generation-paid-request"
 	paidInput.Parameters = []byte(`{"seed":"paid"}`)
+	paidInput.Inputs.References = []generationapp.InputReference{
+		{MediaID: "00000000-0000-4000-8000-000000000205", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{MediaID: "00000000-0000-4000-8000-000000000206", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 3, SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+	}
+	seedGenerationInputMedia(t, ctx, database, second.User.ID, paidInput.Inputs.References)
+	verifyGenerationInputAdmissionGuards(t, ctx, database, generations, first.Token, first.User.ID, input, paidInput.Inputs.References[0].MediaID)
 	paidCreated, err := paidGenerations.Create(ctx, second.Token, paidInput)
 	if err != nil {
 		t.Fatalf("accept quota-backed generation task: %v", err)
@@ -1099,6 +1269,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		{MediaID: "00000000-0000-4000-8000-000000000203", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 		{MediaID: "00000000-0000-4000-8000-000000000204", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 3, SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
 	}
+	seedGenerationInputMedia(t, ctx, database, second.User.ID, cancelInput.Inputs.References)
 	cancelCreated, err := paidGenerations.Create(ctx, second.Token, cancelInput)
 	if err != nil {
 		t.Fatalf("accept cancellation workflow task: %v", err)
@@ -1185,6 +1356,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		{MediaID: "00000000-0000-4000-8000-000000000211", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
 		{MediaID: "00000000-0000-4000-8000-000000000212", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 1, SHA256: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"},
 	}
+	seedGenerationInputMedia(t, ctx, database, second.User.ID, purposeImageInput.Inputs.References)
 	purposeImage, err := purposeGenerations.Create(ctx, second.Token, purposeImageInput)
 	if err != nil {
 		t.Fatalf("accept image task with purpose-scoped quota: %v", err)
@@ -1392,6 +1564,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if _, err := workerRepository.CompleteTaskCleanup(ctx, recoveredSource, recoveryAt.Add(time.Minute)); err != nil {
 		t.Fatalf("recovered cleanup worker could not complete: %v", err)
 	}
+	removeSyntheticGenerationInputMedia(t, ctx, database, first.User.ID, input.Inputs.References)
 	accountDeletion, err := accounts.DeleteCurrentUser(ctx, first.Token)
 	if err != nil {
 		t.Fatalf("begin account deletion with generation cleanup: %v", err)
@@ -1447,6 +1620,11 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	lateInput := input
 	lateInput.IdempotencyKey = "generation-late-acceptance-cleanup"
 	lateInput.Parameters = []byte(`{"seed":"late-cleanup"}`)
+	lateInput.Inputs.References = []generationapp.InputReference{
+		{MediaID: "00000000-0000-4000-8000-000000000221", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{MediaID: "00000000-0000-4000-8000-000000000222", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 3, SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+	}
+	seedGenerationInputMedia(t, ctx, database, third.User.ID, lateInput.Inputs.References)
 	lateCreated, err := generations.Create(ctx, third.Token, lateInput)
 	if err != nil {
 		t.Fatalf("accept late generation task: %v", err)
@@ -1562,6 +1740,11 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	recoveryInput.LookID = "00000000-0000-4000-8000-000000000102"
 	recoveryInput.Parameters = []byte(`{"seed":"recovery"}`)
 	recoveryInput.Inputs.LookID = recoveryInput.LookID
+	recoveryInput.Inputs.References = []generationapp.InputReference{
+		{MediaID: "00000000-0000-4000-8000-000000000223", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{MediaID: "00000000-0000-4000-8000-000000000224", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 3, SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+	}
+	seedGenerationInputMedia(t, ctx, database, third.User.ID, recoveryInput.Inputs.References)
 	recoveryTask, err := generations.Create(ctx, third.Token, recoveryInput)
 	if err != nil {
 		t.Fatalf("create stale in-flight recovery task: %v", err)
@@ -1611,6 +1794,11 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		request := paidInput
 		request.IdempotencyKey = key
 		request.Parameters = []byte(`{"seed":"` + key + `"}`)
+		request.Inputs.References = []generationapp.InputReference{
+			{MediaID: "00000000-0000-4000-8000-000000000231", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+			{MediaID: "00000000-0000-4000-8000-000000000232", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 3, SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+		}
+		seedGenerationInputMedia(t, ctx, database, third.User.ID, request.Inputs.References)
 		created, err := adminGenerations.Create(ctx, third.Token, request)
 		if err != nil {
 			t.Fatalf("create %s reconciliation task: %v", key, err)

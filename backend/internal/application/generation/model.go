@@ -869,7 +869,7 @@ func validSnapshot(purpose Purpose, lookID string, lookRevision int, snapshot In
 		}
 		return false
 	}
-	return snapshot.ImageAssetID == "" && snapshot.ImageSHA256 == "" && personCount == 1 && garmentCount <= 3 && lookImageCount == 0
+	return snapshot.ImageAssetID == "" && snapshot.ImageSHA256 == "" && personCount == 1 && garmentCount >= 1 && garmentCount <= 3 && lookImageCount == 0
 }
 
 func validConsent(purpose Purpose, receipt ConsentReceipt) bool {

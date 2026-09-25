@@ -62,6 +62,24 @@ func Migrate(ctx context.Context, database *gorm.DB) error {
 	// AutoMigrate does not alter an existing CHECK constraint when a new
 	// provider-neutral outbox event type or cleanup scope is added.
 	if database.Dialector.Name() == "postgres" {
+		for _, statement := range []string{
+			"ALTER TABLE consent_records DROP CONSTRAINT IF EXISTS consent_records_purpose_check",
+			"ALTER TABLE consent_records ADD CONSTRAINT consent_records_purpose_check CHECK (purpose IN ('avatar_source_preparation','generation_input'))",
+			"ALTER TABLE consent_records DROP CONSTRAINT IF EXISTS consent_records_category_check",
+			"ALTER TABLE consent_records ADD CONSTRAINT consent_records_category_check CHECK (category IN ('person_photo','ordinary_image'))",
+			"ALTER TABLE consent_records DROP CONSTRAINT IF EXISTS consent_records_policy_check",
+			"ALTER TABLE consent_records ADD CONSTRAINT consent_records_policy_check CHECK (policy_version IN ('person-photo-v1','generation-input-v1'))",
+			"ALTER TABLE consent_records DROP CONSTRAINT IF EXISTS consent_records_purpose_policy_check",
+			"ALTER TABLE consent_records ADD CONSTRAINT consent_records_purpose_policy_check CHECK ((purpose = 'avatar_source_preparation' AND category = 'person_photo' AND policy_version = 'person-photo-v1') OR (purpose = 'generation_input' AND category IN ('person_photo','ordinary_image') AND policy_version = 'generation-input-v1'))",
+			"ALTER TABLE media_assets DROP CONSTRAINT IF EXISTS media_assets_purpose_check",
+			"ALTER TABLE media_assets ADD CONSTRAINT media_assets_purpose_check CHECK (purpose IN ('avatar_source_preparation','generation_input','diary_image','community_publish','profile_avatar'))",
+			"ALTER TABLE media_assets DROP CONSTRAINT IF EXISTS media_assets_purpose_category_check",
+			"ALTER TABLE media_assets ADD CONSTRAINT media_assets_purpose_category_check CHECK ((purpose = 'avatar_source_preparation' AND category = 'person_photo' AND consent_id IS NOT NULL) OR (purpose = 'generation_input' AND category IN ('person_photo','ordinary_image') AND consent_id IS NOT NULL) OR (purpose IN ('diary_image','community_publish','profile_avatar') AND category = 'ordinary_image' AND consent_id IS NULL))",
+		} {
+			if err := database.WithContext(ctx).Exec(statement).Error; err != nil {
+				return err
+			}
+		}
 		if err := database.WithContext(ctx).Exec("ALTER TABLE outbox_events DROP CONSTRAINT IF EXISTS outbox_events_type_check").Error; err != nil {
 			return err
 		}
