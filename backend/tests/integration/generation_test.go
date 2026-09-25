@@ -415,6 +415,29 @@ func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database
 	}
 }
 
+func generationOutputAccessRouter(t *testing.T, ctx context.Context, service *generationapp.Service, objects *objectstore.Store) http.Handler {
+	t.Helper()
+	router, err := httpapi.NewRouterWithGeneration(
+		ctx,
+		false,
+		generationIntegrationProbe{},
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		httpapi.NewGenerationHandler(service, false).WithOutputSigner(objects),
+		time.Second,
+		slog.New(slog.NewJSONHandler(io.Discard, nil)),
+	)
+	if err != nil {
+		t.Fatalf("construct generation output router: %v", err)
+	}
+	return router
+}
+
+func generationOutputAccessRequest(method, taskID, token string) *http.Request {
+	request := httptest.NewRequest(method, "/generation-jobs/"+taskID+"/output-access", nil)
+	request.AddCookie(&http.Cookie{Name: "then_session", Value: token})
+	return request
+}
+
 func verifyGenerationHTTPQuotaPersistence(t *testing.T, ctx context.Context, database *gorm.DB, service *generationapp.Service, ownerID, ownerToken string) {
 	t.Helper()
 
@@ -976,6 +999,42 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", published.Task.ID).Select("object_key").Scan(&storedOutputObjectKey).Error; err != nil || storedOutputObjectKey != outputObjectKey {
 		t.Fatalf("generation output key was not persisted: key=%q err=%v", storedOutputObjectKey, err)
 	}
+	outputRouter := generationOutputAccessRouter(t, ctx, paidGenerations, objects)
+	newerBytes := []byte("newer output version")
+	newerVersionID, err := objects.PutDerived(ctx, outputObjectKey, bytes.NewReader(newerBytes), int64(len(newerBytes)))
+	if err != nil || newerVersionID == published.Asset.ObjectVersionID {
+		t.Fatalf("write competing MinIO version: version=%q err=%v", newerVersionID, err)
+	}
+	accessResponse := httptest.NewRecorder()
+	outputRouter.ServeHTTP(accessResponse, generationOutputAccessRequest(http.MethodGet, published.Task.ID, second.Token))
+	if accessResponse.Code != http.StatusOK || accessResponse.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("owner output access status=%d cache-control=%q body=%s", accessResponse.Code, accessResponse.Header().Get("Cache-Control"), accessResponse.Body.String())
+	}
+	var access httpapi.GenerationOutputAccessResponse
+	if err := json.Unmarshal(accessResponse.Body.Bytes(), &access); err != nil {
+		t.Fatalf("decode output access response %q: %v", accessResponse.Body.String(), err)
+	}
+	signedURL, err := url.Parse(access.URL)
+	if err != nil || signedURL.Query().Get("versionId") != published.Asset.ObjectVersionID || access.ByteSize != int64(len(resultFetcher.data)) || access.SHA256 != published.Asset.SHA256 || access.ContentType != generationapp.OutputContentTypeJPEG || !access.ExpiresAt.After(time.Now().UTC()) || access.ExpiresAt.After(time.Now().UTC().Add(5*time.Minute+time.Second)) {
+		t.Fatalf("output access was not bound to the exact stored version and metadata: access=%+v err=%v", access, err)
+	}
+	download, err := http.Get(access.URL)
+	if err != nil {
+		t.Fatalf("download signed generation output: %v", err)
+	}
+	downloadData, readErr := io.ReadAll(download.Body)
+	download.Body.Close()
+	if readErr != nil || download.StatusCode != http.StatusOK || download.Header.Get("Content-Type") != generationapp.OutputContentTypeJPEG || !bytes.Equal(downloadData, resultFetcher.data) {
+		t.Fatalf("signed URL did not return its fixed version: status=%d content-type=%q size=%d read-error=%v", download.StatusCode, download.Header.Get("Content-Type"), len(downloadData), readErr)
+	}
+	if err := objects.DeleteVersion(ctx, objectstore.DerivedBucket, outputObjectKey, newerVersionID); err != nil {
+		t.Fatalf("remove competing MinIO version: %v", err)
+	}
+	otherAccount := httptest.NewRecorder()
+	outputRouter.ServeHTTP(otherAccount, generationOutputAccessRequest(http.MethodGet, published.Task.ID, first.Token))
+	if otherAccount.Code != http.StatusNotFound {
+		t.Fatalf("cross-account output access status=%d body=%s", otherAccount.Code, otherAccount.Body.String())
+	}
 	for _, overBudget := range []struct {
 		contentType string
 		byteSize    int64
@@ -1137,6 +1196,11 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("accept model task with independent purpose limits: %v", err)
 	}
+	unfinished := httptest.NewRecorder()
+	outputRouter.ServeHTTP(unfinished, generationOutputAccessRequest(http.MethodGet, modelCreated.View.Task.ID, second.Token))
+	if unfinished.Code != http.StatusNotFound {
+		t.Fatalf("unfinished output access status=%d body=%s", unfinished.Code, unfinished.Body.String())
+	}
 	if modelCreated.View.Task.Status != generationapp.StatusQueued || modelCreated.View.Reservation == nil || modelCreated.View.Reservation.Purpose != generationapp.PurposeModel || modelCreated.View.Reservation.EstimatedMinorUnits != 60 || modelCreated.View.Reservation.ReservedQuotaUnits != 3 {
 		t.Fatalf("model purpose reservation was not persisted independently: %+v", modelCreated)
 	}
@@ -1183,6 +1247,11 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 	if deletedView.Task.AccessRevokedAt == nil || deletedView.Asset != nil || deletedView.Cleanup == nil || deletedView.Cleanup.ID != deletedCleanup.ID || deletedCleanup.Status != generationapp.CleanupPending || len(deletedCleanup.Targets) != 2 || deletedCleanup.Targets[0].ObjectKey != outputObjectKey {
 		t.Fatalf("generation cleanup did not revoke access or retain targets: view=%+v cleanup=%+v", deletedView, deletedCleanup)
+	}
+	revokedAccess := httptest.NewRecorder()
+	outputRouter.ServeHTTP(revokedAccess, generationOutputAccessRequest(http.MethodGet, published.Task.ID, second.Token))
+	if revokedAccess.Code != http.StatusNotFound {
+		t.Fatalf("revoked output access status=%d body=%s", revokedAccess.Code, revokedAccess.Body.String())
 	}
 	if len(deletedCleanup.Targets) != 2 || deletedCleanup.Targets[0].Kind != generationapp.CleanupTargetObject || deletedCleanup.Targets[0].ObjectKey != outputObjectKey || deletedCleanup.Targets[0].ObjectVersionID != outputVersionID || deletedCleanup.Targets[1].Kind != generationapp.CleanupTargetProvider {
 		t.Fatalf("generation cleanup request lost its target snapshot: request=%+v", deletedCleanup)

@@ -150,6 +150,21 @@ func (s *Service) Get(ctx context.Context, token, taskID string) (TaskView, erro
 	return s.repository.Get(ctx, user.ID, taskID)
 }
 
+func (s *Service) GetOutput(ctx context.Context, token, taskID string) (OutputAsset, error) {
+	view, err := s.Get(ctx, token, taskID)
+	if err != nil {
+		return OutputAsset{}, err
+	}
+	if view.Task.AccessRevokedAt != nil || view.Task.Status != StatusSucceeded || view.Asset == nil ||
+		view.Asset.ObjectKey == "" || view.Asset.ObjectVersionID == "" {
+		return OutputAsset{}, ErrGenerationNotFound
+	}
+	if err := view.Asset.ValidatePersistedFor(view.Task); err != nil {
+		return OutputAsset{}, ErrGenerationUnavailable
+	}
+	return *view.Asset, nil
+}
+
 func (s *Service) List(ctx context.Context, token string, limit int, afterID *string) (TaskPage, error) {
 	user, err := s.currentUser(ctx, token)
 	if err != nil {

@@ -17,6 +17,10 @@ type generationHTTPStub struct {
 	createToken    string
 	createInput    generationapp.CreateServiceInput
 	create         generationapp.CreateResult
+	output         generationapp.OutputAsset
+	outputToken    string
+	outputTaskID   string
+	outputCalls    int
 	page           generationapp.TaskPage
 	view           generationapp.TaskView
 	unknownPage    generationapp.UnknownSubmissionPage
@@ -34,6 +38,13 @@ func (s *generationHTTPStub) Create(_ context.Context, token string, input gener
 
 func (s *generationHTTPStub) Get(context.Context, string, string) (generationapp.TaskView, error) {
 	return s.view, s.err
+}
+
+func (s *generationHTTPStub) GetOutput(_ context.Context, token, taskID string) (generationapp.OutputAsset, error) {
+	s.outputToken = token
+	s.outputTaskID = taskID
+	s.outputCalls++
+	return s.output, s.err
 }
 
 func (s *generationHTTPStub) List(context.Context, string, int, *string) (generationapp.TaskPage, error) {
@@ -93,6 +104,19 @@ func generationRouter(t *testing.T, service GenerationHTTPService) *Router {
 		t.Fatal(err)
 	}
 	return router
+}
+
+type generationOutputSignerStub struct {
+	asset generationapp.OutputAsset
+	ttl   time.Duration
+	url   string
+	err   error
+}
+
+func (s *generationOutputSignerStub) SignGenerationOutputRead(_ context.Context, asset generationapp.OutputAsset, ttl time.Duration) (string, time.Time, error) {
+	s.asset = asset
+	s.ttl = ttl
+	return s.url, time.Now().UTC().Add(ttl), s.err
 }
 
 func generationSessionRequest(method, target, body string) *http.Request {
@@ -189,6 +213,71 @@ func TestGenerationHTTPContractMapsDisabledAndConflictErrors(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"CONFLICT"`) {
 		t.Fatalf("source conflict status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestGenerationOutputAccessRequiresSessionAndSignsOwnedResult(t *testing.T) {
+	service := &generationHTTPStub{output: generationapp.OutputAsset{
+		ID: "88888888-8888-4888-8888-888888888888",
+		Lineage: generationapp.OutputLineage{
+			TaskID: "11111111-1111-4111-8111-111111111111", OwnerID: "22222222-2222-4222-8222-222222222222",
+			Purpose: generationapp.PurposeImage,
+		},
+		ContentType: generationapp.OutputContentTypeJPEG, ByteSize: 123,
+		SHA256:          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ObjectKey:       "owners/22222222-2222-4222-8222-222222222222/generation/11111111-1111-4111-8111-111111111111/output.jpg",
+		ObjectVersionID: "fixture-version",
+	}}
+	signer := &generationOutputSignerStub{url: "https://objects.example.test/private/output.jpg?signature=secret"}
+	router, err := NewRouterWithGeneration(
+		context.Background(), false, probeFunc(func(context.Context) error { return nil }),
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		NewGenerationHandler(service, true).WithOutputSigner(signer),
+		time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID := service.output.Lineage.TaskID
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, generationSessionRequest(http.MethodGet, "/generation-jobs/"+taskID+"/output-access", ""))
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("output access status=%d cache-control=%q body=%s", response.Code, response.Header().Get("Cache-Control"), response.Body.String())
+	}
+	if service.outputToken != "synthetic-session" || service.outputTaskID != taskID || service.outputCalls != 2 {
+		t.Fatalf("output access did not use the authenticated session and recheck after signing: %+v", service)
+	}
+	if signer.asset.ObjectVersionID != service.output.ObjectVersionID || signer.ttl != 5*time.Minute {
+		t.Fatalf("signer input was not bound to the stored version and five minute TTL: %+v", signer)
+	}
+	if !strings.Contains(response.Body.String(), signer.url) || strings.Contains(response.Body.String(), "object_key") {
+		t.Fatalf("output access response omitted URL or exposed private persistence data: %s", response.Body.String())
+	}
+	if response.Header().Get("Set-Cookie") != "" {
+		t.Fatalf("output access unexpectedly changed session cookie: %q", response.Header().Get("Set-Cookie"))
+	}
+
+	service.outputCalls = 0
+	unauthorized := httptest.NewRecorder()
+	router.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/generation-jobs/"+taskID+"/output-access", nil))
+	if unauthorized.Code != http.StatusUnauthorized || service.outputCalls != 0 {
+		t.Fatalf("unauthenticated output access status=%d service calls=%d", unauthorized.Code, service.outputCalls)
+	}
+
+	service.err = generationapp.ErrGenerationNotFound
+	forbidden := httptest.NewRecorder()
+	router.ServeHTTP(forbidden, generationSessionRequest(http.MethodGet, "/generation-jobs/"+taskID+"/output-access", ""))
+	if forbidden.Code != http.StatusNotFound {
+		t.Fatalf("missing or non-owned output status=%d body=%s", forbidden.Code, forbidden.Body.String())
+	}
+
+	service.err = nil
+	service.outputCalls = 0
+	missingSigner := generationRouter(t, service)
+	unavailable := httptest.NewRecorder()
+	missingSigner.ServeHTTP(unavailable, generationSessionRequest(http.MethodGet, "/generation-jobs/"+taskID+"/output-access", ""))
+	if unavailable.Code != http.StatusServiceUnavailable || unavailable.Header().Get("Retry-After") != "1" {
+		t.Fatalf("unavailable signer status=%d retry-after=%q body=%s", unavailable.Code, unavailable.Header().Get("Retry-After"), unavailable.Body.String())
 	}
 }
 
