@@ -204,6 +204,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 	if err != nil {
 		return err
 	}
+	generationHandler := httpapi.NewGenerationHandler(generations, cfg.SessionSecure).WithOutputSigner(objects)
 	var mediaHandler *httpapi.MediaHandler
 	var communityHandler *httpapi.CommunityHandler
 	var exportHandler *httpapi.DataExportHandler
@@ -239,7 +240,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		httpapi.NewWearEventHandler(wearEvents, cfg.SessionSecure),
 		httpapi.NewDiaryHandler(diaries, cfg.SessionSecure),
 		communityHandler, httpapi.NewFeedbackHandler(feedback, cfg.SessionSecure),
-		exportHandler, httpapi.NewSyncHandler(syncChanges, cfg.SessionSecure), httpapi.NewGenerationHandler(generations, cfg.SessionSecure), cfg.HealthTimeout, log, mediaHandler,
+		exportHandler, httpapi.NewSyncHandler(syncChanges, cfg.SessionSecure), generationHandler, cfg.HealthTimeout, log, mediaHandler,
 	)
 	if err != nil {
 		return err

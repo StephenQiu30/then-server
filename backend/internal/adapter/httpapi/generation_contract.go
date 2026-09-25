@@ -44,6 +44,14 @@ type GenerationOutputResponse struct {
 	PublishedAt     time.Time `json:"published_at" format:"date-time"`
 }
 
+type GenerationOutputAccessResponse struct {
+	URL         string    `json:"url" format:"uri"`
+	ExpiresAt   time.Time `json:"expires_at" format:"date-time"`
+	ContentType string    `json:"content_type" enum:"image/jpeg,model/gltf-binary"`
+	ByteSize    int64     `json:"byte_size" minimum:"1"`
+	SHA256      string    `json:"sha256" pattern:"^[a-f0-9]{64}$"`
+}
+
 type GenerationReservationResponse struct {
 	ID                  string                         `json:"id" format:"uuid"`
 	State               generationapp.ReservationState `json:"state" enum:"reserved,released,consumed"`
@@ -113,6 +121,11 @@ type generationJobInput struct {
 type generationJobOutput struct {
 	RequestID string                `header:"X-Request-ID"`
 	Body      GenerationJobResponse `json:"body"`
+}
+
+type generationOutputAccessOutput struct {
+	RequestID string                         `header:"X-Request-ID"`
+	Body      GenerationOutputAccessResponse `json:"body"`
 }
 
 type generationJobPageOutput struct {

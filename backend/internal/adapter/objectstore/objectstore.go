@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 
 	"github.com/minio/minio-go/v7"
@@ -18,8 +19,9 @@ import (
 )
 
 const (
-	RawBucket     = "raw-private"
-	DerivedBucket = "derived-private"
+	RawBucket           = "raw-private"
+	DerivedBucket       = "derived-private"
+	maxOutputReadURLTTL = 5 * time.Minute
 )
 
 type Store struct{ client *minio.Client }
@@ -115,6 +117,37 @@ func (s *Store) ReadOutputVersion(ctx context.Context, objectKey, versionID stri
 		return nil, errors.New("output version read failed")
 	}
 	return data, nil
+}
+
+func (s *Store) SignGenerationOutputRead(ctx context.Context, asset generationapp.OutputAsset, ttl time.Duration) (string, time.Time, error) {
+	if s == nil || s.client == nil || ttl <= 0 || ttl > maxOutputReadURLTTL || asset.Lineage.OwnerID == "" || asset.Lineage.TaskID == "" || asset.ObjectVersionID == "" {
+		return "", time.Time{}, errors.New("generation output access invalid")
+	}
+	extension := ""
+	switch asset.Lineage.Purpose {
+	case generationapp.PurposeImage:
+		extension = ".jpg"
+		if asset.ContentType != generationapp.OutputContentTypeJPEG || asset.ByteSize < 1 || asset.ByteSize > generationapp.MaxGenerationImageOutputBytes {
+			return "", time.Time{}, errors.New("generation image output invalid")
+		}
+	case generationapp.PurposeModel:
+		extension = ".glb"
+		if asset.ContentType != generationapp.OutputContentTypeGLB || asset.ByteSize < 1 || asset.ByteSize > generationapp.MaxGenerationModelOutputBytes {
+			return "", time.Time{}, errors.New("generation model output invalid")
+		}
+	default:
+		return "", time.Time{}, errors.New("generation output purpose invalid")
+	}
+	expectedKey := "owners/" + asset.Lineage.OwnerID + "/generation/" + asset.Lineage.TaskID + "/output" + extension
+	if asset.ObjectKey != expectedKey {
+		return "", time.Time{}, errors.New("generation output key invalid")
+	}
+	parameters := url.Values{"versionId": []string{asset.ObjectVersionID}}
+	signedURL, err := s.client.PresignedGetObject(ctx, DerivedBucket, asset.ObjectKey, ttl, parameters)
+	if err != nil || signedURL == nil {
+		return "", time.Time{}, errors.New("generation output signing failed")
+	}
+	return signedURL.String(), time.Now().UTC().Add(ttl), nil
 }
 
 func (s *Store) openVersion(ctx context.Context, bucket, objectKey, versionID string) (io.ReadCloser, error) {

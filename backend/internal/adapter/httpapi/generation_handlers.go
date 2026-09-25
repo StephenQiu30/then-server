@@ -15,6 +15,7 @@ import (
 type GenerationHTTPService interface {
 	Create(context.Context, string, generationapp.CreateServiceInput) (generationapp.CreateResult, error)
 	Get(context.Context, string, string) (generationapp.TaskView, error)
+	GetOutput(context.Context, string, string) (generationapp.OutputAsset, error)
 	List(context.Context, string, int, *string) (generationapp.TaskPage, error)
 	Cancel(context.Context, string, string) (generationapp.TaskView, error)
 	Delete(context.Context, string, string) (generationapp.DeleteResult, error)
@@ -22,13 +23,27 @@ type GenerationHTTPService interface {
 	ReconcileUnknown(context.Context, string, generationapp.ReconcileUnknownInput) (generationapp.SubmissionReconciliation, error)
 }
 
+type GenerationOutputSigner interface {
+	SignGenerationOutputRead(context.Context, generationapp.OutputAsset, time.Duration) (string, time.Time, error)
+}
+
+const generationOutputReadURLTTL = 5 * time.Minute
+
 type GenerationHandler struct {
 	service      GenerationHTTPService
+	outputSigner GenerationOutputSigner
 	secureCookie bool
 }
 
 func NewGenerationHandler(service GenerationHTTPService, secureCookie bool) *GenerationHandler {
 	return &GenerationHandler{service: service, secureCookie: secureCookie}
+}
+
+func (h *GenerationHandler) WithOutputSigner(signer GenerationOutputSigner) *GenerationHandler {
+	if h != nil {
+		h.outputSigner = signer
+	}
+	return h
 }
 
 func (h *GenerationHandler) create(ctx context.Context, input *createGenerationJobInput) (*generationJobOutput, error) {
@@ -85,6 +100,35 @@ func (h *GenerationHandler) get(ctx context.Context, input *generationJobInput) 
 		return nil, h.error(ctx, err)
 	}
 	return &generationJobOutput{RequestID: requestID(ctx), Body: generationJobResponse(view)}, nil
+}
+
+func (h *GenerationHandler) outputAccess(ctx context.Context, input *generationJobInput) (*generationOutputAccessOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	if h.outputSigner == nil {
+		response := huma.ErrorWithHeaders(newErrorResponse(http.StatusServiceUnavailable, requestID(ctx)), http.Header{"Retry-After": []string{"1"}})
+		return nil, response
+	}
+	asset, err := h.service.GetOutput(ctx, input.Session, input.ID)
+	if err != nil {
+		return nil, h.error(ctx, err)
+	}
+	signedURL, expiresAt, err := h.outputSigner.SignGenerationOutputRead(ctx, asset, generationOutputReadURLTTL)
+	if err != nil || signedURL == "" || !expiresAt.After(time.Now().UTC()) || expiresAt.After(time.Now().UTC().Add(generationOutputReadURLTTL+time.Second)) {
+		response := huma.ErrorWithHeaders(newErrorResponse(http.StatusServiceUnavailable, requestID(ctx)), http.Header{"Retry-After": []string{"1"}})
+		return nil, response
+	}
+	current, err := h.service.GetOutput(ctx, input.Session, input.ID)
+	if err != nil || current.ID != asset.ID || current.ObjectKey != asset.ObjectKey || current.ObjectVersionID != asset.ObjectVersionID {
+		if err != nil {
+			return nil, h.error(ctx, err)
+		}
+		return nil, newErrorResponse(http.StatusNotFound, requestID(ctx))
+	}
+	return &generationOutputAccessOutput{RequestID: requestID(ctx), Body: GenerationOutputAccessResponse{
+		URL: signedURL, ExpiresAt: expiresAt, ContentType: asset.ContentType, ByteSize: asset.ByteSize, SHA256: asset.SHA256,
+	}}, nil
 }
 
 func (h *GenerationHandler) cancel(ctx context.Context, input *generationJobInput) (*generationJobOutput, error) {

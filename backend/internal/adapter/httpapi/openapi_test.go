@@ -51,6 +51,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 	protectedOperations := map[string]bool{
 		"deleteSession":                   true,
 		"getCurrentUser":                  true,
+		"getGenerationOutputAccess":       true,
 		"listCurrentUserSessions":         true,
 		"revokeCurrentUserSession":        true,
 		"putProfileAvatar":                true,
@@ -192,10 +193,10 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.27.0" || operations != 127 || len(spec.Paths) != 95 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.28.0" || operations != 128 || len(spec.Paths) != 96 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d paths=%d", spec.OpenAPI, spec.Info.Version, operations, len(spec.Paths))
 	}
-	for _, operationID := range []string{"listCurrentUserSessions", "revokeCurrentUserSession", "listUnknownGenerationSubmissions", "reconcileUnknownGenerationSubmission"} {
+	for _, operationID := range []string{"listCurrentUserSessions", "revokeCurrentUserSession", "getGenerationOutputAccess", "listUnknownGenerationSubmissions", "reconcileUnknownGenerationSubmission"} {
 		if !identifiers[operationID] {
 			t.Fatalf("generated contract is missing session operation %s", operationID)
 		}
