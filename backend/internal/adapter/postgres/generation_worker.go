@@ -13,10 +13,13 @@ import (
 
 var _ generationapp.SubmissionWorkerRepository = (*GenerationRepository)(nil)
 var _ generationapp.SubmissionWorkerQueue = (*GenerationRepository)(nil)
+var _ generationapp.ProviderScopedSubmissionWorkerQueue = (*GenerationRepository)(nil)
 var _ generationapp.ObservationWorkerRepository = (*GenerationRepository)(nil)
 var _ generationapp.ObservationWorkerQueue = (*GenerationRepository)(nil)
+var _ generationapp.ProviderScopedObservationWorkerQueue = (*GenerationRepository)(nil)
 var _ generationapp.ResultWorkerRepository = (*GenerationRepository)(nil)
 var _ generationapp.ResultWorkerQueue = (*GenerationRepository)(nil)
+var _ generationapp.ProviderScopedResultWorkerQueue = (*GenerationRepository)(nil)
 
 // AcquireLease claims one active generation task for a bounded worker
 // interval. It contains no provider call; the lease only fences later worker
@@ -100,9 +103,24 @@ func (r *GenerationRepository) AcquireResultLease(ctx context.Context, taskID, o
 // row lock and lease predicate make concurrent workers skip each other, while
 // the domain lease still fences a worker recovered after expiry.
 func (r *GenerationRepository) ClaimNextSubmissionLease(ctx context.Context, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
+	return r.claimNextSubmissionLease(ctx, owner, "", at, ttl)
+}
+
+func (r *GenerationRepository) ClaimNextSubmissionLeaseForProvider(ctx context.Context, owner, provider string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
+	if provider == "" {
+		return generationapp.TaskView{}, generationapp.Lease{}, false, generationapp.ErrInvalidGenerationLease
+	}
+	return r.claimNextSubmissionLease(ctx, owner, provider, at, ttl)
+}
+
+func (r *GenerationRepository) claimNextSubmissionLease(ctx context.Context, owner, provider string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
 	return r.claimNextLease(ctx, owner, at, ttl, func(query *gorm.DB) *gorm.DB {
-		return query.Where("status IN ? AND external_task_id = '' AND access_revoked_at IS NULL AND (lease_until IS NULL OR lease_until <= ?) AND ((submission_state = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (submission_state = ? AND lease_until IS NOT NULL))",
+		query = query.Where("status IN ? AND external_task_id = '' AND access_revoked_at IS NULL AND (lease_until IS NULL OR lease_until <= ?) AND ((submission_state = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (submission_state = ? AND lease_until IS NOT NULL))",
 			[]string{string(generationapp.StatusQueued), string(generationapp.StatusRunning)}, at, string(generationapp.SubmissionNotStarted), at, string(generationapp.SubmissionInFlight))
+		if provider != "" {
+			query = query.Where("provider = ?", provider)
+		}
+		return query
 	})
 }
 
@@ -110,9 +128,24 @@ func (r *GenerationRepository) ClaimNextSubmissionLease(ctx context.Context, own
 // accepted provider identity. Validating tasks are left to the result queue;
 // this prevents status polling from competing with output publication.
 func (r *GenerationRepository) ClaimNextObservationLease(ctx context.Context, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
+	return r.claimNextObservationLease(ctx, owner, "", at, ttl)
+}
+
+func (r *GenerationRepository) ClaimNextObservationLeaseForProvider(ctx context.Context, owner, provider string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
+	if provider == "" {
+		return generationapp.TaskView{}, generationapp.Lease{}, false, generationapp.ErrInvalidGenerationLease
+	}
+	return r.claimNextObservationLease(ctx, owner, provider, at, ttl)
+}
+
+func (r *GenerationRepository) claimNextObservationLease(ctx context.Context, owner, provider string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
 	return r.claimNextLease(ctx, owner, at, ttl, func(query *gorm.DB) *gorm.DB {
-		return query.Where("status = ? AND submission_state = ? AND external_task_id <> '' AND access_revoked_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= ?) AND (lease_until IS NULL OR lease_until <= ?)",
+		query = query.Where("status = ? AND submission_state = ? AND external_task_id <> '' AND access_revoked_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= ?) AND (lease_until IS NULL OR lease_until <= ?)",
 			string(generationapp.StatusRunning), string(generationapp.SubmissionAccepted), at, at)
+		if provider != "" {
+			query = query.Where("provider = ?", provider)
+		}
+		return query
 	})
 }
 
@@ -120,9 +153,24 @@ func (r *GenerationRepository) ClaimNextObservationLease(ctx context.Context, ow
 // identity is already accepted. Revoked tasks stay available to cleanup but
 // can never trigger another output fetch.
 func (r *GenerationRepository) ClaimNextResultLease(ctx context.Context, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
+	return r.claimNextResultLease(ctx, owner, "", at, ttl)
+}
+
+func (r *GenerationRepository) ClaimNextResultLeaseForProvider(ctx context.Context, owner, provider string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
+	if provider == "" {
+		return generationapp.TaskView{}, generationapp.Lease{}, false, generationapp.ErrInvalidGenerationLease
+	}
+	return r.claimNextResultLease(ctx, owner, provider, at, ttl)
+}
+
+func (r *GenerationRepository) claimNextResultLease(ctx context.Context, owner, provider string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
 	return r.claimNextLease(ctx, owner, at, ttl, func(query *gorm.DB) *gorm.DB {
-		return query.Where("status = ? AND submission_state = ? AND external_task_id <> '' AND access_revoked_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= ?) AND (lease_until IS NULL OR lease_until <= ?)",
+		query = query.Where("status = ? AND submission_state = ? AND external_task_id <> '' AND access_revoked_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= ?) AND (lease_until IS NULL OR lease_until <= ?)",
 			string(generationapp.StatusValidating), string(generationapp.SubmissionAccepted), at, at)
+		if provider != "" {
+			query = query.Where("provider = ?", provider)
+		}
+		return query
 	})
 }
 

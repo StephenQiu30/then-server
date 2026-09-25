@@ -42,16 +42,23 @@ type ResultWorkerQueue interface {
 	ClaimNextResultLease(context.Context, string, time.Time, time.Duration) (TaskView, Lease, bool, error)
 }
 
+// ProviderScopedResultWorkerQueue prevents an output adapter from fetching
+// results for tasks owned by another provider.
+type ProviderScopedResultWorkerQueue interface {
+	ClaimNextResultLeaseForProvider(context.Context, string, string, time.Time, time.Duration) (TaskView, Lease, bool, error)
+}
+
 // ResultWorkerPolicy bounds output inventory, fetch, and object reads.
 type ResultWorkerPolicy struct {
 	WorkerID     string
+	Provider     string
 	LeaseTTL     time.Duration
 	FetchTimeout time.Duration
 	RetryDelay   time.Duration
 }
 
 func (p ResultWorkerPolicy) Validate() error {
-	if !validID(p.WorkerID) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.FetchTimeout <= 0 || p.FetchTimeout > 10*time.Minute || p.RetryDelay <= 0 || p.RetryDelay > maxWorkerRetryDelay {
+	if !validID(p.WorkerID) || (p.Provider != "" && !validToken(p.Provider, 96)) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.FetchTimeout <= 0 || p.FetchTimeout > 10*time.Minute || p.RetryDelay <= 0 || p.RetryDelay > maxWorkerRetryDelay {
 		return ErrInvalidGenerationResultWorker
 	}
 	return nil
@@ -71,9 +78,8 @@ type ResultWorkerResult struct {
 }
 
 // ResultWorker recovers unpublished versions before fetching, verifies the
-// immutable output fact against the task, and commits the private asset.
-// It never calls Provider directly and is intentionally not started by
-// bootstrap.
+// immutable output fact against the task, and commits the private asset. It
+// never calls Provider directly; bootstrap currently supplies the local fixture.
 type ResultWorker struct {
 	repository ResultWorkerRepository
 	fetcher    ResultFetcher
@@ -126,11 +132,23 @@ func (w *ResultWorker) RunNext(ctx context.Context) (bool, ResultWorkerResult, e
 	if w == nil || w.repository == nil || w.fetcher == nil || w.outputs == nil || w.policy.Validate() != nil {
 		return false, ResultWorkerResult{}, ErrInvalidGenerationResultWorker
 	}
-	queue, ok := w.repository.(ResultWorkerQueue)
-	if !ok {
-		return false, ResultWorkerResult{}, ErrInvalidGenerationResultWorker
+	var view TaskView
+	var lease Lease
+	var found bool
+	var err error
+	if w.policy.Provider != "" {
+		queue, ok := w.repository.(ProviderScopedResultWorkerQueue)
+		if !ok {
+			return false, ResultWorkerResult{}, ErrInvalidGenerationResultWorker
+		}
+		view, lease, found, err = queue.ClaimNextResultLeaseForProvider(ctx, w.policy.WorkerID, w.policy.Provider, w.now().UTC(), w.policy.LeaseTTL)
+	} else {
+		queue, ok := w.repository.(ResultWorkerQueue)
+		if !ok {
+			return false, ResultWorkerResult{}, ErrInvalidGenerationResultWorker
+		}
+		view, lease, found, err = queue.ClaimNextResultLease(ctx, w.policy.WorkerID, w.now().UTC(), w.policy.LeaseTTL)
 	}
-	view, lease, found, err := queue.ClaimNextResultLease(ctx, w.policy.WorkerID, w.now().UTC(), w.policy.LeaseTTL)
 	if err != nil || !found {
 		return found, ResultWorkerResult{View: view}, err
 	}

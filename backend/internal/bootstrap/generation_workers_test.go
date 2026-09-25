@@ -1,0 +1,109 @@
+package bootstrap
+
+import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"testing"
+	"time"
+
+	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
+	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
+)
+
+func TestGenerationAdmissionPolicyEnablesOnlyZeroCostFixtureImages(t *testing.T) {
+	local := config.GenerationConfig{
+		Mode:               config.GenerationModeLocal,
+		Enabled:            true,
+		MaxConcurrentTasks: 2,
+		MaxQuotaUnits:      10,
+	}
+	policy, estimator := generationAdmissionPolicy(local)
+	if err := policy.Validate(); err != nil || !policy.Enabled || !policy.ZeroCost || estimator == nil {
+		t.Fatalf("valid local fixture admission was not enabled: policy=%+v err=%v", policy, err)
+	}
+	quote, err := estimator.Estimate(generationapp.PurposeImage, "fixture", "fixture-image-v1", []byte(`{}`))
+	if err != nil || quote.EstimatedMinorUnits != 0 || quote.ReservedQuotaUnits != 0 || quote.Currency != "" {
+		t.Fatalf("fixture quote was not zero-cost: quote=%+v err=%v", quote, err)
+	}
+	for _, request := range []struct {
+		purpose  generationapp.Purpose
+		provider string
+		model    string
+	}{
+		{generationapp.PurposeImage, "remote-provider", "remote-model"},
+		{generationapp.PurposeModel, "fixture", "fixture-model-v1"},
+	} {
+		if _, err := estimator.Estimate(request.purpose, request.provider, request.model, []byte(`{}`)); err != generationapp.ErrInvalidGenerationInput {
+			t.Fatalf("unsupported local fixture request was accepted: %+v err=%v", request, err)
+		}
+	}
+
+	for _, configuration := range []config.GenerationConfig{
+		{Mode: config.GenerationModeOff},
+		{Mode: config.GenerationModeRemote, Enabled: true},
+		{Mode: config.GenerationModeLocal, Enabled: true, LocalImageEndpoint: "http://127.0.0.1:9100/v1/generate"},
+	} {
+		policy, estimator := generationAdmissionPolicy(configuration)
+		if policy.Enabled || policy.ZeroCost || estimator != nil {
+			t.Fatalf("generation admission opened outside the implemented local fixture mode: cfg=%+v policy=%+v", configuration, policy)
+		}
+	}
+}
+
+func TestGenerationWorkerRunnersStayClosedOutsideLocalFixtureMode(t *testing.T) {
+	for _, cfg := range []config.Config{
+		{Generation: config.GenerationConfig{Mode: config.GenerationModeOff}},
+		{Generation: config.GenerationConfig{Mode: config.GenerationModeRemote, Enabled: true}},
+		{Generation: config.GenerationConfig{Mode: config.GenerationModeLocal, Enabled: true, LocalImageEndpoint: "http://127.0.0.1:9100/v1/generate"}},
+	} {
+		runners, err := newGenerationWorkerRunners(cfg, nil, nil, nil)
+		if err != nil || len(runners) != 0 {
+			t.Fatalf("unsupported generation mode started local workers: cfg=%+v runners=%d err=%v", cfg.Generation, len(runners), err)
+		}
+	}
+	localFixture := config.Config{Generation: config.GenerationConfig{
+		Mode:                  config.GenerationModeLocal,
+		Enabled:               true,
+		MaxConcurrentTasks:    2,
+		MaxQuotaUnits:         10,
+		MaxSubmissionAttempts: 2,
+		ProviderTimeout:       time.Second,
+		Retention:             time.Hour,
+	}}
+	if runners, err := newGenerationWorkerRunners(localFixture, nil, nil, nil); err == nil || len(runners) != 0 {
+		t.Fatalf("local fixture workers started without durable dependencies: runners=%d err=%v", len(runners), err)
+	}
+}
+
+func TestRunGenerationQueueProcessesReadyWorkAndStopsWithContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	calls := 0
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	err := runGenerationQueue(ctx, log, "test", func(context.Context) (bool, error) {
+		calls++
+		if calls == 1 {
+			return true, nil
+		}
+		cancel()
+		return false, nil
+	})
+	if !errors.Is(err, context.Canceled) || calls != 2 {
+		t.Fatalf("queue runner did not drain work then stop on context: calls=%d err=%v", calls, err)
+	}
+}
+
+func TestRunGenerationQueueDelaysAfterFailedAttempt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	calls := 0
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	err := runGenerationQueue(ctx, log, "test", func(context.Context) (bool, error) {
+		calls++
+		cancel()
+		return false, errors.New("synthetic failure")
+	})
+	if !errors.Is(err, context.Canceled) || calls != 1 {
+		t.Fatalf("queue runner retried immediately after a failed attempt: calls=%d err=%v", calls, err)
+	}
+}
