@@ -715,6 +715,7 @@ func TestTaskRejectsInvalidSnapshotsAndConsent(t *testing.T) {
 		{name: "duplicate media", mutate: func(input *CreateInput) { input.Inputs.References[1].MediaID = input.Inputs.References[0].MediaID }},
 		{name: "duplicate ordinal", mutate: func(input *CreateInput) { input.Inputs.References[1].Ordinal = input.Inputs.References[0].Ordinal }},
 		{name: "invalid hash", mutate: func(input *CreateInput) { input.Inputs.References[0].SHA256 = "not-a-hash" }},
+		{name: "missing garment", mutate: func(input *CreateInput) { input.Inputs.References = input.Inputs.References[:1] }},
 		{name: "mismatched look revision", mutate: func(input *CreateInput) { input.Inputs.LookRevision++ }},
 		{name: "wrong consent purpose", mutate: func(input *CreateInput) { input.Consent.Purpose = PurposeModel }},
 		{name: "future consent", mutate: func(input *CreateInput) { input.Consent.AcceptedAt = generationTestNow.Add(time.Second) }},

@@ -22,11 +22,11 @@ func NewMediaRepository(database *gorm.DB) *MediaRepository {
 type consentRecord struct {
 	ID                string             `gorm:"column:id;type:uuid;primaryKey"`
 	OwnerID           string             `gorm:"column:owner_id;type:uuid;not null;index:consent_records_owner_idx;uniqueIndex:consent_records_active_unique,where:withdrawn_at IS NULL"`
-	Purpose           string             `gorm:"column:purpose;type:text;not null;uniqueIndex:consent_records_active_unique,where:withdrawn_at IS NULL;check:consent_records_purpose_check,purpose = 'avatar_source_preparation'"`
-	Category          string             `gorm:"column:category;type:text;not null;uniqueIndex:consent_records_active_unique,where:withdrawn_at IS NULL;check:consent_records_category_check,category = 'person_photo'"`
+	Purpose           string             `gorm:"column:purpose;type:text;not null;uniqueIndex:consent_records_active_unique,where:withdrawn_at IS NULL;check:consent_records_purpose_check,purpose IN ('avatar_source_preparation','generation_input')"`
+	Category          string             `gorm:"column:category;type:text;not null;uniqueIndex:consent_records_active_unique,where:withdrawn_at IS NULL;check:consent_records_category_check,category IN ('person_photo','ordinary_image')"`
 	Processor         string             `gorm:"column:processor;type:text;not null;uniqueIndex:consent_records_active_unique,where:withdrawn_at IS NULL;check:consent_records_processor_check,processor = 'then'"`
 	Region            string             `gorm:"column:region;type:text;not null;uniqueIndex:consent_records_active_unique,where:withdrawn_at IS NULL;check:consent_records_region_check,region = 'local-development'"`
-	PolicyVersion     string             `gorm:"column:policy_version;type:text;not null;uniqueIndex:consent_records_active_unique,where:withdrawn_at IS NULL;check:consent_records_policy_check,policy_version = 'person-photo-v1'"`
+	PolicyVersion     string             `gorm:"column:policy_version;type:text;not null;uniqueIndex:consent_records_active_unique,where:withdrawn_at IS NULL;check:consent_records_policy_check,policy_version IN ('person-photo-v1','generation-input-v1');check:consent_records_purpose_policy_check,(purpose = 'avatar_source_preparation' AND category = 'person_photo' AND policy_version = 'person-photo-v1') OR (purpose = 'generation_input' AND category IN ('person_photo','ordinary_image') AND policy_version = 'generation-input-v1')"`
 	MaxRetentionHours int                `gorm:"column:max_retention_hours;not null;check:consent_records_retention_check,max_retention_hours = 24"`
 	TrainingAllowed   bool               `gorm:"column:training_allowed;not null;uniqueIndex:consent_records_active_unique,where:withdrawn_at IS NULL;check:consent_records_training_check,training_allowed = false"`
 	AgreedAt          time.Time          `gorm:"column:agreed_at;type:timestamptz;not null"`
@@ -40,7 +40,7 @@ type mediaAssetRecord struct {
 	ID              string                  `gorm:"column:id;type:uuid;primaryKey"`
 	OwnerID         string                  `gorm:"column:owner_id;type:uuid;not null;index:media_assets_owner_idx"`
 	ConsentID       *string                 `gorm:"column:consent_id;type:uuid;index:media_assets_consent_idx"`
-	Purpose         string                  `gorm:"column:purpose;type:text;not null;check:media_assets_purpose_check,purpose IN ('avatar_source_preparation','diary_image','community_publish','profile_avatar');check:media_assets_purpose_category_check,(purpose = 'avatar_source_preparation' AND category = 'person_photo' AND consent_id IS NOT NULL) OR (purpose IN ('diary_image','community_publish','profile_avatar') AND category = 'ordinary_image' AND consent_id IS NULL)"`
+	Purpose         string                  `gorm:"column:purpose;type:text;not null;check:media_assets_purpose_check,purpose IN ('avatar_source_preparation','generation_input','diary_image','community_publish','profile_avatar');check:media_assets_purpose_category_check,(purpose = 'avatar_source_preparation' AND category = 'person_photo' AND consent_id IS NOT NULL) OR (purpose = 'generation_input' AND category IN ('person_photo','ordinary_image') AND consent_id IS NOT NULL) OR (purpose IN ('diary_image','community_publish','profile_avatar') AND category = 'ordinary_image' AND consent_id IS NULL)"`
 	Category        string                  `gorm:"column:category;type:text;not null;check:media_assets_category_check,category IN ('person_photo','ordinary_image')"`
 	ContentType     string                  `gorm:"column:content_type;type:text;not null;check:media_assets_content_type_check,content_type = 'image/jpeg'"`
 	ByteSize        int64                   `gorm:"column:byte_size;not null;check:media_assets_byte_size_check,byte_size BETWEEN 1 AND 12582912"`
@@ -189,6 +189,9 @@ func (r *MediaRepository) CreateMedia(ctx context.Context, ownerID string, input
 	if input.Purpose == mediaapp.MediaPurposeAvatarSourcePreparation {
 		category = mediaapp.MediaCategoryPersonPhoto
 		consentID = &input.ConsentID
+	} else if input.Purpose == mediaapp.MediaPurposeGenerationInput {
+		category = input.Category
+		consentID = &input.ConsentID
 	}
 	record := mediaAssetRecord{ID: mediaID, OwnerID: ownerID, ConsentID: consentID, Purpose: input.Purpose, Category: category, ContentType: input.ContentType, ByteSize: input.ByteSize, SHA256: input.SHA256, RawObjectKey: "owners/" + ownerID + "/media/" + mediaID + "/source.jpg", Status: string(mediaapp.MediaPendingUpload), UploadExpiresAt: at.Add(mediaapp.UploadIntentLifetime), CreatedAt: at, UpdatedAt: at}
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -199,9 +202,13 @@ func (r *MediaRepository) CreateMedia(ctx context.Context, ownerID string, input
 		if user.Status != "active" {
 			return mediaapp.ErrMediaConflict
 		}
-		if input.Purpose == mediaapp.MediaPurposeAvatarSourcePreparation {
+		if input.Purpose == mediaapp.MediaPurposeAvatarSourcePreparation || input.Purpose == mediaapp.MediaPurposeGenerationInput {
+			policyVersion := mediaapp.CurrentMediaPolicyVersion
+			if input.Purpose == mediaapp.MediaPurposeGenerationInput {
+				policyVersion = mediaapp.CurrentGenerationInputPolicyVersion
+			}
 			var consent consentRecord
-			if err := tx.Where("id = ? AND owner_id = ? AND purpose = ? AND category = ? AND policy_version = ? AND withdrawn_at IS NULL", input.ConsentID, ownerID, mediaapp.MediaPurposeAvatarSourcePreparation, mediaapp.MediaCategoryPersonPhoto, mediaapp.CurrentMediaPolicyVersion).First(&consent).Error; err != nil {
+			if err := tx.Where("id = ? AND owner_id = ? AND purpose = ? AND category = ? AND policy_version = ? AND processor = ? AND region = ? AND max_retention_hours = ? AND training_allowed = false AND withdrawn_at IS NULL", input.ConsentID, ownerID, input.Purpose, category, policyVersion, mediaapp.MediaProcessorThen, mediaapp.MediaRegionLocalDevelopment, 24).First(&consent).Error; err != nil {
 				return err
 			}
 		}
@@ -451,17 +458,27 @@ func (r *MediaRepository) BeginMediaCheck(ctx context.Context, mediaID string, a
 		}
 		switch mediaapp.MediaStatus(record.Status) {
 		case mediaapp.MediaUploaded:
-			if record.Purpose == mediaapp.MediaPurposeAvatarSourcePreparation {
+			if record.Purpose == mediaapp.MediaPurposeAvatarSourcePreparation || record.Purpose == mediaapp.MediaPurposeGenerationInput {
+				invalidReason := "consent_unavailable"
 				if record.ConsentID == nil {
-					return mediaapp.ErrMediaConflict
+					return rejectUploadedMedia(ctx, tx, &record, invalidReason, at)
 				}
 				var consent consentRecord
-				if err := tx.Where("id = ?", *record.ConsentID).First(&consent).Error; err != nil {
+				if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id = ? AND owner_id = ? AND purpose = ? AND category = ?", *record.ConsentID, record.OwnerID, record.Purpose, record.Category).First(&consent).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return rejectUploadedMedia(ctx, tx, &record, invalidReason, at)
+					}
 					return err
 				}
 				if consent.WithdrawnAt != nil {
-					record.Status, record.StableReason, record.UpdatedAt = string(mediaapp.MediaRejected), "consent_withdrawn", at
-					return tx.Model(&record).Updates(map[string]any{"status": record.Status, "stable_reason": record.StableReason, "updated_at": at}).Error
+					return rejectUploadedMedia(ctx, tx, &record, "consent_withdrawn", at)
+				}
+				policyVersion := mediaapp.CurrentMediaPolicyVersion
+				if record.Purpose == mediaapp.MediaPurposeGenerationInput {
+					policyVersion = mediaapp.CurrentGenerationInputPolicyVersion
+				}
+				if consent.PolicyVersion != policyVersion || consent.Processor != mediaapp.MediaProcessorThen || consent.Region != mediaapp.MediaRegionLocalDevelopment || consent.MaxRetentionHours != 24 || consent.TrainingAllowed {
+					return rejectUploadedMedia(ctx, tx, &record, "consent_mismatch", at)
 				}
 			}
 			record.Status, record.UpdatedAt, process = string(mediaapp.MediaChecking), at, true
@@ -477,6 +494,20 @@ func (r *MediaRepository) BeginMediaCheck(ctx context.Context, mediaID string, a
 		return mediaapp.MediaAsset{}, false, mediaLookupError(err)
 	}
 	return mediaFromRecord(record), process, nil
+}
+
+func rejectUploadedMedia(ctx context.Context, tx *gorm.DB, record *mediaAssetRecord, reason string, at time.Time) error {
+	result := tx.WithContext(ctx).Model(record).Where("id = ? AND status = ?", record.ID, string(mediaapp.MediaUploaded)).Updates(map[string]any{
+		"status": string(mediaapp.MediaRejected), "stable_reason": reason, "updated_at": at,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return mediaapp.ErrMediaConflict
+	}
+	record.Status, record.StableReason, record.UpdatedAt = string(mediaapp.MediaRejected), reason, at
+	return nil
 }
 
 func (r *MediaRepository) CompleteMediaCheck(ctx context.Context, eventID, mediaID string, derivation *mediaapp.MediaDerivation, width, height int, status mediaapp.MediaStatus, reason string, at time.Time) error {

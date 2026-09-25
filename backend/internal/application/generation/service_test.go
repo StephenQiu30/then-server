@@ -97,6 +97,7 @@ func serviceTestInput() CreateServiceInput {
 			LookRevision: 3,
 			References: []InputReference{
 				{MediaID: "22222222-2222-4222-8222-222222222222", Role: InputRolePerson, Ordinal: 0, Revision: 1, SHA256: strings.Repeat("a", 64)},
+				{MediaID: "22222222-2222-4222-8222-222222222223", Role: InputRoleGarment, Ordinal: 1, Revision: 1, SHA256: strings.Repeat("b", 64)},
 			},
 		},
 		Consent: ConsentReceipt{ID: "33333333-3333-4333-8333-333333333333", Purpose: PurposeImage, PolicyVersion: "generation-v1", AcceptedAt: generationTestNow.Add(-time.Minute)},

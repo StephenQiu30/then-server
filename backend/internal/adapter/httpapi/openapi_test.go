@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"slices"
 	"testing"
+
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 )
 
 func TestGeneratedOpenAPIContract(t *testing.T) {
@@ -193,8 +195,14 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.28.0" || operations != 128 || len(spec.Paths) != 96 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.29.0" || operations != 128 || len(spec.Paths) != 96 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d paths=%d", spec.OpenAPI, spec.Info.Version, operations, len(spec.Paths))
+	}
+	mediaRequest := spec.Components.Schemas["CreateMediaUploadRequest"]
+	if !schemaEnumContains(mediaRequest.Properties["purpose"].Enum, mediaapp.MediaPurposeGenerationInput) ||
+		!schemaEnumContains(mediaRequest.Properties["category"].Enum, mediaapp.MediaCategoryPersonPhoto) ||
+		!schemaEnumContains(mediaRequest.Properties["category"].Enum, mediaapp.MediaCategoryOrdinaryImage) {
+		t.Fatal("generated media upload contract is missing the generation-input purpose categories")
 	}
 	for _, operationID := range []string{"listCurrentUserSessions", "revokeCurrentUserSession", "getGenerationOutputAccess", "listUnknownGenerationSubmissions", "reconcileUnknownGenerationSubmission"} {
 		if !identifiers[operationID] {
@@ -263,4 +271,13 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 	if _, acceptsCost := generationRequest.Properties["cost"]; acceptsCost {
 		t.Fatal("generation request accepts a client-provided cost or quota estimate")
 	}
+}
+
+func schemaEnumContains(values []any, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }

@@ -7,11 +7,11 @@ import (
 )
 
 type CreateConsentRequest struct {
-	Purpose           string `json:"purpose" enum:"avatar_source_preparation" example:"avatar_source_preparation"`
-	Category          string `json:"category" enum:"person_photo" example:"person_photo"`
+	Purpose           string `json:"purpose" enum:"avatar_source_preparation,generation_input" example:"generation_input"`
+	Category          string `json:"category" enum:"person_photo,ordinary_image" example:"person_photo"`
 	Processor         string `json:"processor" enum:"then" example:"then"`
 	Region            string `json:"region" enum:"local-development" example:"local-development"`
-	PolicyVersion     string `json:"policy_version" enum:"person-photo-v1" example:"person-photo-v1"`
+	PolicyVersion     string `json:"policy_version" enum:"person-photo-v1,generation-input-v1" example:"generation-input-v1"`
 	MaxRetentionHours int    `json:"max_retention_hours" enum:"24" example:"24"`
 	ActivelyAgreed    bool   `json:"actively_agreed" enum:"true" example:"true"`
 	TrainingAllowed   bool   `json:"training_allowed" enum:"false" example:"false"`
@@ -19,11 +19,11 @@ type CreateConsentRequest struct {
 
 type ConsentResponse struct {
 	ID                string                 `json:"id" format:"uuid"`
-	Purpose           string                 `json:"purpose" enum:"avatar_source_preparation"`
-	Category          string                 `json:"category" enum:"person_photo"`
+	Purpose           string                 `json:"purpose" enum:"avatar_source_preparation,generation_input"`
+	Category          string                 `json:"category" enum:"person_photo,ordinary_image"`
 	Processor         string                 `json:"processor" enum:"then"`
 	Region            string                 `json:"region" enum:"local-development"`
-	PolicyVersion     string                 `json:"policy_version" enum:"person-photo-v1"`
+	PolicyVersion     string                 `json:"policy_version" enum:"person-photo-v1,generation-input-v1"`
 	MaxRetentionHours int                    `json:"max_retention_hours" enum:"24"`
 	TrainingAllowed   bool                   `json:"training_allowed" enum:"false"`
 	Status            mediaapp.ConsentStatus `json:"status" enum:"active,withdrawn"`
@@ -33,7 +33,8 @@ type ConsentResponse struct {
 
 type CreateMediaUploadRequest struct {
 	ConsentID   *string `json:"consent_id,omitempty" format:"uuid"`
-	Purpose     string  `json:"purpose" enum:"avatar_source_preparation,diary_image,community_publish,profile_avatar"`
+	Purpose     string  `json:"purpose" enum:"avatar_source_preparation,generation_input,diary_image,community_publish,profile_avatar"`
+	Category    string  `json:"category,omitempty" enum:"person_photo,ordinary_image"`
 	ContentType string  `json:"content_type" enum:"image/jpeg"`
 	ByteSize    int64   `json:"byte_size" minimum:"1"`
 	SHA256      string  `json:"sha256" pattern:"^[a-f0-9]{64}$"`
@@ -42,7 +43,7 @@ type CreateMediaUploadRequest struct {
 type MediaResponse struct {
 	ID          string               `json:"id" format:"uuid"`
 	ConsentID   *string              `json:"consent_id,omitempty" format:"uuid"`
-	Purpose     string               `json:"purpose" enum:"avatar_source_preparation,diary_image,community_publish,profile_avatar"`
+	Purpose     string               `json:"purpose" enum:"avatar_source_preparation,generation_input,diary_image,community_publish,profile_avatar"`
 	Category    string               `json:"category" enum:"person_photo,ordinary_image"`
 	ContentType string               `json:"content_type" enum:"image/jpeg"`
 	ByteSize    int64                `json:"byte_size" minimum:"1"`

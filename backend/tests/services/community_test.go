@@ -48,8 +48,8 @@ func TestCommunityPublishingModerationAndGovernanceLifecycle(t *testing.T) {
 	}
 	var tableCount int64
 	serviceOK(t, "count migrated tables", database.WithContext(ctx).Raw(`SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'`).Scan(&tableCount).Error)
-	if tableCount != 46 {
-		t.Fatalf("migrated table count=%d, want 46", tableCount)
+	if tableCount != 47 {
+		t.Fatalf("migrated table count=%d, want 47", tableCount)
 	}
 	var foreignKeys int64
 	serviceOK(t, "inspect community foreign keys", database.WithContext(ctx).Raw(`

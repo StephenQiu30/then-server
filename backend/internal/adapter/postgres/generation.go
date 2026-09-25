@@ -8,6 +8,8 @@ import (
 	"time"
 
 	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
+	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -196,13 +198,13 @@ func (r *GenerationRepository) Accept(ctx context.Context, input generationapp.C
 	return result, nil
 }
 
-// requireGenerationImageSource keeps model admission tied to a confirmed
-// image output instead of trusting a client-supplied asset ID and digest. The
-// source task is locked in share mode so a concurrent source cleanup cannot
-// revoke it between validation and model task insertion.
+// requireGenerationImageSource validates every generation input against the
+// owner's ready, purpose-scoped media and active consent in the acceptance
+// transaction. Model admission is tied to a confirmed image output instead
+// of trusting a client-supplied asset ID and digest.
 func requireGenerationImageSource(tx *gorm.DB, task generationapp.Task) error {
-	if task.Purpose != generationapp.PurposeModel {
-		return nil
+	if task.Purpose == generationapp.PurposeImage {
+		return requireGenerationInputMedia(tx, task)
 	}
 	var output generationOutputRecord
 	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
@@ -239,6 +241,84 @@ func requireGenerationImageSource(tx *gorm.DB, task generationapp.Task) error {
 	}
 	if _, err := generationOutputFromRecord(output, sourceTask); err != nil {
 		return generationapp.ErrGenerationSourceUnavailable
+	}
+	return nil
+}
+
+func requireGenerationInputMedia(tx *gorm.DB, task generationapp.Task) error {
+	personInput := false
+	for _, reference := range task.Inputs.References {
+		category := ""
+		switch reference.Role {
+		case generationapp.InputRolePerson:
+			category = mediaapp.MediaCategoryPersonPhoto
+			personInput = true
+		case generationapp.InputRoleGarment:
+			category = mediaapp.MediaCategoryOrdinaryImage
+		default:
+			return generationapp.ErrGenerationSourceUnavailable
+		}
+
+		var media mediaAssetRecord
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
+			"id = ? AND owner_id = ? AND purpose = ? AND category = ? AND content_type = ? AND sha256 = ? AND status = ? AND source_deleted_at IS NULL AND consent_id IS NOT NULL",
+			reference.MediaID,
+			task.OwnerID,
+			mediaapp.MediaPurposeGenerationInput,
+			category,
+			mediaapp.MediaContentTypeJPEG,
+			reference.SHA256,
+			string(mediaapp.MediaReady),
+		).First(&media).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return generationapp.ErrGenerationSourceUnavailable
+			}
+			return err
+		}
+
+		var consent consentRecord
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
+			"id = ? AND owner_id = ? AND purpose = ? AND category = ? AND processor = ? AND region = ? AND policy_version = ? AND max_retention_hours = ? AND training_allowed = false AND withdrawn_at IS NULL",
+			*media.ConsentID,
+			task.OwnerID,
+			mediaapp.MediaPurposeGenerationInput,
+			category,
+			mediaapp.MediaProcessorThen,
+			mediaapp.MediaRegionLocalDevelopment,
+			mediaapp.CurrentGenerationInputPolicyVersion,
+			24,
+		).First(&consent).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return generationapp.ErrGenerationSourceUnavailable
+			}
+			return err
+		}
+
+		var derivation mediaDerivationRecord
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
+			"media_id = ? AND object_key = ? AND object_version_id <> ''",
+			media.ID,
+			"media/"+media.ID+"/normalized.jpg",
+		).First(&derivation).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return generationapp.ErrGenerationSourceUnavailable
+			}
+			return err
+		}
+	}
+
+	if personInput {
+		var declaration selfAdultDeclarationRecord
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
+			"user_id = ? AND policy_version = ? AND withdrawn_at IS NULL",
+			task.OwnerID,
+			privacyapp.CurrentSelfAdultPolicyVersion,
+		).First(&declaration).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return generationapp.ErrGenerationSourceUnavailable
+			}
+			return err
+		}
 	}
 	return nil
 }
