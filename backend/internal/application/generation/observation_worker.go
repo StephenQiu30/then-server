@@ -23,6 +23,7 @@ var (
 type ObservationWorkerRepository interface {
 	AcquireObservationLease(context.Context, string, string, time.Time, time.Duration) (TaskView, Lease, error)
 	ReleaseLease(context.Context, Lease, time.Time) (TaskView, error)
+	ReleaseLeaseForRetry(context.Context, Lease, time.Time, time.Duration) (TaskView, error)
 	ApplyProviderState(context.Context, Lease, string, Status, string, time.Time) (TaskView, error)
 	FinalizeWithoutOutput(context.Context, Lease, Status, string, time.Time) (TaskView, error)
 }
@@ -41,10 +42,11 @@ type ObservationWorkerPolicy struct {
 	WorkerID        string
 	LeaseTTL        time.Duration
 	ProviderTimeout time.Duration
+	PollInterval    time.Duration
 }
 
 func (p ObservationWorkerPolicy) Validate() error {
-	if !validID(p.WorkerID) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.ProviderTimeout <= 0 || p.ProviderTimeout > 10*time.Minute {
+	if !validID(p.WorkerID) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.ProviderTimeout <= 0 || p.ProviderTimeout > 10*time.Minute || p.PollInterval <= 0 || p.PollInterval > maxWorkerRetryDelay {
 		return ErrInvalidGenerationWorker
 	}
 	return nil
@@ -175,7 +177,13 @@ func (w *ObservationWorker) applyNonTerminal(ctx context.Context, lease Lease, p
 	if err != nil {
 		return ObservationResult{View: previous, Outcome: outcome}, err
 	}
-	released, err := w.repository.ReleaseLease(ctx, lease, w.now().UTC())
+	releasedAt := w.now().UTC()
+	var released TaskView
+	if next == StatusRunning {
+		released, err = w.repository.ReleaseLeaseForRetry(ctx, lease, releasedAt, w.policy.PollInterval)
+	} else {
+		released, err = w.repository.ReleaseLease(ctx, lease, releasedAt)
+	}
 	if err != nil {
 		return ObservationResult{View: updated, Outcome: outcome}, err
 	}
@@ -183,7 +191,7 @@ func (w *ObservationWorker) applyNonTerminal(ctx context.Context, lease Lease, p
 }
 
 func (w *ObservationWorker) releaseWithError(ctx context.Context, lease Lease, view TaskView, observationErr error) (ObservationResult, error) {
-	released, releaseErr := w.repository.ReleaseLease(ctx, lease, w.now().UTC())
+	released, releaseErr := w.repository.ReleaseLeaseForRetry(ctx, lease, w.now().UTC(), w.policy.PollInterval)
 	if releaseErr != nil {
 		return ObservationResult{View: view}, releaseErr
 	}

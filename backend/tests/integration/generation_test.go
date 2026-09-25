@@ -1211,14 +1211,30 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil || !found || observed.Task.Status != generationapp.StatusRunning || observationLease.Owner != "worker-observer" {
 		t.Fatalf("observation queue claim was incorrect: found=%v task=%+v lease=%+v err=%v", found, observed.Task, observationLease, err)
 	}
-	observed, err = workerRepository.ApplyProviderState(ctx, observationLease, "provider-task-1", generationapp.StatusValidating, "", workflowAt.Add(5*time.Minute))
+	observationAt := workflowAt.Add(5 * time.Minute)
+	if _, err := workerRepository.ApplyProviderState(ctx, observationLease, "provider-task-1", generationapp.StatusRunning, "", observationAt); err != nil {
+		t.Fatalf("persist running provider observation: %v", err)
+	}
+	scheduledPoll, err := workerRepository.ReleaseLeaseForRetry(ctx, observationLease, observationAt, 10*time.Second)
+	if err != nil || scheduledPoll.Task.NextAttemptAt == nil || !scheduledPoll.Task.NextAttemptAt.Equal(observationAt.Add(10*time.Second)) {
+		t.Fatalf("running provider poll was not durably scheduled: task=%+v err=%v", scheduledPoll.Task, err)
+	}
+	if _, _, found, err := workerRepository.ClaimNextObservationLease(ctx, "worker-too-early", observationAt.Add(9*time.Second), 10*time.Minute); err != nil || found {
+		t.Fatalf("observation queue claimed before scheduled poll: found=%v err=%v", found, err)
+	}
+	pollAt := observationAt.Add(10 * time.Second)
+	observed, observationLease, found, err = workerRepository.ClaimNextObservationLease(ctx, "worker-observer", pollAt, 10*time.Minute)
+	if err != nil || !found || observed.Task.NextAttemptAt != nil {
+		t.Fatalf("observation queue did not claim at scheduled time: found=%v task=%+v err=%v", found, observed.Task, err)
+	}
+	observed, err = workerRepository.ApplyProviderState(ctx, observationLease, "provider-task-1", generationapp.StatusValidating, "", pollAt)
 	if err != nil {
 		t.Fatalf("apply generation provider state: %v", err)
 	}
 	if observed.Task.Status != generationapp.StatusValidating || observed.Task.ExternalTaskID != "provider-task-1" || observed.Task.SubmissionState != generationapp.SubmissionAccepted {
 		t.Fatalf("generation provider state observation was not persisted: %+v", observed.Task)
 	}
-	if _, err := workerRepository.ReleaseLease(ctx, observationLease, workflowAt.Add(5*time.Minute)); err != nil {
+	if _, err := workerRepository.ReleaseLease(ctx, observationLease, pollAt); err != nil {
 		t.Fatalf("release generation observation lease: %v", err)
 	}
 	observedView, observationLease, err := workerRepository.AcquireObservationLease(ctx, paidCreated.View.Task.ID, "worker-observer", workflowAt.Add(6*time.Minute), 10*time.Minute)
@@ -1234,7 +1250,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	outputAt := workflowAt.Add(7 * time.Minute)
 	resultFetcher := &generationFixtureResultFetcher{objects: objects, data: integrationGenerationJPEG(t), writeThenFail: true}
 	resultWorker, err := generationapp.NewResultWorker(workerRepository, resultFetcher, objects, generationapp.ResultWorkerPolicy{
-		WorkerID: "worker-result", LeaseTTL: 10 * time.Minute, FetchTimeout: time.Minute,
+		WorkerID: "worker-result", LeaseTTL: 10 * time.Minute, FetchTimeout: time.Minute, RetryDelay: 5 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("create provider-neutral result worker: %v", err)
@@ -1253,6 +1269,12 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if !errors.Is(err, generationapp.ErrGenerationOutputFetchUnknown) || interruptedResult.View.Task.Status != generationapp.StatusValidating || interruptedResult.View.Task.LeaseOwner != "" || interruptedResult.View.Reservation == nil || interruptedResult.View.Reservation.State != generationapp.ReservationReserved {
 		t.Fatalf("write-before-return failure did not leave the result retryable: view=%+v err=%v", interruptedResult.View, err)
 	}
+	if interruptedResult.View.Task.NextAttemptAt == nil || !interruptedResult.View.Task.NextAttemptAt.Equal(outputAt.Add(5*time.Second)) {
+		t.Fatalf("result fetch retry was not durably scheduled: task=%+v", interruptedResult.View.Task)
+	}
+	if _, _, found, err := workerRepository.ClaimNextResultLease(ctx, "worker-result-early", outputAt.Add(time.Second), 10*time.Minute); err != nil || found {
+		t.Fatalf("result queue claimed before retry time: found=%v err=%v", found, err)
+	}
 	interruptedVersionID := resultFetcher.version
 	interruptedObjectKey, err := generationapp.OutputObjectKey(interruptedResult.View.Task)
 	if err != nil || interruptedObjectKey != initialOutputKey {
@@ -1263,7 +1285,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("fixture did not leave the unreported object version behind: version=%q err=%v", interruptedVersionID, err)
 	}
 	interruptedObject.Close()
-	outputAt = outputAt.Add(time.Second)
+	outputAt = outputAt.Add(5 * time.Second)
 	inventoryResult, err := resultWorker.RunOnceAt(ctx, paidCreated.View.Task.ID, outputAt)
 	if !errors.Is(err, generationapp.ErrGenerationOutputCleanupPending) || inventoryResult.View.Task.Status != generationapp.StatusValidating || inventoryResult.View.Task.LeaseOwner != "" || resultFetcher.fetchCalls != 1 {
 		t.Fatalf("existing output was not queued before a second fetch: view=%+v fetches=%d err=%v", inventoryResult.View, resultFetcher.fetchCalls, err)

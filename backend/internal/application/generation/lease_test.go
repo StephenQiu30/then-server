@@ -153,3 +153,43 @@ func TestLeaseRejectsMalformedPersistedState(t *testing.T) {
 		}
 	}
 }
+
+func TestAcceptedTaskRetryScheduleBlocksEarlyLeaseAndClearsWhenClaimed(t *testing.T) {
+	task := acceptedObservationTask(t)
+	startedAt := generationTestNow.Add(4 * time.Minute)
+	lease, err := task.AcquireLease("observe-worker", startedAt, time.Minute)
+	if err != nil {
+		t.Fatalf("AcquireLease() error = %v", err)
+	}
+	if err := task.ReleaseLeaseForRetry(lease, startedAt, 15*time.Second); err != nil {
+		t.Fatalf("ReleaseLeaseForRetry() error = %v", err)
+	}
+	dueAt := startedAt.Add(15 * time.Second)
+	if task.LeaseOwner != "" || task.NextAttemptAt == nil || !task.NextAttemptAt.Equal(dueAt) {
+		t.Fatalf("retry schedule was not persisted: %+v", task)
+	}
+	if _, err := task.AcquireLease("early-worker", dueAt.Add(-time.Nanosecond), time.Minute); !errors.Is(err, ErrGenerationRetryNotReady) {
+		t.Fatalf("early AcquireLease() error = %v, want retry not ready", err)
+	}
+	if _, err := task.AcquireLease("ready-worker", dueAt, time.Minute); err != nil {
+		t.Fatalf("due AcquireLease() error = %v", err)
+	}
+	if task.NextAttemptAt != nil || task.LeaseOwner != "ready-worker" {
+		t.Fatalf("claim did not clear the due schedule: %+v", task)
+	}
+}
+
+func TestAcceptedTaskRetryScheduleRejectsUnboundedDelay(t *testing.T) {
+	task := acceptedObservationTask(t)
+	startedAt := generationTestNow.Add(4 * time.Minute)
+	lease, err := task.AcquireLease("observe-worker", startedAt, time.Minute)
+	if err != nil {
+		t.Fatalf("AcquireLease() error = %v", err)
+	}
+	if err := task.ReleaseLeaseForRetry(lease, startedAt, maxWorkerRetryDelay+time.Second); !errors.Is(err, ErrInvalidGenerationLease) {
+		t.Fatalf("ReleaseLeaseForRetry() error = %v, want invalid lease", err)
+	}
+	if task.LeaseOwner != lease.Owner || task.NextAttemptAt != nil {
+		t.Fatalf("invalid delay mutated task: %+v", task)
+	}
+}

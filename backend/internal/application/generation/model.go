@@ -237,8 +237,10 @@ type Task struct {
 	SubmissionAttempt   int
 	SubmissionStartedAt *time.Time
 	SubmissionUnknownAt *time.Time
-	NextAttemptAt       *time.Time
-	CancelRequestedAt   *time.Time
+	// NextAttemptAt schedules either a proven-not-accepted submission retry
+	// or the next poll/result attempt after a provider task has been accepted.
+	NextAttemptAt     *time.Time
+	CancelRequestedAt *time.Time
 	// AccessRevokedAt stops a task and its output from becoming user-visible
 	// while asynchronous provider/object cleanup is still converging. The task
 	// row remains available to the cleanup worker as an audit fact.
@@ -299,6 +301,10 @@ func (t Task) validTaskCoreFacts() bool {
 	if !validTaskTime(t.SubmissionStartedAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.SubmissionUnknownAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.CancelRequestedAt, t.CreatedAt, t.UpdatedAt) || !validTaskTime(t.AccessRevokedAt, t.CreatedAt, t.UpdatedAt) || !validRetryTime(t.NextAttemptAt, t.CreatedAt) {
 		return false
 	}
+	if t.NextAttemptAt != nil && t.SubmissionState == SubmissionAccepted &&
+		((t.Status != StatusRunning && t.Status != StatusValidating) || t.AccessRevokedAt != nil) {
+		return false
+	}
 	if t.ResultAssetID != "" && !validID(t.ResultAssetID) {
 		return false
 	}
@@ -350,7 +356,8 @@ func (t Task) validSubmissionFacts() bool {
 	case SubmissionUnknown:
 		return t.ExternalTaskID == "" && t.SubmissionAttempt > 0 && t.SubmissionStartedAt != nil && t.SubmissionUnknownAt != nil && t.NextAttemptAt == nil
 	case SubmissionAccepted:
-		return validToken(t.ExternalTaskID, 256) && t.SubmissionAttempt > 0 && t.SubmissionUnknownAt == nil && t.NextAttemptAt == nil
+		return validToken(t.ExternalTaskID, 256) && t.SubmissionAttempt > 0 && t.SubmissionUnknownAt == nil &&
+			(t.NextAttemptAt == nil || t.Status == StatusRunning || t.Status == StatusValidating)
 	default:
 		return false
 	}
@@ -582,9 +589,7 @@ func (t *Task) Transition(next Status, failureCode string, at time.Time) error {
 	t.StatusRevision++
 	t.UpdatedAt = at
 	t.FailureCode = ""
-	if next.terminal() {
-		t.NextAttemptAt = nil
-	}
+	t.NextAttemptAt = nil
 	if next != StatusSucceeded {
 		t.FailureCode = failureCode
 	}
@@ -741,6 +746,7 @@ func (t *Task) RevokeAccess(at time.Time) error {
 	}
 	at = at.UTC()
 	t.AccessRevokedAt = timePtr(at)
+	t.NextAttemptAt = nil
 	t.StatusRevision++
 	t.UpdatedAt = at
 	return nil
