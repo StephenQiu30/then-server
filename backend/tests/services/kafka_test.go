@@ -30,7 +30,7 @@ func kafkaTestPrefix(t *testing.T, ctx context.Context, brokers []string) string
 		defer client.Close()
 		request := kmsg.NewPtrDeleteTopicsRequest()
 		groups := kmsg.NewPtrDeleteGroupsRequest()
-		for _, suffix := range []string{"media-check", "media-delete", "community-notification"} {
+		for _, suffix := range []string{"media-check", "media-delete", "community-notification", "generation-wake"} {
 			name := prefix + "." + suffix
 			request.Topics = append(request.Topics, kmsg.DeleteTopicsRequestTopic{Topic: &name})
 			request.TopicNames = append(request.TopicNames, name)
@@ -137,4 +137,31 @@ func TestServicesKafkaInvalidRecordRetainsOffset(t *testing.T) {
 			t.Fatal("invalid record must fail without advancing its offset")
 		}
 	}
+}
+
+func TestServicesKafkaGenerationOutboxWake(t *testing.T) {
+	environment := loadServiceEnvironment(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	prefix := kafkaTestPrefix(t, ctx, environment.kafkaBrokers)
+	broker, err := messagequeue.Open(ctx, environment.kafkaBrokers, prefix)
+	serviceOK(t, "open Kafka broker", err)
+	defer broker.Close()
+	event := mediaapp.OutboxEvent{
+		ID:          uuid.NewString(),
+		AggregateID: uuid.NewString(),
+		EventType:   "generation.task_requested",
+		CreatedAt:   time.Now().UTC(),
+	}
+	serviceOK(t, "publish generation wake", broker.Publish(ctx, event))
+
+	consume, stop := context.WithCancel(ctx)
+	defer stop()
+	serviceOK(t, "consume generation wake", broker.Consume(consume, "then.generation-wake", func(_ context.Context, got mediaapp.OutboxEvent) error {
+		if got.ID != event.ID || got.AggregateID != event.AggregateID || got.EventType != event.EventType {
+			t.Errorf("generation wake identity changed: got=%+v want=%+v", got, event)
+		}
+		stop()
+		return context.Canceled
+	}))
 }

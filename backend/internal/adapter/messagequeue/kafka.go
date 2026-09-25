@@ -21,6 +21,7 @@ var channels = map[string]string{
 	"then.media-check":            "media.uploaded",
 	"then.media-delete":           "media.deletion_requested",
 	"then.community-notification": "community.notification_requested",
+	"then.generation-wake":        "generation.task_requested",
 }
 
 type Broker struct {
@@ -104,13 +105,7 @@ func (b *Broker) Probe(ctx context.Context) error {
 }
 
 func (b *Broker) Publish(ctx context.Context, event mediaapp.OutboxEvent) error {
-	channel := ""
-	for name, kind := range channels {
-		if event.EventType == kind {
-			channel = name
-			break
-		}
-	}
+	channel := channelForEvent(event.EventType)
 	if b == nil || b.client == nil || channel == "" || event.ID == "" || event.AggregateID == "" {
 		return errors.New("message event invalid")
 	}
@@ -129,6 +124,15 @@ func (b *Broker) Publish(ctx context.Context, event mediaapp.OutboxEvent) error 
 		return errors.New("Kafka publication not confirmed")
 	}
 	return nil
+}
+
+func channelForEvent(eventType string) string {
+	for channel, kind := range channels {
+		if eventType == kind {
+			return channel
+		}
+	}
+	return ""
 }
 
 func (b *Broker) Consume(ctx context.Context, channel string, handler func(context.Context, mediaapp.OutboxEvent) error) error {

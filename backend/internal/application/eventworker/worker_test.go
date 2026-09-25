@@ -42,6 +42,13 @@ type shutdownBroker struct {
 	release chan struct{}
 }
 
+type generationWakeRecorder struct{ taskID string }
+
+func (r *generationWakeRecorder) WakeGeneration(_ context.Context, taskID string) error {
+	r.taskID = taskID
+	return nil
+}
+
 func (shutdownBroker) Publish(context.Context, mediaapp.OutboxEvent) error { return nil }
 func (b shutdownBroker) Consume(ctx context.Context, _ string, _ func(context.Context, mediaapp.OutboxEvent) error) error {
 	b.started <- struct{}{}
@@ -53,14 +60,14 @@ func (b shutdownBroker) Consume(ctx context.Context, _ string, _ func(context.Co
 func TestRunnerWaitsForAllWorkersBeforeReturning(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	started, release := make(chan struct{}, 5), make(chan struct{})
+	started, release := make(chan struct{}, 6), make(chan struct{})
 	runner, err := New(shutdownRepository{started: started, release: release}, shutdownBroker{started: started, release: release}, &workerObjectStoreStub{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
 	go func() { done <- runner.Run(ctx) }()
-	for range 5 {
+	for range 6 {
 		select {
 		case <-started:
 		case <-ctx.Done():
@@ -83,6 +90,19 @@ func TestRunnerWaitsForAllWorkersBeforeReturning(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("runner shutdown blocked")
+	}
+}
+
+func TestGenerationWakeValidatesAndSignalsTask(t *testing.T) {
+	recorder := &generationWakeRecorder{}
+	runner := &Runner{generation: recorder}
+	event := mediaapp.OutboxEvent{ID: "event", EventType: "generation.task_requested", AggregateID: "task"}
+	if err := runner.wakeGeneration(context.Background(), event); err != nil || recorder.taskID != event.AggregateID {
+		t.Fatalf("generation wake was not delivered: task=%q err=%v", recorder.taskID, err)
+	}
+	event.EventType = "media.uploaded"
+	if err := runner.wakeGeneration(context.Background(), event); err == nil {
+		t.Fatal("wrong event type was accepted by generation wake handler")
 	}
 }
 

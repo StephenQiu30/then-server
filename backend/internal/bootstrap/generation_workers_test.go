@@ -58,7 +58,7 @@ func TestGenerationWorkerRunnersStayClosedOutsideLocalFixtureMode(t *testing.T) 
 		{Generation: config.GenerationConfig{Mode: config.GenerationModeRemote, Enabled: true}},
 		{Generation: config.GenerationConfig{Mode: config.GenerationModeLocal, Enabled: true, LocalImageEndpoint: "http://127.0.0.1:9100/v1/generate"}},
 	} {
-		runners, err := newGenerationWorkerRunners(cfg, nil, nil, nil)
+		runners, err := newGenerationWorkerRunners(cfg, nil, nil, nil, nil)
 		if err != nil || len(runners) != 0 {
 			t.Fatalf("unsupported generation mode started local workers: cfg=%+v runners=%d err=%v", cfg.Generation, len(runners), err)
 		}
@@ -72,7 +72,7 @@ func TestGenerationWorkerRunnersStayClosedOutsideLocalFixtureMode(t *testing.T) 
 		ProviderTimeout:       time.Second,
 		Retention:             time.Hour,
 	}}
-	if runners, err := newGenerationWorkerRunners(localFixture, nil, nil, nil); err == nil || len(runners) != 0 {
+	if runners, err := newGenerationWorkerRunners(localFixture, nil, nil, nil, nil); err == nil || len(runners) != 0 {
 		t.Fatalf("local fixture workers started without durable dependencies: runners=%d err=%v", len(runners), err)
 	}
 }
@@ -81,7 +81,8 @@ func TestRunGenerationQueueProcessesReadyWorkAndStopsWithContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	err := runGenerationQueue(ctx, log, "test", func(context.Context) (bool, error) {
+	wake := newGenerationWakeSignals()
+	err := runGenerationQueue(ctx, log, "test", wake.channel("result"), wake, func(context.Context) (bool, error) {
 		calls++
 		if calls == 1 {
 			return true, nil
@@ -98,12 +99,39 @@ func TestRunGenerationQueueDelaysAfterFailedAttempt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	err := runGenerationQueue(ctx, log, "test", func(context.Context) (bool, error) {
+	err := runGenerationQueue(ctx, log, "test", nil, nil, func(context.Context) (bool, error) {
 		calls++
 		cancel()
 		return false, errors.New("synthetic failure")
 	})
 	if !errors.Is(err, context.Canceled) || calls != 1 {
 		t.Fatalf("queue runner retried immediately after a failed attempt: calls=%d err=%v", calls, err)
+	}
+}
+
+func TestGenerationWakeSignalsAreCoalescedPerStage(t *testing.T) {
+	wake := newGenerationWakeSignals()
+	if err := wake.WakeGeneration(context.Background(), "task"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wake.WakeGeneration(context.Background(), "task"); err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range []string{"submission", "observation", "result"} {
+		select {
+		case <-wake.channel(stage):
+		default:
+			t.Fatalf("generation task did not wake %s stage", stage)
+		}
+		select {
+		case <-wake.channel(stage):
+			t.Fatalf("duplicate wake was not coalesced for %s stage", stage)
+		default:
+		}
+	}
+
+	wake.signal()
+	if !waitForGenerationWorker(context.Background(), time.Hour, wake.channel("submission")) {
+		t.Fatal("generation wake did not release a waiting worker")
 	}
 }

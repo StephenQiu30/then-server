@@ -320,20 +320,21 @@ COMMIT
 
 ### 当前开发拓扑
 
-使用 Apache Kafka 4.3.1 KRaft、`github.com/twmb/franz-go` v1.22.0。配置为 `KAFKA_BROKERS` 与 `KAFKA_TOPIC_PREFIX`；默认 prefix 为 `then`。仅声明当前三个 topic，不提前建立 AI/视频主题：
+使用 Apache Kafka 4.3.1 KRaft、`github.com/twmb/franz-go` v1.22.0。配置为 `KAFKA_BROKERS` 与 `KAFKA_TOPIC_PREFIX`；默认 prefix 为 `then`。声明当前业务所需的四个 topic，不为延期的视频能力预建主题：
 
 | Topic | event_type | 消费组 |
 | --- | --- | --- |
 | `<prefix>.media-check` | `media.uploaded` | `<topic>.worker` |
 | `<prefix>.media-delete` | `media.deletion_requested` | `<topic>.worker` |
 | `<prefix>.community-notification` | `community.notification_requested` | `<topic>.worker` |
+| `<prefix>.generation-wake` | `generation.task_requested` | `<topic>.worker` |
 
 开发 topic 为单分区、单副本、7 天 delete retention。key 为 aggregate ID，value 仅含 `id`（Outbox event ID）、`event_type`、`aggregate_id`，时间使用 Kafka record timestamp。不得携带图片、私有正文、会话或签名 URL。测试创建独立 prefix 与消费组，只清理自己创建的资源。
 
 ### 当前投递保证
 
 - producer 使用幂等生产与 `acks=all`，同步确认后才标记 Outbox published；单次请求 10 秒、总交付预算 30 秒，给元数据发现和重试留出余量；确认后、标记前退出仍可能重复，业务由 PostgreSQL Inbox/条件更新去重。
-- 自动创建 topic 关闭；应用显式声明三个开发 topic，失败即停止启动。现有 topic 不会被自动重配或删除。
+- 自动创建 topic 关闭；应用显式声明四个开发 topic，失败即停止启动。现有 topic 不会被自动重配或删除。
 - consumer 关闭自动提交，每次 poll 最多一条，处理与提交期间阻止 rebalance；完成后同步提交 offset，再允许 rebalance。
 - 每次处理最长 30 秒，最多三次，间隔 250/500ms；失败耗尽或消息非法时退出且保留 offset。重新启动后继续，不使用无限热循环，也不悄悄推进失败位置。
 - 取消后不提交未完成记录；所有 worker 协程退出后才关闭客户端与数据库。提交失败允许重新执行，依赖业务幂等保证效果。

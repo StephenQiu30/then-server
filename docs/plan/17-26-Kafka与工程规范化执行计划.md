@@ -11,7 +11,7 @@
 
 1. 唯一入口移动到 `backend/main.go`，移除空 `cmd/then-server` 目录；保留 `internal/bootstrap` 组装与生命周期，构建/运行统一为 `go build .` / `go run .`。
 2. Kafka 替换 RabbitMQ；使用 Apache Kafka KRaft 与 Go franz-go 客户端。沿用合成数据本地开发边界，broker 只允许 loopback，不自动开放生产。
-3. 使用三个独立 topic：`<prefix>.media-check`、`<prefix>.media-delete`、`<prefix>.community-notification`；默认 prefix 为 `then`，测试使用唯一 prefix，不清空共享消息。各 topic 有独立稳定 consumer group。
+3. 初始三个独立 topic 为 `<prefix>.media-check`、`<prefix>.media-delete`、`<prefix>.community-notification`；生成任务唤醒 `<prefix>.generation-wake` 在 2026-09-25 由 [14-01](14-01-完整穿搭图与按需三维生成执行计划.md) 增加。默认 prefix 为 `then`，测试使用唯一 prefix，不清空共享消息。各 topic 有独立稳定 consumer group。
 4. 消息只含 event ID/type/aggregate ID，key 使用 aggregate ID；不携带图片、会话或私人正文。Outbox 仅在 Kafka `acks=all` 确认后标记发布；启用客户端幂等生产，跨进程重复仍由 PostgreSQL Inbox/条件状态处理。
 5. 消费关闭自动提交，每次最多处理一条；业务成功后同步提交 offset，失败不越过该记录。失败重试有退避与次数上限，耗尽后退出保留 offset；重启继续。非法消息停止消费者并保留 offset，不能悄悄丢弃。
 6. 消费处理与提交期间阻止 rebalance，处理设超时，结束时允许 rebalance。退出时先取消并等待所有 worker 协程，再关闭依赖；取消不提交未完成工作。
