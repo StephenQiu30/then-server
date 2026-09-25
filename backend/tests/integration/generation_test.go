@@ -674,6 +674,168 @@ func verifyGenerationInputAdmissionGuards(t *testing.T, ctx context.Context, dat
 	}
 }
 
+func TestWithdrawGenerationInputConsentRevokesDependentJobs(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	password := rand.Text()
+	container := integrationContainer(t, ctx, testcontainers.ContainerRequest{
+		Image:        "postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636",
+		Env:          map[string]string{"POSTGRES_USER": "then_test", "POSTGRES_DB": "then_test", "POSTGRES_PASSWORD": password},
+		ExposedPorts: []string{"5432/tcp"},
+		WaitingFor:   wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(time.Minute),
+	})
+	databaseURL := fmt.Sprintf(
+		"postgres://then_test:%s@%s/then_test?sslmode=disable",
+		url.QueryEscape(password), mappedAddress(t, ctx, container, "5432/tcp"),
+	)
+	database, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatalf("open generation consent database: %v", err)
+	}
+	if err := store.Migrate(ctx, database); err != nil {
+		t.Fatalf("migrate generation consent database: %v", err)
+	}
+
+	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
+	if err != nil {
+		t.Fatalf("construct generation consent account service: %v", err)
+	}
+	owner, err := accounts.Register(ctx, accountapp.RegisterAccountInput{
+		Email: "generation-consent@example.test", DisplayName: "Generation Consent", Password: "correct-password-generation-consent",
+	})
+	if err != nil {
+		t.Fatalf("register generation consent owner: %v", err)
+	}
+	foreignOwner, err := accounts.Register(ctx, accountapp.RegisterAccountInput{
+		Email: "generation-consent-foreign@example.test", DisplayName: "Generation Consent Foreign", Password: "correct-password-generation-consent-foreign",
+	})
+	if err != nil {
+		t.Fatalf("register unrelated generation owner: %v", err)
+	}
+
+	person := generationapp.InputReference{
+		MediaID: "00000000-0000-4000-8000-000000000941", Role: generationapp.InputRolePerson,
+		Ordinal: 0, Revision: 1, SHA256: strings.Repeat("a", 64),
+	}
+	firstGarment := generationapp.InputReference{
+		MediaID: "00000000-0000-4000-8000-000000000942", Role: generationapp.InputRoleGarment,
+		Ordinal: 1, Revision: 1, SHA256: strings.Repeat("b", 64),
+	}
+	secondGarment := generationapp.InputReference{
+		MediaID: "00000000-0000-4000-8000-000000000943", Role: generationapp.InputRoleGarment,
+		Ordinal: 1, Revision: 1, SHA256: strings.Repeat("c", 64),
+	}
+	seedGenerationInputMedia(t, ctx, database, owner.User.ID, []generationapp.InputReference{person, firstGarment, secondGarment})
+
+	repository := store.NewGenerationRepository(database)
+	generations, err := generationapp.NewServiceWithCostEstimator(accounts, repository, generationapp.AdmissionPolicy{
+		Enabled: true, Currency: "USD", MaxConcurrentTasks: 4, MaxQuotaUnits: 4, MaxBudgetMinorUnits: 1000,
+	}, generationapp.CostEstimatorFunc(func(generationapp.Purpose, string, string, []byte) (generationapp.CostEstimate, error) {
+		return generationapp.CostEstimate{Currency: "USD", EstimatedMinorUnits: 60, ReservedQuotaUnits: 1}, nil
+	}))
+	if err != nil {
+		t.Fatalf("construct generation consent service: %v", err)
+	}
+	createTask := func(token, key, lookID, seed string, references []generationapp.InputReference) generationapp.TaskView {
+		t.Helper()
+		at := time.Now().UTC().Add(-time.Minute)
+		created, err := generations.Create(ctx, token, generationapp.CreateServiceInput{
+			IdempotencyKey: key,
+			LookID:         lookID,
+			LookRevision:   1,
+			Purpose:        generationapp.PurposeImage,
+			Provider:       "fixture",
+			Model:          "fixture-image-v1",
+			Parameters:     []byte(`{"seed":"` + seed + `"}`),
+			Inputs: generationapp.InputSnapshot{
+				LookID: lookID, LookRevision: 1,
+				References: references,
+			},
+			Consent: generationapp.ConsentReceipt{ID: uuid.NewString(), Purpose: generationapp.PurposeImage, PolicyVersion: "local-image-v1", AcceptedAt: at},
+		})
+		if err != nil {
+			t.Fatalf("accept generation job %q: %v", key, err)
+		}
+		return created.View
+	}
+	first := createTask(
+		owner.Token, "consent-revoke-first", "00000000-0000-4000-8000-000000000951", "first",
+		[]generationapp.InputReference{person, firstGarment},
+	)
+	second := createTask(
+		owner.Token, "consent-revoke-second", "00000000-0000-4000-8000-000000000952", "second",
+		[]generationapp.InputReference{person, secondGarment},
+	)
+	foreignPerson := generationapp.InputReference{
+		MediaID: "00000000-0000-4000-8000-000000000944", Role: generationapp.InputRolePerson,
+		Ordinal: 0, Revision: 1, SHA256: strings.Repeat("d", 64),
+	}
+	foreignGarment := generationapp.InputReference{
+		MediaID: "00000000-0000-4000-8000-000000000945", Role: generationapp.InputRoleGarment,
+		Ordinal: 1, Revision: 1, SHA256: strings.Repeat("e", 64),
+	}
+	seedGenerationInputMedia(t, ctx, database, foreignOwner.User.ID, []generationapp.InputReference{foreignPerson, foreignGarment})
+	foreign := createTask(
+		foreignOwner.Token, "consent-revoke-foreign", "00000000-0000-4000-8000-000000000953", "foreign",
+		[]generationapp.InputReference{foreignPerson, foreignGarment},
+	)
+	for _, created := range []generationapp.TaskView{first, second, foreign} {
+		if created.Reservation == nil || created.Reservation.State != generationapp.ReservationReserved || created.Reservation.EstimatedMinorUnits != 60 || created.Reservation.ReservedQuotaUnits != 1 {
+			t.Fatalf("generation task did not reserve the server quote: %+v", created)
+		}
+	}
+
+	var consentID string
+	if err := database.WithContext(ctx).Table("media_assets").Select("consent_id").Where("id = ?", firstGarment.MediaID).Scan(&consentID).Error; err != nil || consentID == "" {
+		t.Fatalf("read generation garment consent: id=%q err=%v", consentID, err)
+	}
+	media := store.NewMediaRepository(database)
+	withdrawnAt := time.Now().UTC()
+	consent, err := media.WithdrawConsent(ctx, owner.User.ID, consentID, withdrawnAt)
+	if err != nil || consent.WithdrawnAt == nil || !consent.WithdrawnAt.Equal(withdrawnAt) {
+		t.Fatalf("withdraw generation input consent: consent=%+v err=%v", consent, err)
+	}
+
+	firstView, err := generations.Get(ctx, owner.Token, first.Task.ID)
+	if err != nil {
+		t.Fatalf("read revoked generation task: %v", err)
+	}
+	assertRevoked := func(view generationapp.TaskView, sourceMediaID string) {
+		t.Helper()
+		if view.Task.Status != generationapp.StatusCanceled ||
+			view.Task.AccessRevokedAt == nil ||
+			view.Task.CancelRequestedAt == nil ||
+			view.Reservation == nil || view.Reservation.State != generationapp.ReservationReleased ||
+			view.Cleanup == nil || view.Cleanup.Scope != generationapp.CleanupScopeSource || view.Cleanup.SourceMediaID != sourceMediaID {
+			t.Fatalf("consent withdrawal did not cancel, release quota, and persist cleanup for %q: %+v", sourceMediaID, view)
+		}
+	}
+	assertRevoked(firstView, firstGarment.MediaID)
+	secondView, err := generations.Get(ctx, owner.Token, second.Task.ID)
+	if err != nil {
+		t.Fatalf("read second generation task using the same category consent: %v", err)
+	}
+	assertRevoked(secondView, secondGarment.MediaID)
+	foreignView, err := generations.Get(ctx, foreignOwner.Token, foreign.Task.ID)
+	if err != nil {
+		t.Fatalf("read unrelated account generation task: %v", err)
+	}
+	if foreignView.Task.Status != generationapp.StatusQueued ||
+		foreignView.Task.AccessRevokedAt != nil || foreignView.Task.CancelRequestedAt != nil ||
+		foreignView.Cleanup != nil || foreignView.Reservation == nil || foreignView.Reservation.State != generationapp.ReservationReserved {
+		t.Fatalf("withdrawing one account's consent affected another account: %+v", foreignView)
+	}
+
+	if _, err := media.WithdrawConsent(ctx, owner.User.ID, consentID, withdrawnAt.Add(time.Minute)); err != nil {
+		t.Fatalf("repeat generation input consent withdrawal: %v", err)
+	}
+	var cleanupCount int64
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("task_id IN ? AND scope = ?", []string{first.Task.ID, second.Task.ID}, string(generationapp.CleanupScopeSource)).Count(&cleanupCount).Error; err != nil || cleanupCount != 2 {
+		t.Fatalf("repeated withdrawal created duplicate cleanup requests: count=%d err=%v", cleanupCount, err)
+	}
+}
+
 func TestGenerationPersistenceLifecycle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()

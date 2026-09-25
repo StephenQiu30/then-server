@@ -221,7 +221,24 @@ func ensureGenerationCleanupInTx(tx *gorm.DB, task generationapp.Task, scope gen
 		}
 	}
 	if task.StatusRevision != oldRevision {
-		if err := updateGenerationTask(tx, task, oldRevision); err != nil {
+		if task.Status == generationapp.StatusQueued && task.SubmissionState == generationapp.SubmissionNotStarted && task.ExternalTaskID == "" && task.LeaseUntil == nil {
+			reservation, err := lockedGenerationReservation(tx, task.ID)
+			if err != nil {
+				return generationapp.CleanupRequest{}, err
+			}
+			previousReservationRevision := 0
+			if reservation != nil {
+				previousReservationRevision = reservation.StateRevision
+			}
+			settlement, err := generationapp.FinalizeWithoutOutput(task, reservation, generationapp.StatusCanceled, "", mutationAt)
+			if err != nil {
+				return generationapp.CleanupRequest{}, err
+			}
+			if err := persistGenerationSettlement(tx, task, oldRevision, reservation, previousReservationRevision, settlement); err != nil {
+				return generationapp.CleanupRequest{}, err
+			}
+			task = settlement.Task
+		} else if err := updateGenerationTask(tx, task, oldRevision); err != nil {
 			return generationapp.CleanupRequest{}, err
 		}
 	}
@@ -359,8 +376,19 @@ func generationCleanupTargetExists(targets []generationapp.CleanupTarget, target
 // source media reference. It is called from the media deletion transaction so
 // the source read right and all dependent generation reads close together.
 func requestGenerationSourceCleanupInTx(tx *gorm.DB, ownerID, mediaID string, at time.Time) error {
+	return requestGenerationSourceCleanupForMediaInTx(tx, ownerID, []string{mediaID}, at)
+}
+
+func requestGenerationSourceCleanupForMediaInTx(tx *gorm.DB, ownerID string, mediaIDs []string, at time.Time) error {
+	if len(mediaIDs) == 0 {
+		return nil
+	}
+	sourceIDs := make(map[string]struct{}, len(mediaIDs))
+	for _, mediaID := range mediaIDs {
+		sourceIDs[mediaID] = struct{}{}
+	}
 	var records []generationJobRecord
-	if err := tx.Where("owner_id = ?", ownerID).Order("id ASC").Find(&records).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ?", ownerID).Order("id ASC").Find(&records).Error; err != nil {
 		return err
 	}
 	for _, record := range records {
@@ -368,8 +396,14 @@ func requestGenerationSourceCleanupInTx(tx *gorm.DB, ownerID, mediaID string, at
 		if err != nil {
 			return err
 		}
-		if err := requestGenerationSourceCleanupForTaskInTx(tx, task, mediaID, at); err != nil {
-			return err
+		for _, reference := range task.Inputs.References {
+			if _, ok := sourceIDs[reference.MediaID]; !ok {
+				continue
+			}
+			if err := requestGenerationSourceCleanupForTaskInTx(tx, task, reference.MediaID, at); err != nil {
+				return err
+			}
+			break
 		}
 	}
 	return nil

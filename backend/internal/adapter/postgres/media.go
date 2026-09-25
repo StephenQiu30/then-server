@@ -165,6 +165,19 @@ func (r *MediaRepository) WithdrawConsent(ctx context.Context, ownerID, consentI
 			}
 			record.WithdrawnAt = &at
 		}
+		if record.Purpose == mediaapp.MediaPurposeGenerationInput {
+			var media []mediaAssetRecord
+			if err := tx.Select("id").Where("owner_id = ? AND consent_id = ? AND purpose = ? AND source_deleted_at IS NULL", ownerID, record.ID, record.Purpose).Order("id ASC").Find(&media).Error; err != nil {
+				return err
+			}
+			mediaIDs := make([]string, 0, len(media))
+			for _, source := range media {
+				mediaIDs = append(mediaIDs, source.ID)
+			}
+			if err := requestGenerationSourceCleanupForMediaInTx(tx, ownerID, mediaIDs, at); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {
