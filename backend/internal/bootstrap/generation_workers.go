@@ -24,6 +24,56 @@ const (
 
 type generationQueueStep func(context.Context) (bool, error)
 
+type generationWakeSignals struct {
+	submission  chan struct{}
+	observation chan struct{}
+	result      chan struct{}
+}
+
+func newGenerationWakeSignals() *generationWakeSignals {
+	return &generationWakeSignals{
+		submission:  make(chan struct{}, 1),
+		observation: make(chan struct{}, 1),
+		result:      make(chan struct{}, 1),
+	}
+}
+
+func (s *generationWakeSignals) WakeGeneration(ctx context.Context, _ string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.signal()
+	return nil
+}
+
+func (s *generationWakeSignals) signal() {
+	if s == nil {
+		return
+	}
+	for _, wake := range []chan struct{}{s.submission, s.observation, s.result} {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (s *generationWakeSignals) channel(stage string) <-chan struct{} {
+	if s == nil {
+		return nil
+	}
+	switch stage {
+	case "submission":
+		return s.submission
+	case "observation":
+		return s.observation
+	case "result":
+		return s.result
+	default:
+		return nil
+	}
+}
+
 func generationAdmissionPolicy(configuration config.GenerationConfig) (generationapp.AdmissionPolicy, generationapp.CostEstimator) {
 	fixtureEnabled := configuration.Enabled && configuration.Mode == config.GenerationModeLocal && configuration.LocalImageEndpoint == ""
 	policy := generationapp.AdmissionPolicy{
@@ -46,7 +96,7 @@ func generationAdmissionPolicy(configuration config.GenerationConfig) (generatio
 	return policy, estimator
 }
 
-func newGenerationWorkerRunners(cfg config.Config, database *gorm.DB, objects *objectstore.Store, log *slog.Logger) ([]func(context.Context) error, error) {
+func newGenerationWorkerRunners(cfg config.Config, database *gorm.DB, objects *objectstore.Store, log *slog.Logger, wake *generationWakeSignals) ([]func(context.Context) error, error) {
 	if cfg.Generation.Mode != config.GenerationModeLocal || cfg.Generation.LocalImageEndpoint != "" {
 		return nil, nil
 	}
@@ -95,19 +145,19 @@ func newGenerationWorkerRunners(cfg config.Config, database *gorm.DB, objects *o
 	}
 	return []func(context.Context) error{
 		func(ctx context.Context) error {
-			return runGenerationQueue(ctx, log, "submission", func(ctx context.Context) (bool, error) {
+			return runGenerationQueue(ctx, log, "submission", wake.channel("submission"), wake, func(ctx context.Context) (bool, error) {
 				found, _, err := submission.RunNext(ctx)
 				return found, err
 			})
 		},
 		func(ctx context.Context) error {
-			return runGenerationQueue(ctx, log, "observation", func(ctx context.Context) (bool, error) {
+			return runGenerationQueue(ctx, log, "observation", wake.channel("observation"), wake, func(ctx context.Context) (bool, error) {
 				found, _, err := observation.RunNext(ctx)
 				return found, err
 			})
 		},
 		func(ctx context.Context) error {
-			return runGenerationQueue(ctx, log, "result", func(ctx context.Context) (bool, error) {
+			return runGenerationQueue(ctx, log, "result", wake.channel("result"), wake, func(ctx context.Context) (bool, error) {
 				found, _, err := result.RunNext(ctx)
 				return found, err
 			})
@@ -115,7 +165,7 @@ func newGenerationWorkerRunners(cfg config.Config, database *gorm.DB, objects *o
 	}, nil
 }
 
-func runGenerationQueue(ctx context.Context, log *slog.Logger, stage string, next generationQueueStep) error {
+func runGenerationQueue(ctx context.Context, log *slog.Logger, stage string, notifications <-chan struct{}, wake *generationWakeSignals, next generationQueueStep) error {
 	if log == nil || next == nil {
 		return generationapp.ErrInvalidGenerationWorker
 	}
@@ -126,26 +176,29 @@ func runGenerationQueue(ctx context.Context, log *slog.Logger, stage string, nex
 				return ctx.Err()
 			}
 			log.Warn("generation_worker_attempt_failed", "stage", stage, "error_type", fmt.Sprintf("%T", err))
-			if !waitForGenerationWorker(ctx, generationWorkerFailureBackoff) {
+			if !waitForGenerationWorker(ctx, generationWorkerFailureBackoff, nil) {
 				return ctx.Err()
 			}
 			continue
 		}
 		if found {
+			wake.signal()
 			continue
 		}
-		if !waitForGenerationWorker(ctx, generationWorkerPollInterval) {
+		if !waitForGenerationWorker(ctx, generationWorkerPollInterval, notifications) {
 			return ctx.Err()
 		}
 	}
 }
 
-func waitForGenerationWorker(ctx context.Context, delay time.Duration) bool {
+func waitForGenerationWorker(ctx context.Context, delay time.Duration, notifications <-chan struct{}) bool {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 		return false
+	case <-notifications:
+		return true
 	case <-timer.C:
 		return true
 	}

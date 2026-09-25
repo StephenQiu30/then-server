@@ -31,6 +31,10 @@ type Broker interface {
 	Consume(context.Context, string, func(context.Context, mediaapp.OutboxEvent) error) error
 }
 
+type GenerationWake interface {
+	WakeGeneration(context.Context, string) error
+}
+
 type ObjectStore interface {
 	OpenVersion(context.Context, string, string) (io.ReadCloser, error)
 	PutDerived(context.Context, string, io.Reader, int64) (string, error)
@@ -41,30 +45,36 @@ type Runner struct {
 	repository Repository
 	broker     Broker
 	objects    ObjectStore
+	generation GenerationWake
 	now        func() time.Time
 }
 
 func New(repository Repository, broker Broker, objects ObjectStore) (*Runner, error) {
+	return NewWithGenerationWake(repository, broker, objects, nil)
+}
+
+func NewWithGenerationWake(repository Repository, broker Broker, objects ObjectStore, generation GenerationWake) (*Runner, error) {
 	if repository == nil || broker == nil || objects == nil {
 		return nil, mediaapp.ErrMediaUnavailable
 	}
-	return &Runner{repository: repository, broker: broker, objects: objects, now: time.Now}, nil
+	return &Runner{repository: repository, broker: broker, objects: objects, generation: generation, now: time.Now}, nil
 }
 
 func (r *Runner) Run(ctx context.Context) error {
 	parent := ctx
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	errorsChannel := make(chan error, 5)
+	errorsChannel := make(chan error, 6)
 	go func() { errorsChannel <- r.relay(ctx) }()
 	go func() { errorsChannel <- r.broker.Consume(ctx, "then.media-check", r.checkMedia) }()
 	go func() { errorsChannel <- r.broker.Consume(ctx, "then.media-delete", r.deleteMedia) }()
 	go func() { errorsChannel <- r.broker.Consume(ctx, "then.community-notification", r.deliverNotification) }()
+	go func() { errorsChannel <- r.broker.Consume(ctx, "then.generation-wake", r.wakeGeneration) }()
 	go func() { errorsChannel <- r.cleanupSources(ctx) }()
 	err := <-errorsChannel
 	cancel()
 	// Dependencies belong to bootstrap. Wait for every user before it closes them.
-	for range 4 {
+	for range 5 {
 		other := <-errorsChannel
 		if err == nil && other != nil && !errors.Is(other, context.Canceled) {
 			err = other
@@ -74,6 +84,16 @@ func (r *Runner) Run(ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+func (r *Runner) wakeGeneration(ctx context.Context, event mediaapp.OutboxEvent) error {
+	if event.EventType != "generation.task_requested" || event.ID == "" || event.AggregateID == "" {
+		return errors.New("unexpected generation-wake event")
+	}
+	if r.generation == nil {
+		return nil
+	}
+	return r.generation.WakeGeneration(ctx, event.AggregateID)
 }
 
 func (r *Runner) deliverNotification(ctx context.Context, event mediaapp.OutboxEvent) error {

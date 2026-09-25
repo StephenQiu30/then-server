@@ -75,13 +75,14 @@ func Run(log *slog.Logger) error {
 	var cleanupWorker *generationapp.CleanupWorker
 	var generationWorkers []func(context.Context) error
 	var broker *messagequeue.Broker
+	generationWake := newGenerationWakeSignals()
 	if cfg.Role == "worker" || cfg.Role == "all" {
 		broker, err = messagequeue.Open(startup, cfg.KafkaBrokers, cfg.KafkaTopicPrefix)
 		if err != nil {
 			return err
 		}
 		defer broker.Close()
-		runner, err = eventworkerapp.New(postgres.NewMediaRepository(pool.ORM()), broker, objects)
+		runner, err = eventworkerapp.NewWithGenerationWake(postgres.NewMediaRepository(pool.ORM()), broker, objects, generationWake)
 		if err != nil {
 			return err
 		}
@@ -97,7 +98,7 @@ func Run(log *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		generationWorkers, err = newGenerationWorkerRunners(cfg, pool.ORM(), objects, log)
+		generationWorkers, err = newGenerationWorkerRunners(cfg, pool.ORM(), objects, log, generationWake)
 		if err != nil {
 			return err
 		}

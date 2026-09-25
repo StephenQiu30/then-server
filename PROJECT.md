@@ -269,7 +269,7 @@ API 需覆盖契约、鉴权/越权、错误响应、幂等/冲突与取消；�
 - 用户指定的 shadcn 技能；[shadcn Next.js](https://ui.shadcn.com/docs/installation/next)、[主题](https://ui.shadcn.com/docs/theming)、[Radix Button](https://ui.shadcn.com/docs/components/radix/button)、[Radix Dialog](https://ui.shadcn.com/docs/components/radix/dialog)、[Radix Field](https://ui.shadcn.com/docs/components/radix/field)。
 - [Radix Composition](https://www.radix-ui.com/primitives/docs/guides/composition) 与 [Accessibility](https://www.radix-ui.com/primitives/docs/overview/accessibility)。
 
-2026-09-22 后续用户变更：Kafka 替换 RabbitMQ，入口直接放在 `backend/main.go`，对应执行与验证见 [17-26](docs/plan/17-26-Kafka与工程规范化执行计划.md)。Kafka 在本地开发中使用三个独立 topic、每 topic 一个稳定消费组、acks=all 和手动 offset 提交；业务提交后才推进消费位置，失败有界重试后停止并保留位置，重启可继续。生产集群与真实数据迁移另按该片门禁处理。
+2026-09-22 后续用户变更：Kafka 替换 RabbitMQ，入口直接放在 `backend/main.go`，对应执行与验证见 [17-26](docs/plan/17-26-Kafka与工程规范化执行计划.md)。当前本地开发使用四个独立 topic、每 topic 一个稳定消费组、acks=all 和手动 offset 提交；业务提交后才推进消费位置，失败有界重试后停止并保留位置，重启可继续。生成任务唤醒由 [14-01](docs/plan/14-01-完整穿搭图与按需三维生成执行计划.md) 增加，生产集群与真实数据迁移仍按各自门禁处理。
 
 2026-09-22 前端基础规范实施归 [17-27](docs/plan/17-27-Web设计体系与工程规范同步执行计划.md)，验证证据归 Acceptance 17。
 

@@ -11,21 +11,36 @@ import (
 
 func TestRecordValidationRejectsWrongRouteAndIdentity(t *testing.T) {
 	for _, test := range []struct {
-		name, key, body string
-		valid           bool
+		name, key, body, kind string
+		valid                 bool
 	}{
-		{"valid", "asset", `{"id":"event","aggregate_id":"asset","event_type":"media.uploaded"}`, true},
-		{"wrong channel", "asset", `{"id":"event","aggregate_id":"asset","event_type":"media.deletion_requested"}`, false},
-		{"wrong key", "other", `{"id":"event","aggregate_id":"asset","event_type":"media.uploaded"}`, false},
-		{"missing identity", "asset", `{"aggregate_id":"asset","event_type":"media.uploaded"}`, false},
-		{"malformed", "asset", `not-json`, false},
+		{"valid", "asset", `{"id":"event","aggregate_id":"asset","event_type":"media.uploaded"}`, "media.uploaded", true},
+		{"generation wake", "task", `{"id":"event","aggregate_id":"task","event_type":"generation.task_requested"}`, "generation.task_requested", true},
+		{"wrong channel", "asset", `{"id":"event","aggregate_id":"asset","event_type":"media.deletion_requested"}`, "media.uploaded", false},
+		{"wrong key", "other", `{"id":"event","aggregate_id":"asset","event_type":"media.uploaded"}`, "media.uploaded", false},
+		{"missing identity", "asset", `{"aggregate_id":"asset","event_type":"media.uploaded"}`, "media.uploaded", false},
+		{"malformed", "asset", `not-json`, "media.uploaded", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := decodeRecord(&kgo.Record{Key: []byte(test.key), Value: []byte(test.body)}, "media.uploaded")
+			_, err := decodeRecord(&kgo.Record{Key: []byte(test.key), Value: []byte(test.body)}, test.kind)
 			if (err == nil) != test.valid {
 				t.Fatalf("valid=%v error=%v", test.valid, err)
 			}
 		})
+	}
+}
+
+func TestChannelForEvent(t *testing.T) {
+	for eventType, want := range map[string]string{
+		"media.uploaded":                   "then.media-check",
+		"media.deletion_requested":         "then.media-delete",
+		"community.notification_requested": "then.community-notification",
+		"generation.task_requested":        "then.generation-wake",
+		"unknown.event":                    "",
+	} {
+		if got := channelForEvent(eventType); got != want {
+			t.Fatalf("channelForEvent(%q) = %q, want %q", eventType, got, want)
+		}
 	}
 }
 
