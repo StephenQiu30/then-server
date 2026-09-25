@@ -108,6 +108,31 @@ func lockedGenerationReservation(database *gorm.DB, taskID string) (*generationa
 	return &reservation, nil
 }
 
+func settleUnsubmittedGenerationCancellationInTx(tx *gorm.DB, task generationapp.Task, previousTaskRevision int, at time.Time) (generationapp.Task, bool, error) {
+	if task.Status != generationapp.StatusQueued || task.SubmissionState != generationapp.SubmissionNotStarted || task.ExternalTaskID != "" || task.CancelRequestedAt == nil || task.LeaseUntil != nil {
+		return task, false, nil
+	}
+	reservation, err := lockedGenerationReservation(tx, task.ID)
+	if err != nil {
+		return generationapp.Task{}, false, err
+	}
+	previousReservationRevision := 0
+	if reservation != nil {
+		previousReservationRevision = reservation.StateRevision
+	}
+	settlement, err := generationapp.FinalizeWithoutOutput(task, reservation, generationapp.StatusCanceled, "", at)
+	if err != nil {
+		return generationapp.Task{}, false, err
+	}
+	if settlement.FencingToken != task.FencingToken {
+		return generationapp.Task{}, false, generationapp.ErrGenerationSettlementConflict
+	}
+	if err := persistGenerationSettlement(tx, task, previousTaskRevision, reservation, previousReservationRevision, settlement); err != nil {
+		return generationapp.Task{}, false, err
+	}
+	return settlement.Task, true, nil
+}
+
 func persistGenerationSettlement(tx *gorm.DB, task generationapp.Task, previousTaskRevision int, reservation *generationapp.QuotaReservation, previousReservationRevision int, settlement generationapp.Settlement) error {
 	if settlement.Reservation == nil && reservation != nil {
 		return generationapp.ErrGenerationSettlementConflict

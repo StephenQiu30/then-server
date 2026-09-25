@@ -393,12 +393,12 @@ func verifyGenerationHTTPPersistence(t *testing.T, ctx context.Context, database
 		t.Fatalf("cancel generation over HTTP status=%d body=%s", cancelResponse.Code, cancelResponse.Body.String())
 	}
 	canceled := decodeJob(cancelResponse)
-	if canceled.ID != created.ID || canceled.Status != generationapp.StatusQueued || canceled.CancelRequestedAt == nil {
-		t.Fatalf("HTTP cancellation claimed an unverified provider stop: %+v", canceled)
+	if canceled.ID != created.ID || canceled.Status != generationapp.StatusCanceled || canceled.CancelRequestedAt == nil {
+		t.Fatalf("unsubmitted HTTP cancellation was not settled immediately: %+v", canceled)
 	}
 	readAfterCancel := httptest.NewRecorder()
 	router.ServeHTTP(readAfterCancel, request(http.MethodGet, "/generation-jobs/"+created.ID, ownerToken, ""))
-	if readAfterCancel.Code != http.StatusOK || decodeJob(readAfterCancel).CancelRequestedAt == nil {
+	if readAfterCancel.Code != http.StatusOK || decodeJob(readAfterCancel).Status != generationapp.StatusCanceled || decodeJob(readAfterCancel).CancelRequestedAt == nil {
 		t.Fatalf("HTTP cancellation request was not persisted: status=%d body=%s", readAfterCancel.Code, readAfterCancel.Body.String())
 	}
 
@@ -1031,6 +1031,38 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 	if reservationCount != 1 {
 		t.Fatalf("expected one active generation quota reservation, got %d", reservationCount)
+	}
+
+	queuedCancelInput := paidInput
+	queuedCancelInput.IdempotencyKey = "generation-cancel-before-submit"
+	queuedCancelInput.Parameters = []byte(`{"seed":"cancel-before-submit"}`)
+	queuedCancelInput.Inputs.References = []generationapp.InputReference{
+		{MediaID: "00000000-0000-4000-8000-000000000209", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{MediaID: "00000000-0000-4000-8000-000000000210", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 3, SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+	}
+	seedGenerationInputMedia(t, ctx, database, second.User.ID, queuedCancelInput.Inputs.References)
+	queuedCancel, err := paidGenerations.Create(ctx, second.Token, queuedCancelInput)
+	if err != nil || queuedCancel.View.Reservation == nil || queuedCancel.View.Reservation.State != generationapp.ReservationReserved {
+		t.Fatalf("accept queued cancellation task: view=%+v err=%v", queuedCancel, err)
+	}
+	settledCancellation, err := paidGenerations.Cancel(ctx, second.Token, queuedCancel.View.Task.ID)
+	if err != nil || settledCancellation.Task.Status != generationapp.StatusCanceled || settledCancellation.Task.CancelRequestedAt == nil || settledCancellation.Reservation == nil || settledCancellation.Reservation.State != generationapp.ReservationReleased {
+		t.Fatalf("unsubmitted cancellation did not atomically release quota: view=%+v err=%v", settledCancellation, err)
+	}
+	quotaProbe := queuedCancelInput
+	quotaProbe.IdempotencyKey = "generation-cancel-released-quota-probe"
+	quotaProbe.Parameters = []byte(`{"seed":"cancel-released-quota-probe"}`)
+	quotaProbe.Inputs.References = []generationapp.InputReference{
+		{MediaID: "00000000-0000-4000-8000-000000000219", Role: generationapp.InputRolePerson, Ordinal: 0, Revision: 1, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{MediaID: "00000000-0000-4000-8000-000000000220", Role: generationapp.InputRoleGarment, Ordinal: 1, Revision: 3, SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+	}
+	seedGenerationInputMedia(t, ctx, database, second.User.ID, quotaProbe.Inputs.References)
+	quotaProbeCreated, err := paidGenerations.Create(ctx, second.Token, quotaProbe)
+	if err != nil || quotaProbeCreated.View.Reservation == nil || quotaProbeCreated.View.Reservation.State != generationapp.ReservationReserved {
+		t.Fatalf("released quota was not available to the next explicit request: view=%+v err=%v", quotaProbeCreated, err)
+	}
+	if _, err := paidGenerations.Cancel(ctx, second.Token, quotaProbeCreated.View.Task.ID); err != nil {
+		t.Fatalf("release quota probe task: %v", err)
 	}
 
 	workerRepository := store.NewGenerationRepository(database)
