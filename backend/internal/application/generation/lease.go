@@ -12,6 +12,8 @@ var (
 	ErrInvalidGenerationLease  = errors.New("invalid generation task lease")
 )
 
+const maxWorkerRetryDelay = 30 * time.Minute
+
 // Lease is the worker proof carried between short database transactions. The
 // fencing token changes on every acquisition, so an expired worker cannot
 // mutate a task after another worker has recovered it.
@@ -66,6 +68,7 @@ func (t *Task) AcquireLease(owner string, at time.Time, ttl time.Duration) (Leas
 		if !t.canAdvanceStatusRevision() {
 			return Lease{}, ErrInvalidGenerationState
 		}
+		t.NextAttemptAt = nil
 		t.StatusRevision++
 		t.UpdatedAt = at
 	}
@@ -113,6 +116,34 @@ func (t *Task) ReleaseLease(lease Lease, at time.Time) error {
 	t.LeaseUntil = nil
 	t.StatusRevision++
 	t.UpdatedAt = at.UTC()
+	return nil
+}
+
+// ReleaseLeaseForRetry clears a current worker lease and durably schedules
+// the next observation or result attempt. The same timestamp is also used for
+// explicitly reconciled submission retries; accepted tasks can only schedule
+// polling while still running or validating.
+func (t *Task) ReleaseLeaseForRetry(lease Lease, at time.Time, delay time.Duration) error {
+	if t == nil || delay <= 0 || delay > maxWorkerRetryDelay || !t.validTaskFacts() ||
+		t.SubmissionState != SubmissionAccepted || (t.Status != StatusRunning && t.Status != StatusValidating) || t.AccessRevokedAt != nil {
+		return ErrInvalidGenerationLease
+	}
+	if err := t.validateLease(lease, at); err != nil {
+		return err
+	}
+	if !t.canAdvanceStatusRevision() {
+		return ErrInvalidGenerationLease
+	}
+	at = at.UTC()
+	next := at.Add(delay)
+	if !next.After(at) {
+		return ErrInvalidGenerationLease
+	}
+	t.LeaseOwner = ""
+	t.LeaseUntil = nil
+	t.NextAttemptAt = timePtr(next)
+	t.StatusRevision++
+	t.UpdatedAt = at
 	return nil
 }
 

@@ -75,7 +75,7 @@ func (r *observationWorkerRepositoryStub) AcquireResultLease(_ context.Context, 
 }
 
 func (r *observationWorkerRepositoryStub) ClaimNextResultLease(_ context.Context, owner string, at time.Time, ttl time.Duration) (TaskView, Lease, bool, error) {
-	if r.task.Status != StatusValidating || r.task.ExternalTaskID == "" || r.task.SubmissionState != SubmissionAccepted || r.task.AccessRevokedAt != nil {
+	if r.task.Status != StatusValidating || r.task.ExternalTaskID == "" || r.task.SubmissionState != SubmissionAccepted || r.task.AccessRevokedAt != nil || (r.task.NextAttemptAt != nil && at.Before(*r.task.NextAttemptAt)) {
 		return TaskView{}, Lease{}, false, nil
 	}
 	view, lease, err := r.AcquireResultLease(context.Background(), r.task.ID, owner, at, ttl)
@@ -117,6 +117,7 @@ func newResultWorker(t *testing.T, repository *observationWorkerRepositoryStub, 
 		WorkerID:     "result-worker",
 		LeaseTTL:     10 * time.Minute,
 		FetchTimeout: time.Minute,
+		RetryDelay:   10 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -188,8 +189,16 @@ func TestResultWorkerKeepsValidatingTaskOnFetchFailure(t *testing.T) {
 	if !errors.Is(err, ErrGenerationOutputFetchUnknown) {
 		t.Fatalf("RunOnce() error = %v, want fetch retry", err)
 	}
-	if result.View.Task.Status != StatusValidating || result.View.Task.ResultAssetID != "" || result.View.Task.LeaseOwner != "" {
+	if result.View.Task.Status != StatusValidating || result.View.Task.ResultAssetID != "" || result.View.Task.LeaseOwner != "" || result.View.Task.NextAttemptAt == nil {
 		t.Fatalf("fetch failure changed task or retained lease: %+v", result.View.Task)
+	}
+	worker.now = func() time.Time { return generationTestNow.Add(6*time.Minute + 9*time.Second) }
+	if found, _, err := worker.RunNext(context.Background()); err != nil || found || fetcher.fetches != 1 {
+		t.Fatalf("RunNext() fetched before retry time: found=%v fetches=%d err=%v", found, fetcher.fetches, err)
+	}
+	worker.now = func() time.Time { return generationTestNow.Add(6*time.Minute + 10*time.Second) }
+	if found, result, err := worker.RunNext(context.Background()); !errors.Is(err, ErrGenerationOutputFetchUnknown) || !found || fetcher.fetches != 2 || result.View.Task.NextAttemptAt == nil {
+		t.Fatalf("RunNext() did not retry at due time: found=%v result=%+v fetches=%d err=%v", found, result, fetcher.fetches, err)
 	}
 }
 

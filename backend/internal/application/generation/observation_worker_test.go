@@ -60,7 +60,7 @@ func (r *observationWorkerRepositoryStub) AcquireObservationLease(_ context.Cont
 }
 
 func (r *observationWorkerRepositoryStub) ClaimNextObservationLease(_ context.Context, owner string, at time.Time, ttl time.Duration) (TaskView, Lease, bool, error) {
-	if r.task.Status != StatusRunning || r.task.ExternalTaskID == "" || r.task.SubmissionState != SubmissionAccepted || r.task.AccessRevokedAt != nil {
+	if r.task.Status != StatusRunning || r.task.ExternalTaskID == "" || r.task.SubmissionState != SubmissionAccepted || r.task.AccessRevokedAt != nil || (r.task.NextAttemptAt != nil && at.Before(*r.task.NextAttemptAt)) {
 		return TaskView{}, Lease{}, false, nil
 	}
 	view, lease, err := r.AcquireObservationLease(context.Background(), r.task.ID, owner, at, ttl)
@@ -69,6 +69,13 @@ func (r *observationWorkerRepositoryStub) ClaimNextObservationLease(_ context.Co
 
 func (r *observationWorkerRepositoryStub) ReleaseLease(_ context.Context, lease Lease, at time.Time) (TaskView, error) {
 	if err := r.task.ReleaseLease(lease, at); err != nil {
+		return TaskView{}, err
+	}
+	return TaskView{Task: r.task, Reservation: r.reservation}, nil
+}
+
+func (r *observationWorkerRepositoryStub) ReleaseLeaseForRetry(_ context.Context, lease Lease, at time.Time, delay time.Duration) (TaskView, error) {
+	if err := r.task.ReleaseLeaseForRetry(lease, at, delay); err != nil {
 		return TaskView{}, err
 	}
 	return TaskView{Task: r.task, Reservation: r.reservation}, nil
@@ -122,6 +129,7 @@ func newObservationWorker(t *testing.T, repository *observationWorkerRepositoryS
 		WorkerID:        "observe-worker",
 		LeaseTTL:        10 * time.Minute,
 		ProviderTimeout: time.Minute,
+		PollInterval:    10 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -159,8 +167,17 @@ func TestObservationWorkerRunNextClaimsRunningQueue(t *testing.T) {
 	if err != nil || !found || result.Outcome != ObservationOutcomeRunning || result.View.Task.Status != StatusRunning {
 		t.Fatalf("RunNext() = found=%v result=%+v err=%v", found, result, err)
 	}
-	if provider.queries != 1 || repository.task.LeaseOwner != "" {
+	if provider.queries != 1 || repository.task.LeaseOwner != "" || repository.task.NextAttemptAt == nil || !repository.task.NextAttemptAt.Equal(generationTestNow.Add(4*time.Minute+10*time.Second)) {
 		t.Fatalf("RunNext() did not query and release exactly once: queries=%d task=%+v", provider.queries, repository.task)
+	}
+	worker.now = func() time.Time { return generationTestNow.Add(4*time.Minute + 9*time.Second) }
+	if found, _, err := worker.RunNext(context.Background()); err != nil || found || provider.queries != 1 {
+		t.Fatalf("RunNext() claimed before poll time: found=%v queries=%d err=%v", found, provider.queries, err)
+	}
+	worker.now = func() time.Time { return generationTestNow.Add(4*time.Minute + 10*time.Second) }
+	provider.remote.State = StatusValidating
+	if found, result, err := worker.RunNext(context.Background()); err != nil || !found || result.View.Task.Status != StatusValidating || provider.queries != 2 {
+		t.Fatalf("RunNext() did not claim at poll time: found=%v result=%+v queries=%d err=%v", found, result, provider.queries, err)
 	}
 }
 
@@ -203,7 +220,7 @@ func TestObservationWorkerKeepsCancellationRequestWhenProviderCancelFails(t *tes
 	if !errors.Is(err, ErrGenerationCancellationUnknown) {
 		t.Fatalf("RunOnce() error = %v, want cancellation retry", err)
 	}
-	if result.View.Task.Status != StatusRunning || result.View.Task.CancelRequestedAt == nil || result.View.Task.LeaseOwner != "" {
+	if result.View.Task.Status != StatusRunning || result.View.Task.CancelRequestedAt == nil || result.View.Task.LeaseOwner != "" || result.View.Task.NextAttemptAt == nil {
 		t.Fatalf("failed cancellation changed task or retained lease: %+v", result.View.Task)
 	}
 	if provider.cancels != 1 || provider.queries != 1 {
@@ -248,7 +265,7 @@ func TestObservationWorkerRejectsMalformedObservationWithoutAdvancingTask(t *tes
 	if !errors.Is(err, ErrInvalidProviderObservation) {
 		t.Fatalf("RunOnce() error = %v, want invalid observation", err)
 	}
-	if result.View.Task.Status != StatusRunning || result.View.Task.LeaseOwner != "" {
+	if result.View.Task.Status != StatusRunning || result.View.Task.LeaseOwner != "" || result.View.Task.NextAttemptAt == nil {
 		t.Fatalf("malformed observation changed task or retained lease: %+v", result.View.Task)
 	}
 }

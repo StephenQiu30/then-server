@@ -29,6 +29,7 @@ var (
 type ResultWorkerRepository interface {
 	AcquireResultLease(context.Context, string, string, time.Time, time.Duration) (TaskView, Lease, error)
 	ReleaseLease(context.Context, Lease, time.Time) (TaskView, error)
+	ReleaseLeaseForRetry(context.Context, Lease, time.Time, time.Duration) (TaskView, error)
 	FinalizeWithoutOutput(context.Context, Lease, Status, string, time.Time) (TaskView, error)
 	PublishOutput(context.Context, Lease, OutputAsset, time.Time) (TaskView, error)
 	RecordUnpublishedOutput(context.Context, Lease, CleanupTarget, time.Time) error
@@ -46,10 +47,11 @@ type ResultWorkerPolicy struct {
 	WorkerID     string
 	LeaseTTL     time.Duration
 	FetchTimeout time.Duration
+	RetryDelay   time.Duration
 }
 
 func (p ResultWorkerPolicy) Validate() error {
-	if !validID(p.WorkerID) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.FetchTimeout <= 0 || p.FetchTimeout > 10*time.Minute {
+	if !validID(p.WorkerID) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.FetchTimeout <= 0 || p.FetchTimeout > 10*time.Minute || p.RetryDelay <= 0 || p.RetryDelay > maxWorkerRetryDelay {
 		return ErrInvalidGenerationResultWorker
 	}
 	return nil
@@ -206,7 +208,7 @@ func (w *ResultWorker) releaseAfterUnpublishedOutput(ctx context.Context, lease 
 	if fact.ObjectKey == expectedObjectKey && validToken(fact.ObjectVersionID, 160) {
 		target := CleanupTarget{Kind: CleanupTargetObject, ID: view.Task.ID, ObjectKey: fact.ObjectKey, ObjectVersionID: fact.ObjectVersionID}
 		if err := w.repository.RecordUnpublishedOutput(ctx, lease, target, now().UTC()); err != nil {
-			released, releaseErr := w.repository.ReleaseLease(ctx, lease, now().UTC())
+			released, releaseErr := w.repository.ReleaseLeaseForRetry(ctx, lease, now().UTC(), w.policy.RetryDelay)
 			if releaseErr != nil {
 				return ResultWorkerResult{View: view}, errors.Join(err, releaseErr)
 			}
@@ -243,7 +245,7 @@ func inputSnapshotsEqual(left, right InputSnapshot) bool {
 }
 
 func (w *ResultWorker) releaseWithError(ctx context.Context, lease Lease, view TaskView, resultErr error, now func() time.Time) (ResultWorkerResult, error) {
-	released, releaseErr := w.repository.ReleaseLease(ctx, lease, now().UTC())
+	released, releaseErr := w.repository.ReleaseLeaseForRetry(ctx, lease, now().UTC(), w.policy.RetryDelay)
 	if releaseErr != nil {
 		return ResultWorkerResult{View: view}, releaseErr
 	}

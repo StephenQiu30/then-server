@@ -111,8 +111,8 @@ func (r *GenerationRepository) ClaimNextSubmissionLease(ctx context.Context, own
 // this prevents status polling from competing with output publication.
 func (r *GenerationRepository) ClaimNextObservationLease(ctx context.Context, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
 	return r.claimNextLease(ctx, owner, at, ttl, func(query *gorm.DB) *gorm.DB {
-		return query.Where("status = ? AND submission_state = ? AND external_task_id <> '' AND access_revoked_at IS NULL AND (lease_until IS NULL OR lease_until <= ?)",
-			string(generationapp.StatusRunning), string(generationapp.SubmissionAccepted), at)
+		return query.Where("status = ? AND submission_state = ? AND external_task_id <> '' AND access_revoked_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= ?) AND (lease_until IS NULL OR lease_until <= ?)",
+			string(generationapp.StatusRunning), string(generationapp.SubmissionAccepted), at, at)
 	})
 }
 
@@ -121,8 +121,8 @@ func (r *GenerationRepository) ClaimNextObservationLease(ctx context.Context, ow
 // can never trigger another output fetch.
 func (r *GenerationRepository) ClaimNextResultLease(ctx context.Context, owner string, at time.Time, ttl time.Duration) (generationapp.TaskView, generationapp.Lease, bool, error) {
 	return r.claimNextLease(ctx, owner, at, ttl, func(query *gorm.DB) *gorm.DB {
-		return query.Where("status = ? AND submission_state = ? AND external_task_id <> '' AND access_revoked_at IS NULL AND (lease_until IS NULL OR lease_until <= ?)",
-			string(generationapp.StatusValidating), string(generationapp.SubmissionAccepted), at)
+		return query.Where("status = ? AND submission_state = ? AND external_task_id <> '' AND access_revoked_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= ?) AND (lease_until IS NULL OR lease_until <= ?)",
+			string(generationapp.StatusValidating), string(generationapp.SubmissionAccepted), at, at)
 	})
 }
 
@@ -258,6 +258,15 @@ func (r *GenerationRepository) ReleaseLease(ctx context.Context, lease generatio
 		return generationapp.TaskView{}, generationGenerationError(err)
 	}
 	return view, nil
+}
+
+// ReleaseLeaseForRetry atomically clears the current fencing lease and makes
+// the accepted task eligible for another observation/result attempt after a
+// bounded delay.
+func (r *GenerationRepository) ReleaseLeaseForRetry(ctx context.Context, lease generationapp.Lease, at time.Time, delay time.Duration) (generationapp.TaskView, error) {
+	return r.mutateLeasedTask(ctx, lease, at, func(task *generationapp.Task) error {
+		return task.ReleaseLeaseForRetry(lease, at, delay)
+	})
 }
 
 // BeginSubmission marks a leased task in flight and returns the immutable
