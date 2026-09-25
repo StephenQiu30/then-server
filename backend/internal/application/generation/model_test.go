@@ -409,8 +409,16 @@ func TestTaskStateTransitionsAndCancellationAreMonotonic(t *testing.T) {
 	if err := task.Transition(StatusRunning, "", generationTestNow.Add(3*time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
 		t.Fatalf("terminal task accepted transition: %v", err)
 	}
-	if err := task.RequestCancel(generationTestNow.Add(4 * time.Minute)); !errors.Is(err, ErrGenerationNotCancellable) {
-		t.Fatalf("terminal task accepted cancellation: %v", err)
+	canceledRevision := task.StatusRevision
+	canceledAt := *task.CancelRequestedAt
+	if err := task.RequestCancel(generationTestNow.Add(4 * time.Minute)); err != nil {
+		t.Fatalf("repeated cancellation was not idempotent: %v", err)
+	}
+	if task.StatusRevision != canceledRevision || !task.CancelRequestedAt.Equal(canceledAt) {
+		t.Fatalf("repeated cancellation changed the settled task: %+v", task)
+	}
+	if err := task.Transition(StatusRunning, "", generationTestNow.Add(5*time.Minute)); !errors.Is(err, ErrInvalidGenerationState) {
+		t.Fatalf("terminal task accepted transition after repeated cancellation: %v", err)
 	}
 }
 
@@ -430,6 +438,22 @@ func TestTaskCannotSucceedWithoutValidatedOutputReference(t *testing.T) {
 	}
 	if task.Status != StatusValidating || task.ResultAssetID != "" {
 		t.Fatalf("direct success transition changed task: %+v", task)
+	}
+}
+
+func TestTerminalFailedGenerationTaskCannotBeCanceled(t *testing.T) {
+	task, err := NewTask(validCreateInput(), generationTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusRunning, "", generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Transition(StatusFailed, "provider_error", generationTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.RequestCancel(generationTestNow.Add(3 * time.Minute)); !errors.Is(err, ErrGenerationNotCancellable) {
+		t.Fatalf("failed terminal task accepted cancellation: %v", err)
 	}
 }
 
