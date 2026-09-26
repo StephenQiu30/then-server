@@ -49,6 +49,7 @@ const (
 type CleanupTarget struct {
 	Kind            CleanupTargetKind `json:"kind"`
 	ID              string            `json:"id"`
+	Provider        string            `json:"provider,omitempty"`
 	ObjectKey       string            `json:"object_key,omitempty"`
 	ObjectVersionID string            `json:"object_version_id,omitempty"`
 }
@@ -74,11 +75,11 @@ func (target CleanupTarget) Validate() error {
 	}
 	switch target.Kind {
 	case CleanupTargetObject:
-		if !validToken(target.ObjectVersionID, 160) || (target.ObjectKey != "" && !validGenerationOutputObjectKey(target.ObjectKey)) {
+		if target.Provider != "" || !validToken(target.ObjectVersionID, 160) || (target.ObjectKey != "" && !validGenerationOutputObjectKey(target.ObjectKey)) {
 			return ErrInvalidGenerationCleanup
 		}
 	case CleanupTargetProvider:
-		if target.ObjectKey != "" || target.ObjectVersionID != "" {
+		if target.ObjectKey != "" || target.ObjectVersionID != "" || (target.Provider != "" && !validToken(target.Provider, 96)) {
 			return ErrInvalidGenerationCleanup
 		}
 	default:

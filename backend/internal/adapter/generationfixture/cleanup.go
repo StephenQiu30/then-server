@@ -37,7 +37,7 @@ func (e *CleanupExecutor) DeleteProviderTask(ctx context.Context, target generat
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if e == nil || target.Validate() != nil || target.Kind != generationapp.CleanupTargetProvider || !validFixtureTaskID(target.ID) {
+	if e == nil || target.Validate() != nil || target.Kind != generationapp.CleanupTargetProvider || target.Provider != ProviderName || !validFixtureTaskID(target.ID) {
 		return &generationapp.CleanupTargetError{Code: "provider_cleanup_unavailable", Err: generationapp.ErrGenerationCleanupTarget}
 	}
 	// A fixture task is reproducible from its namespaced identity; no provider
