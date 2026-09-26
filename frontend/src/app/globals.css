@@ -118,15 +118,8 @@
       font-size: 2rem;
     }
   }
-  .home-hero {
-    background:
-      radial-gradient(ellipse 38% 48% at 22% 0%, #00dfd840, transparent),
-      radial-gradient(ellipse 40% 48% at 53% 0%, #7928ca2a, transparent),
-      radial-gradient(ellipse 32% 42% at 82% 0%, #ff4d4d30, transparent),
-      #ffffff;
-  }
   .home-title {
-    font-size: clamp(2rem, 5vw, 3rem);
+    font-size: clamp(2rem, 5vw, 4rem);
     line-height: 1.05;
     letter-spacing: -0.05em;
   }

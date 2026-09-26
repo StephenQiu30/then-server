@@ -167,3 +167,67 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 }
 
 func wardrobeTestValue[T any](value T) *T { return &value }
+
+func TestWardrobeRecommendationReadsCurrentOwnedPostgresItems(t *testing.T) {
+	environment := loadServiceEnvironment(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	base, err := gorm.Open(postgres.Open(environment.databaseURL), &gorm.Config{Logger: logger.Discard})
+	serviceOK(t, "open recommendation test database", err)
+	schema := strings.ReplaceAll(serviceID(t), "-", "_")
+	serviceOK(t, "create recommendation test schema", base.WithContext(ctx).Exec("CREATE SCHEMA "+schema).Error)
+	t.Cleanup(func() {
+		cleanup, done := context.WithTimeout(context.Background(), 5*time.Second)
+		defer done()
+		if err := base.WithContext(cleanup).Exec("DROP SCHEMA " + schema + " CASCADE").Error; err != nil {
+			t.Error("recommendation schema cleanup failed")
+		}
+	})
+	databaseURL, err := url.Parse(environment.databaseURL)
+	serviceOK(t, "parse recommendation test database", err)
+	query := databaseURL.Query()
+	query.Set("search_path", schema)
+	databaseURL.RawQuery = query.Encode()
+	database, err := gorm.Open(postgres.Open(databaseURL.String()), &gorm.Config{Logger: logger.Discard})
+	serviceOK(t, "open isolated recommendation schema", err)
+	serviceOK(t, "migrate recommendation schema", store.Migrate(ctx, database))
+
+	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
+	serviceOK(t, "construct recommendation account service", err)
+	first, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "recommend-first@example.test", DisplayName: "First", Password: "correct-password-first"})
+	serviceOK(t, "register first recommendation owner", err)
+	second, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "recommend-second@example.test", DisplayName: "Second", Password: "correct-password-second"})
+	serviceOK(t, "register second recommendation owner", err)
+	wardrobe, err := wardrobeapp.NewWardrobeService(accounts, store.NewWardrobeRepository(database))
+	serviceOK(t, "construct recommendation wardrobe service", err)
+	create := func(token, id, name string, category wardrobeapp.WardrobeCategory) wardrobeapp.WardrobeItem {
+		item, err := wardrobe.CreateWardrobeItem(ctx, token, wardrobeapp.CreateWardrobeItemInput{ID: id, Name: name, Category: category, Availability: wardrobeapp.WardrobeWearable, Source: wardrobeapp.WardrobeSourceWardrobe})
+		serviceOK(t, "create recommendation wardrobe item", err)
+		return item
+	}
+	create(first.Token, "018f1f74-a2d0-7c6d-9c17-4a0ea2400c11", "First Top", wardrobeapp.WardrobeTop)
+	create(first.Token, "018f1f74-a2d0-7c6d-9c17-4a0ea2400c12", "First Bottom", wardrobeapp.WardrobeBottom)
+	firstShoes := create(first.Token, "018f1f74-a2d0-7c6d-9c17-4a0ea2400c13", "First Shoes", wardrobeapp.WardrobeShoes)
+	create(second.Token, "018f1f74-a2d0-7c6d-9c17-4a0ea2400c14", "Second Dress", wardrobeapp.WardrobeOnePiece)
+	create(second.Token, "018f1f74-a2d0-7c6d-9c17-4a0ea2400c15", "Second Shoes", wardrobeapp.WardrobeShoes)
+
+	input := wardrobeapp.RecommendationContext{LocalDate: "2026-09-26", TimeZone: "Asia/Shanghai"}
+	result, err := wardrobe.RecommendWardrobe(ctx, first.Token, input)
+	serviceOK(t, "recommend first owner wardrobe", err)
+	if len(result.Candidates) != 1 || len(result.Candidates[0].Items) != 3 || result.Candidates[0].Items[0].Name != "First Top" {
+		t.Fatalf("first recommendation did not use only owned complete items: %+v", result)
+	}
+	_, err = wardrobe.UpdateWardrobeItem(ctx, first.Token, firstShoes.ID, firstShoes.Revision, wardrobeapp.UpdateWardrobeItemInput{Name: firstShoes.Name, Category: wardrobeapp.WardrobeShoes, Availability: wardrobeapp.WardrobeLaundry})
+	serviceOK(t, "mark first owner shoes unavailable", err)
+	result, err = wardrobe.RecommendWardrobe(ctx, first.Token, input)
+	serviceOK(t, "refresh recommendation after availability change", err)
+	if result.Gap != "missing_shoes" || len(result.Candidates) != 0 {
+		t.Fatalf("recommendation reused unavailable or other-owner shoes: %+v", result)
+	}
+	result, err = wardrobe.RecommendWardrobe(ctx, second.Token, input)
+	serviceOK(t, "recommend second owner wardrobe", err)
+	if len(result.Candidates) != 1 || len(result.Candidates[0].Items) != 2 || result.Candidates[0].Items[0].Name != "Second Dress" {
+		t.Fatalf("second recommendation crossed owner boundary: %+v", result)
+	}
+}

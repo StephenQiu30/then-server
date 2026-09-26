@@ -25,6 +25,7 @@
 - [服务端增量同步](17-40-服务端增量同步执行计划.md)（本地服务端 completed；BL-SYNC-02，客户端另验）
 - [衣橱归档恢复与状态筛选后端](17-41-衣橱归档恢复与状态筛选后端执行计划.md)（approved/completed；BL-WARDROBE-01 后端切片，客户端/完整验收另验）
 - [双端设计风格与反馈组件](17-42-双端设计风格与反馈组件执行计划.md)（approved/in_progress；Web 与 iOS 视觉实现）
+- [Web 场景推荐与页面改版](17-43-Web场景推荐与页面改版执行计划.md)（approved/local_complete，release_pending；方案 3、本人真实衣橱推荐与 Web 页面）
 
 - [后端需求与数据设计审核计划](19-01-后端需求与数据设计审核计划.md)（approved/completed）
 - [账号状态与公开资料执行计划](19-02-账号状态与公开资料执行计划.md)（approved/completed）

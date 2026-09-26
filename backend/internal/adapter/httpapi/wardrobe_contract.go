@@ -71,6 +71,38 @@ type WardrobePageResponse struct {
 	NextAfterID *string                `json:"next_after_id,omitempty" format:"uuid"`
 }
 
+type WardrobeRecommendationRequest struct {
+	LocalDate                  string                             `json:"local_date" format:"date"`
+	TimeZone                   string                             `json:"time_zone" minLength:"1" maxLength:"64"`
+	FormalityBand              *wardrobeapp.WardrobeFormalityBand `json:"formality_band,omitempty" enum:"casual,smart_casual,formal"`
+	WarmthBand                 *wardrobeapp.WardrobeWarmthBand    `json:"warmth_band,omitempty" enum:"light,medium,warm"`
+	RequiresRainSuitability    bool                               `json:"requires_rain_suitability"`
+	RequiresWalkingSuitability bool                               `json:"requires_walking_suitability"`
+	IncludePackedItems         bool                               `json:"include_packed_items"`
+}
+
+type WardrobeRecommendationCandidateResponse struct {
+	Items         []WardrobeItemResponse `json:"items"`
+	Reasons       []string               `json:"reasons"`
+	Uncertainties []string               `json:"uncertainties"`
+}
+
+type WardrobeRecommendationResponse struct {
+	PolicyVersion string                                    `json:"policy_version"`
+	Candidates    []WardrobeRecommendationCandidateResponse `json:"candidates" maxItems:"3"`
+	Gap           string                                    `json:"gap,omitempty"`
+}
+
+type wardrobeRecommendationInput struct {
+	Session string `cookie:"then_session" hidden:"true"`
+	Body    WardrobeRecommendationRequest
+}
+
+type wardrobeRecommendationOutput struct {
+	RequestID string                         `header:"X-Request-ID"`
+	Body      WardrobeRecommendationResponse `json:"body"`
+}
+
 type WardrobeDeletionImpactResponse struct {
 	AffectedPlanCount      int    `json:"affected_plan_count" minimum:"0"`
 	AffectedWearEventCount int    `json:"affected_wear_event_count" minimum:"0"`

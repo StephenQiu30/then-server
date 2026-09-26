@@ -15,11 +15,38 @@ import (
 )
 
 type wardrobeTransportStub struct {
-	created wardrobeapp.CreateWardrobeItemInput
-	updated wardrobeapp.UpdateWardrobeItemInput
-	filter  wardrobeapp.WardrobeListFilter
-	token   string
-	err     error
+	created     wardrobeapp.CreateWardrobeItemInput
+	recommended wardrobeapp.RecommendationContext
+	updated     wardrobeapp.UpdateWardrobeItemInput
+	filter      wardrobeapp.WardrobeListFilter
+	token       string
+	err         error
+}
+
+func (s *wardrobeTransportStub) RecommendWardrobe(_ context.Context, token string, input wardrobeapp.RecommendationContext) (wardrobeapp.RecommendationResult, error) {
+	s.token, s.recommended = token, input
+	return wardrobeapp.RecommendationResult{PolicyVersion: wardrobeapp.RecommendationPolicyVersion, Candidates: []wardrobeapp.RecommendationCandidate{}}, s.err
+}
+
+func TestWardrobeRecommendationRequiresSessionAndMapsConfirmedContext(t *testing.T) {
+	service := new(wardrobeTransportStub)
+	router := wardrobeRouter(t, service)
+	requestBody := `{"local_date":"2026-09-26","time_zone":"Asia/Shanghai","formality_band":"smart_casual","requires_rain_suitability":true,"requires_walking_suitability":false,"include_packed_items":false}`
+	request := httptest.NewRequest(http.MethodPost, "/wardrobe/recommendations", strings.NewReader(requestBody))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized || service.token != "" {
+		t.Fatalf("anonymous recommendation was not rejected: %d %s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/wardrobe/recommendations", strings.NewReader(requestBody))
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: strings.Repeat("a", 43)})
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || service.token == "" || service.recommended.FormalityBand == nil || *service.recommended.FormalityBand != wardrobeapp.WardrobeFormalitySmartCasual || !service.recommended.RequiresRainSuitability || !strings.Contains(response.Body.String(), `"policy_version":"wardrobe-hard-constraints-v1"`) {
+		t.Fatalf("confirmed recommendation context was lost: %d %s %+v", response.Code, response.Body.String(), service.recommended)
+	}
 }
 
 func (s *wardrobeTransportStub) CreateWardrobeItem(_ context.Context, token string, input wardrobeapp.CreateWardrobeItemInput) (wardrobeapp.WardrobeItem, error) {

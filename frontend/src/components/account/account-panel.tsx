@@ -197,17 +197,6 @@ export function AccountPanel() {
       ) : (
         user && (
           <div className="flex flex-col gap-6">
-            <div className="flex flex-wrap gap-3">
-              <Button asChild variant="outline">
-                <Link href="/wardrobe">查看我的衣橱</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/plans">查看穿搭计划</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/wear">查看实际穿着</Link>
-              </Button>
-            </div>
             <Card>
               <CardHeader>
                 <CardTitle>个人资料</CardTitle>

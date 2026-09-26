@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -312,26 +311,12 @@ export function WearEventPanel() {
 
   return (
     <PageShell>
-      <header className="flex flex-col items-start gap-4">
-        <Link href="/" className="text-link underline-offset-4 hover:underline">
-          于是 OOTD
-        </Link>
+      <header className="flex flex-col items-start gap-3 border-b border-border pb-8">
         <Badge variant="secondary">实际</Badge>
         <h1 className="page-title">我的实际穿着</h1>
         <p className="max-w-2xl text-muted-foreground">
           只记录你明确确认穿过的衣物；计划本身不会增加实际记录。
         </p>
-        <div className="flex flex-wrap gap-3">
-          <Button asChild variant="outline">
-            <Link href="/plans">穿搭计划</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/wardrobe">管理衣橱</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/account">账户资料</Link>
-          </Button>
-        </div>
       </header>
       {currentUser.isPending ||
       (currentUser.isError && accountStatus(currentUser.error) === 401) ? (
@@ -404,7 +389,7 @@ export function WearEventPanel() {
               </AlertDescription>
             </Alert>
           )}
-          <div className="grid gap-6 min-[900px]:grid-cols-2 min-[900px]:items-start">
+          <div className="grid gap-8 min-[900px]:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] min-[900px]:items-start">
             <WearEditor
               form={form}
               onChange={changeForm}

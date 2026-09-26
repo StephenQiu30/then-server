@@ -80,6 +80,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"updateWardrobeItem":              true,
 		"deleteWardrobeItem":              true,
 		"getWardrobeDeletionImpact":       true,
+		"recommendWardrobeOutfits":        true,
 		"createOutfitPlan":                true,
 		"listOutfitPlans":                 true,
 		"getOutfitPlan":                   true,
@@ -195,7 +196,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.29.0" || operations != 128 || len(spec.Paths) != 96 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.30.0" || operations != 129 || len(spec.Paths) != 97 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d paths=%d", spec.OpenAPI, spec.Info.Version, operations, len(spec.Paths))
 	}
 	mediaRequest := spec.Components.Schemas["CreateMediaUploadRequest"]
@@ -214,7 +215,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			t.Fatalf("generated contract is missing account mail operation %s", operationID)
 		}
 	}
-	for _, operationID := range []string{"getCurrentProfile", "putCurrentProfile", "getPublicProfile", "putProfileAvatar", "deleteProfileAvatar", "getPublicProfileAvatar", "createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "archiveWardrobeItem", "restoreWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent", "createDiaryEntry", "listDiaryEntries", "getDiaryEntry", "updateDiaryEntry", "getDiaryEntryDeletionImpact", "deleteDiaryEntry", "getCalendarMonth", "createPost", "listOwnPosts", "getOwnPost", "updatePost", "submitPost", "withdrawPost", "deletePost", "getPublicPost", "getPublicPostImage", "listPostModerationCandidates", "getPostModerationCandidate", "getPostModerationImage", "decidePostModeration", "removePublishedPost", "createPostReport", "listOwnReports", "listCommunityReports", "resolveCommunityReport", "listModerationActions", "listAdminUsers", "suspendUser", "restoreUser"} {
+	for _, operationID := range []string{"getCurrentProfile", "putCurrentProfile", "getPublicProfile", "putProfileAvatar", "deleteProfileAvatar", "getPublicProfileAvatar", "createConsent", "getConsent", "withdrawConsent", "createMediaUpload", "completeMediaUpload", "getMedia", "deleteMedia", "getDeletionRequest", "createWardrobeItem", "listWardrobeItems", "getWardrobeItem", "updateWardrobeItem", "archiveWardrobeItem", "restoreWardrobeItem", "getWardrobeDeletionImpact", "deleteWardrobeItem", "recommendWardrobeOutfits", "createOutfitPlan", "listOutfitPlans", "getOutfitPlan", "updateOutfitPlan", "cancelOutfitPlan", "markOutfitPlanNotWorn", "restoreOutfitPlan", "deleteOutfitPlan", "createWearEvent", "listWearEvents", "getWearEvent", "updateWearEvent", "deleteWearEvent", "createDiaryEntry", "listDiaryEntries", "getDiaryEntry", "updateDiaryEntry", "getDiaryEntryDeletionImpact", "deleteDiaryEntry", "getCalendarMonth", "createPost", "listOwnPosts", "getOwnPost", "updatePost", "submitPost", "withdrawPost", "deletePost", "getPublicPost", "getPublicPostImage", "listPostModerationCandidates", "getPostModerationCandidate", "getPostModerationImage", "decidePostModeration", "removePublishedPost", "createPostReport", "listOwnReports", "listCommunityReports", "resolveCommunityReport", "listModerationActions", "listAdminUsers", "suspendUser", "restoreUser"} {
 		if !identifiers[operationID] {
 			t.Fatalf("generated contract is missing %s", operationID)
 		}
