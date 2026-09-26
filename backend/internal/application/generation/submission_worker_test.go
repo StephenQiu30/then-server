@@ -167,6 +167,30 @@ func submissionWorkerPolicy() SubmissionWorkerPolicy {
 	}
 }
 
+func TestGenerationWorkerPoliciesRejectLeaseShorterThanExternalBudget(t *testing.T) {
+	timeout := 10 * time.Minute
+	leaseTTL := timeout + minGenerationWorkerLeaseMargin - time.Nanosecond
+	checks := []struct {
+		name     string
+		validate func() error
+	}{
+		{"submission", func() error {
+			return (SubmissionWorkerPolicy{WorkerID: "worker", LeaseTTL: leaseTTL, ProviderTimeout: timeout, Retry: RetryPolicy{MaxAttempts: 2, BaseDelay: time.Second, MaxDelay: time.Minute}}).Validate()
+		}},
+		{"observation", func() error {
+			return (ObservationWorkerPolicy{WorkerID: "worker", LeaseTTL: leaseTTL, ProviderTimeout: timeout, PollInterval: time.Second}).Validate()
+		}},
+		{"result", func() error {
+			return (ResultWorkerPolicy{WorkerID: "worker", LeaseTTL: leaseTTL, FetchTimeout: timeout, RetryDelay: time.Second}).Validate()
+		}},
+	}
+	for _, check := range checks {
+		if err := check.validate(); err == nil {
+			t.Errorf("%s accepted a lease shorter than the external budget", check.name)
+		}
+	}
+}
+
 func TestSubmissionWorkerRecordsAcceptedIdentityBeforeReleasingLease(t *testing.T) {
 	provider := &submissionWorkerProviderStub{}
 	worker, repository, now := newSubmissionWorkerTest(t, provider, mustTask(validCreateInput()), submissionWorkerPolicy())

@@ -12,7 +12,10 @@ var (
 	ErrInvalidGenerationLease  = errors.New("invalid generation task lease")
 )
 
-const maxWorkerRetryDelay = 30 * time.Minute
+const (
+	maxWorkerRetryDelay            = 30 * time.Minute
+	minGenerationWorkerLeaseMargin = 30 * time.Second
+)
 
 // Lease is the worker proof carried between short database transactions. The
 // fencing token changes on every acquisition, so an expired worker cannot

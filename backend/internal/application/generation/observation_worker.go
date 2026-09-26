@@ -52,7 +52,7 @@ type ObservationWorkerPolicy struct {
 }
 
 func (p ObservationWorkerPolicy) Validate() error {
-	if !validID(p.WorkerID) || (p.Provider != "" && !validToken(p.Provider, 96)) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.ProviderTimeout <= 0 || p.ProviderTimeout > 10*time.Minute || p.PollInterval <= 0 || p.PollInterval > maxWorkerRetryDelay {
+	if !validID(p.WorkerID) || (p.Provider != "" && !validToken(p.Provider, 96)) || p.LeaseTTL < p.ProviderTimeout+minGenerationWorkerLeaseMargin || p.LeaseTTL > 30*time.Minute || p.ProviderTimeout <= 0 || p.ProviderTimeout > 10*time.Minute || p.PollInterval <= 0 || p.PollInterval > maxWorkerRetryDelay {
 		return ErrInvalidGenerationWorker
 	}
 	return nil
@@ -140,9 +140,11 @@ func (w *ObservationWorker) RunNext(ctx context.Context) (bool, ObservationResul
 }
 
 func (w *ObservationWorker) runClaimed(ctx context.Context, view TaskView, lease Lease) (ObservationResult, error) {
+	// Query, optional cancellation, and reconciliation share one external-call
+	// budget so the lease cannot expire between individually timed calls.
 	providerContext, cancel := context.WithTimeout(ctx, w.policy.ProviderTimeout)
+	defer cancel()
 	remote, queryErr := w.provider.Query(providerContext, view.Task.ExternalTaskID)
-	cancel()
 	if queryErr != nil {
 		return w.releaseWithError(ctx, lease, view, ErrGenerationObservationUnknown)
 	}
@@ -150,15 +152,11 @@ func (w *ObservationWorker) runClaimed(ctx context.Context, view TaskView, lease
 		return w.releaseWithError(ctx, lease, view, err)
 	}
 	if view.Task.CancelRequestedAt != nil && !remote.State.terminal() && remote.State != StatusSucceeded {
-		cancelContext, stopCancel := context.WithTimeout(ctx, w.policy.ProviderTimeout)
-		cancelErr := w.provider.Cancel(cancelContext, view.Task.ExternalTaskID)
-		stopCancel()
+		cancelErr := w.provider.Cancel(providerContext, view.Task.ExternalTaskID)
 		if cancelErr != nil {
 			return w.releaseWithError(ctx, lease, view, ErrGenerationCancellationUnknown)
 		}
-		providerContext, stopQuery := context.WithTimeout(ctx, w.policy.ProviderTimeout)
 		remote, queryErr = w.provider.Query(providerContext, view.Task.ExternalTaskID)
-		stopQuery()
 		if queryErr != nil {
 			return w.releaseWithError(ctx, lease, view, ErrGenerationCancellationUnknown)
 		}

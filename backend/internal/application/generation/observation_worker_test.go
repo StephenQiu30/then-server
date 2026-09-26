@@ -14,22 +14,29 @@ type observationWorkerProviderStub struct {
 	cancelState *Status
 	queries     int
 	cancels     int
+	deadlines   []time.Time
 }
 
 func (p *observationWorkerProviderStub) Submit(context.Context, Submission) (Receipt, error) {
 	return Receipt{}, errors.New("submit should not be called by observation worker")
 }
 
-func (p *observationWorkerProviderStub) Query(context.Context, string) (RemoteTask, error) {
+func (p *observationWorkerProviderStub) Query(ctx context.Context, _ string) (RemoteTask, error) {
 	p.queries++
+	if deadline, ok := ctx.Deadline(); ok {
+		p.deadlines = append(p.deadlines, deadline)
+	}
 	if p.queryErr != nil {
 		return RemoteTask{}, p.queryErr
 	}
 	return p.remote, nil
 }
 
-func (p *observationWorkerProviderStub) Cancel(_ context.Context, externalID string) error {
+func (p *observationWorkerProviderStub) Cancel(ctx context.Context, externalID string) error {
 	p.cancels++
+	if deadline, ok := ctx.Deadline(); ok {
+		p.deadlines = append(p.deadlines, deadline)
+	}
 	if p.cancelErr != nil {
 		return p.cancelErr
 	}
@@ -202,6 +209,9 @@ func TestObservationWorkerCancelsRequestedProviderTaskBeforeSettling(t *testing.
 	}
 	if provider.cancels != 1 || provider.queries != 2 {
 		t.Fatalf("provider cancellation/reconciliation calls = cancel %d query %d, want 1/2", provider.cancels, provider.queries)
+	}
+	if len(provider.deadlines) != 3 || !provider.deadlines[0].Equal(provider.deadlines[1]) || !provider.deadlines[1].Equal(provider.deadlines[2]) {
+		t.Fatalf("query, cancel and reconciliation did not share one deadline: %v", provider.deadlines)
 	}
 }
 
