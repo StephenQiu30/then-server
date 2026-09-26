@@ -84,8 +84,8 @@ func (p CleanupRetryPolicy) RetryAt(at time.Time, attempts int) (time.Time, erro
 }
 
 // CleanupWorker executes one durable cleanup request per RunOnce call. Runtime
-// bootstrap wires the local object-store adapter; unavailable Provider deletion
-// remains a bounded retryable failure until an approved adapter exists.
+// bootstrap wires local object-store and stateless fixture cleanup; other
+// Provider deletion remains a bounded retryable failure until an adapter exists.
 type CleanupWorker struct {
 	repository CleanupRepository
 	executor   CleanupExecutor

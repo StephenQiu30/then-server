@@ -2,11 +2,45 @@ package generationfixture
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
+	"github.com/google/uuid"
 )
+
+type fixtureObjectDeleterStub struct{ targets []generationapp.CleanupTarget }
+
+func (s *fixtureObjectDeleterStub) DeleteObject(_ context.Context, target generationapp.CleanupTarget) error {
+	s.targets = append(s.targets, target)
+	return nil
+}
+
+func TestFixtureCleanupCompletesOnlyStatelessFixtureProviderTasks(t *testing.T) {
+	objects := &fixtureObjectDeleterStub{}
+	executor, err := NewCleanupExecutor(objects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerTarget := generationapp.CleanupTarget{Kind: generationapp.CleanupTargetProvider, ID: fixtureTaskID(uuid.NewString())}
+	for range 2 {
+		if err := executor.DeleteProviderTask(context.Background(), providerTarget); err != nil {
+			t.Fatalf("stateless fixture cleanup was not idempotent: %v", err)
+		}
+	}
+	for _, id := range []string{"remote-task", "fixture:not-a-uuid"} {
+		err := executor.DeleteProviderTask(context.Background(), generationapp.CleanupTarget{Kind: generationapp.CleanupTargetProvider, ID: id})
+		var targetErr *generationapp.CleanupTargetError
+		if !errors.As(err, &targetErr) || targetErr.Code != "provider_cleanup_unavailable" {
+			t.Fatalf("foreign provider target was treated as fixture: id=%q err=%v", id, err)
+		}
+	}
+	objectTarget := generationapp.CleanupTarget{Kind: generationapp.CleanupTargetObject, ID: uuid.NewString(), ObjectKey: "owners/" + uuid.NewString() + "/generation/" + uuid.NewString() + "/output.jpg", ObjectVersionID: "version"}
+	if err := executor.DeleteObject(context.Background(), objectTarget); err != nil || len(objects.targets) != 1 || objects.targets[0] != objectTarget {
+		t.Fatalf("fixture cleanup did not delegate exact object deletion: targets=%+v err=%v", objects.targets, err)
+	}
+}
 
 func TestFixtureProviderCanObserveAcceptedTaskAfterAdapterRestart(t *testing.T) {
 	for _, test := range []struct {

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/StephenQiu30/then-server/backend/internal/adapter/generationfixture"
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/httpapi"
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/messagequeue"
 	"github.com/StephenQiu30/then-server/backend/internal/adapter/objectstore"
@@ -90,9 +91,13 @@ func Run(log *slog.Logger) error {
 		if executorErr != nil {
 			return executorErr
 		}
+		fixtureCleanup, executorErr := generationfixture.NewCleanupExecutor(cleanupExecutor)
+		if executorErr != nil {
+			return executorErr
+		}
 		cleanupWorker, err = generationapp.NewCleanupWorker(
 			postgres.NewGenerationRepository(pool.ORM()),
-			cleanupExecutor,
+			fixtureCleanup,
 			generationapp.CleanupRetryPolicy{LeaseTTL: time.Minute, BaseDelay: 5 * time.Second, MaxDelay: 5 * time.Minute},
 		)
 		if err != nil {
