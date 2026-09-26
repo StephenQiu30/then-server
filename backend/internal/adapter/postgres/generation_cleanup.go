@@ -643,10 +643,10 @@ func bindGenerationCleanupProviderInTx(tx *gorm.DB, request *generationapp.Clean
 		return nil
 	}
 	var task generationJobRecord
-	if err := tx.Select("provider").Where("owner_id = ? AND id = ?", request.OwnerID, request.TaskID).First(&task).Error; err != nil {
+	if err := tx.Select("provider", "external_task_id").Where("owner_id = ? AND id = ?", request.OwnerID, request.TaskID).First(&task).Error; err != nil {
 		return generationLookupError(err)
 	}
-	if task.Provider == "" {
+	if task.Provider == "" || task.ExternalTaskID == "" {
 		return generationapp.ErrInvalidGenerationCleanup
 	}
 	for index := range request.Targets {
@@ -654,7 +654,7 @@ func bindGenerationCleanupProviderInTx(tx *gorm.DB, request *generationapp.Clean
 		if target.Kind != generationapp.CleanupTargetProvider {
 			continue
 		}
-		if target.Provider != "" && target.Provider != task.Provider {
+		if target.ID != task.ExternalTaskID || (target.Provider != "" && target.Provider != task.Provider) {
 			return generationapp.ErrInvalidGenerationCleanup
 		}
 		target.Provider = task.Provider
