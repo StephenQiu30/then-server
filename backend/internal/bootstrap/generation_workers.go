@@ -88,7 +88,9 @@ func generationAdmissionPolicy(configuration config.GenerationConfig) (generatio
 		return policy, nil
 	}
 	estimator := generationapp.CostEstimatorFunc(func(purpose generationapp.Purpose, provider, model string, _ []byte) (generationapp.CostEstimate, error) {
-		if purpose != generationapp.PurposeImage || provider != generationfixture.ProviderName || model != generationfixture.ImageModel {
+		if provider != generationfixture.ProviderName ||
+			!(purpose == generationapp.PurposeImage && model == generationfixture.ImageModel ||
+				purpose == generationapp.PurposeModel && model == generationfixture.ModelModel) {
 			return generationapp.CostEstimate{}, generationapp.ErrInvalidGenerationInput
 		}
 		return generationapp.CostEstimate{}, nil

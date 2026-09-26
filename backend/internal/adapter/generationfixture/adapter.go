@@ -1,4 +1,4 @@
-// Package generationfixture provides the zero-cost local image task adapter.
+// Package generationfixture provides zero-cost local generation task fixtures.
 package generationfixture
 
 import (
@@ -20,6 +20,7 @@ import (
 const (
 	ProviderName = "fixture"
 	ImageModel   = "fixture-image-v1"
+	ModelModel   = "fixture-model-v1"
 )
 
 // PrivateOutputWriter writes one immutable result version into private storage.
@@ -27,12 +28,12 @@ type PrivateOutputWriter interface {
 	PutDerived(context.Context, string, io.Reader, int64) (string, error)
 }
 
-// Adapter runs image tasks entirely in process and stores a deterministic
-// placeholder in private object storage. It is for local workflow validation,
-// not a generated Look or a production image provider.
+// Adapter runs tasks entirely in process and stores deterministic placeholders
+// in private object storage. It validates workflow, not generated Look quality.
 type Adapter struct {
 	objects PrivateOutputWriter
 	image   []byte
+	model   []byte
 }
 
 var _ generationapp.Provider = (*Adapter)(nil)
@@ -46,14 +47,21 @@ func New(objects PrivateOutputWriter) (*Adapter, error) {
 	if err != nil {
 		return nil, errors.New("fixture image preparation failed")
 	}
-	return &Adapter{objects: objects, image: data}, nil
+	model, err := placeholderGLB()
+	if err != nil {
+		return nil, errors.New("fixture model preparation failed")
+	}
+	if _, err := generationapp.VerifyOutputContent(generationapp.PurposeModel, model); err != nil {
+		return nil, errors.New("fixture model content invalid")
+	}
+	return &Adapter{objects: objects, image: data, model: model}, nil
 }
 
 func (a *Adapter) Submit(ctx context.Context, submission generationapp.Submission) (generationapp.Receipt, error) {
 	if err := ctx.Err(); err != nil {
 		return generationapp.Receipt{}, err
 	}
-	if a == nil || submission.Provider != ProviderName || submission.Model != ImageModel || submission.Purpose != generationapp.PurposeImage {
+	if a == nil || submission.Provider != ProviderName || !supportedModel(submission.Purpose, submission.Model) {
 		return generationapp.Receipt{}, generationapp.ErrProviderNotAccepted
 	}
 	return generationapp.Receipt{ExternalTaskID: fixtureTaskID(uuid.NewString())}, nil
@@ -83,7 +91,7 @@ func (a *Adapter) Fetch(ctx context.Context, request generationapp.FetchRequest)
 	if err := ctx.Err(); err != nil {
 		return generationapp.FetchedResult{}, err
 	}
-	if a == nil || a.objects == nil || len(a.image) == 0 || request.Purpose != generationapp.PurposeImage ||
+	if a == nil || a.objects == nil ||
 		!validFixtureTaskID(request.ExternalTaskID) || request.ObjectKey == "" || request.LookRevision < 1 {
 		return generationapp.FetchedResult{}, errors.New("fixture generation result unavailable")
 	}
@@ -94,7 +102,15 @@ func (a *Adapter) Fetch(ctx context.Context, request generationapp.FetchRequest)
 		return generationapp.FetchedResult{}, errors.New("fixture generation look invalid")
 	}
 
-	data := append([]byte(nil), a.image...)
+	data, contentType := a.image, generationapp.OutputContentTypeJPEG
+	if request.Purpose == generationapp.PurposeModel {
+		data, contentType = a.model, generationapp.OutputContentTypeGLB
+	} else if request.Purpose != generationapp.PurposeImage {
+		return generationapp.FetchedResult{}, errors.New("fixture generation purpose invalid")
+	}
+	if len(data) == 0 {
+		return generationapp.FetchedResult{}, errors.New("fixture generation result unavailable")
+	}
 	versionID, err := a.objects.PutDerived(ctx, request.ObjectKey, bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return generationapp.FetchedResult{}, err
@@ -110,7 +126,7 @@ func (a *Adapter) Fetch(ctx context.Context, request generationapp.FetchRequest)
 		Fact: generationapp.OutputFact{
 			ObjectKey:       request.ObjectKey,
 			ObjectVersionID: versionID,
-			ContentType:     generationapp.OutputContentTypeJPEG,
+			ContentType:     contentType,
 			ByteSize:        int64(len(data)),
 			SHA256:          hex.EncodeToString(digest[:]),
 		},
@@ -137,6 +153,10 @@ func placeholderJPEG() ([]byte, error) {
 }
 
 func fixtureTaskID(value string) string { return "fixture:" + value }
+
+func supportedModel(purpose generationapp.Purpose, model string) bool {
+	return purpose == generationapp.PurposeImage && model == ImageModel || purpose == generationapp.PurposeModel && model == ModelModel
+}
 
 func validFixtureTaskID(value string) bool {
 	if !strings.HasPrefix(value, "fixture:") {
