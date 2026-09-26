@@ -87,7 +87,7 @@ func TestContainerRuntime(t *testing.T) {
 	minioPassword := rand.Text()
 	_, err = testcontainer.Create(t, ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:      "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+			Image:      testcontainer.MinIOImage(),
 			Cmd:        []string{"server", "/data"},
 			Env:        map[string]string{"MINIO_ROOT_USER": "then_test", "MINIO_ROOT_PASSWORD": minioPassword},
 			WaitingFor: wait.ForLog("API:").WithStartupTimeout(time.Minute),
