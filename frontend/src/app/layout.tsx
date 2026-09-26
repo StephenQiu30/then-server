@@ -7,8 +7,13 @@ import { QueryProvider } from '@/providers/query-provider'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: '于是 OOTD',
+  title: '穿见',
   description: '基于真实衣橱的穿搭决策助手',
+  applicationName: '穿见',
+  icons: {
+    icon: '/brand/chuanjian-icon.png',
+    apple: '/brand/chuanjian-app-icon.png',
+  },
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
