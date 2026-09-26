@@ -12,7 +12,7 @@ import (
 
 // ConfirmImage records the owner's decision after a validated image is ready.
 // Locking the task before its output serializes confirmation with revocation.
-func (r *GenerationRepository) ConfirmImage(ctx context.Context, ownerID, taskID string, at time.Time) (generationapp.TaskView, error) {
+func (r *GenerationRepository) ConfirmImage(ctx context.Context, ownerID, taskID string, at time.Time, retention time.Duration) (generationapp.TaskView, error) {
 	if r == nil || r.database == nil {
 		return generationapp.TaskView{}, generationapp.ErrGenerationUnavailable
 	}
@@ -42,6 +42,9 @@ func (r *GenerationRepository) ConfirmImage(ctx context.Context, ownerID, taskID
 		}
 		if _, err := generationOutputFromRecord(output, task); err != nil {
 			return generationapp.ErrGenerationUnavailable
+		}
+		if generationapp.OutputExpired(output.PublishedAt, retention, at) {
+			return generationapp.ErrImageNotConfirmable
 		}
 		if output.ConfirmedAt == nil {
 			if at.Before(output.PublishedAt) {

@@ -74,6 +74,7 @@ func Run(log *slog.Logger) error {
 	}
 	var runner *eventworkerapp.Runner
 	var cleanupWorker *generationapp.CleanupWorker
+	var retentionWorker *generationapp.RetentionWorker
 	var generationWorkers []func(context.Context) error
 	var broker *messagequeue.Broker
 	generationWake := newGenerationWakeSignals()
@@ -103,6 +104,12 @@ func Run(log *slog.Logger) error {
 		if err != nil {
 			return err
 		}
+		if cfg.Generation.Retention > 0 {
+			retentionWorker, err = generationapp.NewRetentionWorker(postgres.NewGenerationRepository(pool.ORM()), cfg.Generation.Retention)
+			if err != nil {
+				return err
+			}
+		}
 		generationWorkers, err = newGenerationWorkerRunners(cfg, pool.ORM(), objects, log, generationWake)
 		if err != nil {
 			return err
@@ -111,6 +118,9 @@ func Run(log *slog.Logger) error {
 	if cfg.Role == "worker" {
 		log.Info("worker_started", "role", cfg.Role)
 		workers := []func(context.Context) error{runner.Run, func(ctx context.Context) error { return cleanupWorker.Run(ctx, time.Second) }}
+		if retentionWorker != nil {
+			workers = append(workers, func(ctx context.Context) error { return retentionWorker.Run(ctx, time.Minute) })
+		}
 		workers = append(workers, generationWorkers...)
 		err = runWorkers(ctx, workers...)
 		log.Info("worker_stopped")
@@ -118,6 +128,9 @@ func Run(log *slog.Logger) error {
 	}
 	if cfg.Role == "all" {
 		workers := []func(context.Context) error{runner.Run, func(ctx context.Context) error { return cleanupWorker.Run(ctx, time.Second) }, func(ctx context.Context) error { return runAPI(ctx, startup, cfg, pool, objects, log) }}
+		if retentionWorker != nil {
+			workers = append(workers, func(ctx context.Context) error { return retentionWorker.Run(ctx, time.Minute) })
+		}
 		workers = append(workers, generationWorkers...)
 		err = runWorkers(ctx, workers...)
 		return err
@@ -207,7 +220,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 	if err != nil {
 		return err
 	}
-	generationHandler := httpapi.NewGenerationHandler(generations, cfg.SessionSecure).WithOutputSigner(objects)
+	generationHandler := httpapi.NewGenerationHandler(generations, cfg.SessionSecure).WithOutputSigner(objects).WithOutputRetention(cfg.Generation.Retention)
 	var mediaHandler *httpapi.MediaHandler
 	var communityHandler *httpapi.CommunityHandler
 	var exportHandler *httpapi.DataExportHandler

@@ -31,9 +31,10 @@ type GenerationOutputSigner interface {
 const generationOutputReadURLTTL = 5 * time.Minute
 
 type GenerationHandler struct {
-	service      GenerationHTTPService
-	outputSigner GenerationOutputSigner
-	secureCookie bool
+	service         GenerationHTTPService
+	outputSigner    GenerationOutputSigner
+	outputRetention time.Duration
+	secureCookie    bool
 }
 
 func NewGenerationHandler(service GenerationHTTPService, secureCookie bool) *GenerationHandler {
@@ -43,6 +44,13 @@ func NewGenerationHandler(service GenerationHTTPService, secureCookie bool) *Gen
 func (h *GenerationHandler) WithOutputSigner(signer GenerationOutputSigner) *GenerationHandler {
 	if h != nil {
 		h.outputSigner = signer
+	}
+	return h
+}
+
+func (h *GenerationHandler) WithOutputRetention(retention time.Duration) *GenerationHandler {
+	if h != nil {
+		h.outputRetention = retention
 	}
 	return h
 }
@@ -115,10 +123,23 @@ func (h *GenerationHandler) outputAccess(ctx context.Context, input *generationJ
 	if err != nil {
 		return nil, h.error(ctx, err)
 	}
-	signedURL, expiresAt, err := h.outputSigner.SignGenerationOutputRead(ctx, asset, generationOutputReadURLTTL)
+	ttl := generationOutputReadURLTTL
+	if h.outputRetention > 0 {
+		remaining := time.Until(asset.PublishedAt.Add(h.outputRetention))
+		if remaining <= time.Second {
+			return nil, newErrorResponse(http.StatusNotFound, requestID(ctx))
+		}
+		if remaining <= ttl+time.Second {
+			ttl = remaining - time.Second
+		}
+	}
+	signedURL, expiresAt, err := h.outputSigner.SignGenerationOutputRead(ctx, asset, ttl)
 	if err != nil || signedURL == "" || !expiresAt.After(time.Now().UTC()) || expiresAt.After(time.Now().UTC().Add(generationOutputReadURLTTL+time.Second)) {
 		response := huma.ErrorWithHeaders(newErrorResponse(http.StatusServiceUnavailable, requestID(ctx)), http.Header{"Retry-After": []string{"1"}})
 		return nil, response
+	}
+	if h.outputRetention > 0 && expiresAt.After(asset.PublishedAt.Add(h.outputRetention)) {
+		return nil, newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
 	}
 	current, err := h.service.GetOutput(ctx, input.Session, input.ID)
 	if err != nil || current.ID != asset.ID || current.ObjectKey != asset.ObjectKey || current.ObjectVersionID != asset.ObjectVersionID {

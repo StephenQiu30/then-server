@@ -28,7 +28,7 @@ type Repository interface {
 	Get(context.Context, string, string) (TaskView, error)
 	List(context.Context, string, int, *string) (TaskPage, error)
 	RequestCancel(context.Context, string, string, time.Time) (TaskView, error)
-	ConfirmImage(context.Context, string, string, time.Time) (TaskView, error)
+	ConfirmImage(context.Context, string, string, time.Time, time.Duration) (TaskView, error)
 	RequestTaskCleanup(context.Context, string, string, time.Time) (TaskView, CleanupRequest, error)
 	ListUnknown(context.Context, string, int, *string) (UnknownSubmissionPage, error)
 	ReconcileUnknown(context.Context, string, ReconcileUnknownInput, time.Time) (SubmissionReconciliation, error)
@@ -162,6 +162,9 @@ func (s *Service) GetOutput(ctx context.Context, token, taskID string) (OutputAs
 		view.Asset.ObjectKey == "" || view.Asset.ObjectVersionID == "" {
 		return OutputAsset{}, ErrGenerationNotFound
 	}
+	if OutputExpired(view.Asset.PublishedAt, s.policy.OutputRetention, s.now().UTC()) {
+		return OutputAsset{}, ErrGenerationNotFound
+	}
 	if err := view.Asset.ValidatePersistedFor(view.Task); err != nil {
 		return OutputAsset{}, ErrGenerationUnavailable
 	}
@@ -201,7 +204,7 @@ func (s *Service) ConfirmImage(ctx context.Context, token, taskID string) (TaskV
 	if !validUUID(taskID) {
 		return TaskView{}, ErrInvalidGenerationInput
 	}
-	return s.repository.ConfirmImage(ctx, user.ID, taskID, s.now().UTC())
+	return s.repository.ConfirmImage(ctx, user.ID, taskID, s.now().UTC(), s.policy.OutputRetention)
 }
 
 func (s *Service) Delete(ctx context.Context, token, taskID string) (DeleteResult, error) {

@@ -18,9 +18,10 @@ func TestGenerationAdmissionPolicyEnablesOnlyZeroCostFixtureTasks(t *testing.T) 
 		Enabled:            true,
 		MaxConcurrentTasks: 2,
 		MaxQuotaUnits:      10,
+		Retention:          time.Hour,
 	}
 	policy, estimator := generationAdmissionPolicy(local)
-	if err := policy.Validate(); err != nil || !policy.Enabled || !policy.ZeroCost || estimator == nil {
+	if err := policy.Validate(); err != nil || !policy.Enabled || !policy.ZeroCost || policy.OutputRetention != time.Hour || estimator == nil {
 		t.Fatalf("valid local fixture admission was not enabled: policy=%+v err=%v", policy, err)
 	}
 	quote, err := estimator.Estimate(generationapp.PurposeImage, "fixture", "fixture-image-v1", []byte(`{}`))

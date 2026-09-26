@@ -8,6 +8,12 @@ import (
 
 var ErrInvalidGenerationOutput = errors.New("invalid generation output")
 
+// OutputExpired is true at the configured publication deadline. Zero means
+// the caller has no retention policy, as in provider-neutral unit tests.
+func OutputExpired(publishedAt time.Time, retention time.Duration, at time.Time) bool {
+	return retention > 0 && !at.Before(publishedAt.Add(retention))
+}
+
 const (
 	OutputContentTypeJPEG               = "image/jpeg"
 	OutputContentTypeGLB                = "model/gltf-binary"

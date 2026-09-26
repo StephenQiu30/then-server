@@ -288,6 +288,38 @@ func TestGenerationOutputAccessRequiresSessionAndSignsOwnedResult(t *testing.T) 
 	}
 }
 
+func TestGenerationOutputAccessStopsAtRetentionDeadline(t *testing.T) {
+	service := &generationHTTPStub{output: generationapp.OutputAsset{
+		ID:          "88888888-8888-4888-8888-888888888888",
+		Lineage:     generationapp.OutputLineage{TaskID: "11111111-1111-4111-8111-111111111111", OwnerID: "22222222-2222-4222-8222-222222222222", Purpose: generationapp.PurposeImage},
+		ContentType: generationapp.OutputContentTypeJPEG, ByteSize: 123,
+		SHA256:          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ObjectKey:       "owners/22222222-2222-4222-8222-222222222222/generation/11111111-1111-4111-8111-111111111111/output.jpg",
+		ObjectVersionID: "fixture-version", PublishedAt: time.Now().UTC().Add(-time.Minute),
+	}}
+	signer := &generationOutputSignerStub{url: "https://objects.example.test/private/output.jpg?signature=secret"}
+	router, err := NewRouterWithGeneration(context.Background(), false, probeFunc(func(context.Context) error { return nil }),
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		NewGenerationHandler(service, true).WithOutputSigner(signer).WithOutputRetention(2*time.Minute),
+		time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := "/generation-jobs/" + service.output.Lineage.TaskID + "/output-access"
+	readable := httptest.NewRecorder()
+	router.ServeHTTP(readable, generationSessionRequest(http.MethodGet, target, ""))
+	if readable.Code != http.StatusOK || signer.ttl <= 0 || signer.ttl >= time.Minute || signer.asset.PublishedAt.Add(2*time.Minute).Before(time.Now().UTC().Add(signer.ttl)) {
+		t.Fatalf("signed URL exceeded retention: status=%d ttl=%s", readable.Code, signer.ttl)
+	}
+	service.output.PublishedAt = time.Now().UTC().Add(-3 * time.Minute)
+	signer.ttl = 0
+	expired := httptest.NewRecorder()
+	router.ServeHTTP(expired, generationSessionRequest(http.MethodGet, target, ""))
+	if expired.Code != http.StatusNotFound || signer.ttl != 0 {
+		t.Fatalf("expired output was signed: status=%d ttl=%s", expired.Code, signer.ttl)
+	}
+}
+
 func TestGenerationHTTPContractMapsAdminSubmissionReconciliation(t *testing.T) {
 	service := &generationHTTPStub{view: generationHTTPFixture()}
 	service.unknownPage = generationapp.UnknownSubmissionPage{Items: []generationapp.UnknownSubmission{{

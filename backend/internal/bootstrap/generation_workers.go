@@ -87,6 +87,7 @@ func generationAdmissionPolicy(configuration config.GenerationConfig) (generatio
 		MaxConcurrentTasks:  configuration.MaxConcurrentTasks,
 		MaxQuotaUnits:       configuration.MaxQuotaUnits,
 		MaxBudgetMinorUnits: configuration.MaxBudgetMinorUnits,
+		OutputRetention:     configuration.Retention,
 	}
 	if !fixtureEnabled {
 		return policy, nil

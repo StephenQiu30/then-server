@@ -70,7 +70,7 @@ func (s *generationServiceRepositoryStub) RequestCancel(context.Context, string,
 	return s.view, nil
 }
 
-func (s *generationServiceRepositoryStub) ConfirmImage(_ context.Context, ownerID, taskID string, _ time.Time) (TaskView, error) {
+func (s *generationServiceRepositoryStub) ConfirmImage(_ context.Context, ownerID, taskID string, _ time.Time, _ time.Duration) (TaskView, error) {
 	s.confirmCalls++
 	s.confirmedOwner, s.confirmedTask = ownerID, taskID
 	return s.view, nil

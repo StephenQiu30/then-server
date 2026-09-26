@@ -120,6 +120,15 @@ func (r *GenerationRepository) Accept(ctx context.Context, input generationapp.C
 		}
 		existing := make([]generationapp.Task, 0, len(records))
 		for _, record := range records {
+			if record.Status == string(generationapp.StatusSucceeded) && record.IdempotencyKeyHash != idempotencyHash && policy.OutputRetention > 0 {
+				var output generationOutputRecord
+				if err := tx.Where("task_id = ?", record.ID).First(&output).Error; err != nil {
+					return err
+				}
+				if generationapp.OutputExpired(output.PublishedAt, policy.OutputRetention, at) {
+					continue
+				}
+			}
 			task, err := generationTaskFromRecord(record)
 			if err != nil {
 				return err
@@ -145,7 +154,7 @@ func (r *GenerationRepository) Accept(ctx context.Context, input generationapp.C
 			result.Reservation = view.Reservation
 			return nil
 		}
-		if err := requireGenerationImageSource(tx, accepted.Task); err != nil {
+		if err := requireGenerationImageSource(tx, accepted.Task, policy.OutputRetention, at); err != nil {
 			return err
 		}
 		job, err := generationJobRecordFromTask(accepted.Task)
@@ -203,7 +212,7 @@ func (r *GenerationRepository) Accept(ctx context.Context, input generationapp.C
 // owner's ready, purpose-scoped media and active consent in the acceptance
 // transaction. Model admission is tied to a confirmed image output instead
 // of trusting a client-supplied asset ID and digest.
-func requireGenerationImageSource(tx *gorm.DB, task generationapp.Task) error {
+func requireGenerationImageSource(tx *gorm.DB, task generationapp.Task, retention time.Duration, at time.Time) error {
 	if task.Purpose == generationapp.PurposeImage {
 		return requireGenerationInputMedia(tx, task)
 	}
@@ -251,6 +260,9 @@ func requireGenerationImageSource(tx *gorm.DB, task generationapp.Task) error {
 		return err
 	}
 	if _, err := generationOutputFromRecord(output, sourceTask); err != nil {
+		return generationapp.ErrGenerationSourceUnavailable
+	}
+	if generationapp.OutputExpired(output.PublishedAt, retention, at) {
 		return generationapp.ErrGenerationSourceUnavailable
 	}
 	return nil
