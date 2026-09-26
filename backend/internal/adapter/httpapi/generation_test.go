@@ -21,6 +21,8 @@ type generationHTTPStub struct {
 	outputToken    string
 	outputTaskID   string
 	outputCalls    int
+	confirmToken   string
+	confirmTaskID  string
 	page           generationapp.TaskPage
 	view           generationapp.TaskView
 	unknownPage    generationapp.UnknownSubmissionPage
@@ -52,6 +54,11 @@ func (s *generationHTTPStub) List(context.Context, string, int, *string) (genera
 }
 
 func (s *generationHTTPStub) Cancel(context.Context, string, string) (generationapp.TaskView, error) {
+	return s.view, s.err
+}
+
+func (s *generationHTTPStub) ConfirmImage(_ context.Context, token, taskID string) (generationapp.TaskView, error) {
+	s.confirmToken, s.confirmTaskID = token, taskID
 	return s.view, s.err
 }
 

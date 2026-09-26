@@ -77,20 +77,21 @@ type generationQuotaReservationRecord struct {
 func (generationQuotaReservationRecord) TableName() string { return "generation_quota_reservations" }
 
 type generationOutputRecord struct {
-	ID                 string    `gorm:"column:id;type:uuid;primaryKey"`
-	TaskID             string    `gorm:"column:task_id;type:uuid;not null;uniqueIndex:generation_outputs_task_unique"`
-	OwnerID            string    `gorm:"column:owner_id;type:uuid;not null;index:generation_outputs_owner_idx"`
-	LookID             string    `gorm:"column:look_id;type:uuid;not null"`
-	LookRevision       int       `gorm:"column:look_revision;not null;check:generation_outputs_look_revision_check,look_revision >= 1"`
-	Purpose            string    `gorm:"column:purpose;type:text;not null;check:generation_outputs_purpose_check,purpose IN ('image','model')"`
-	SourceImageAssetID string    `gorm:"column:source_image_asset_id;type:text"`
-	SourceImageSHA256  string    `gorm:"column:source_image_sha256;type:char(64)"`
-	ContentType        string    `gorm:"column:content_type;type:text;not null;check:generation_outputs_content_type_check,content_type IN ('image/jpeg','model/gltf-binary')"`
-	ByteSize           int64     `gorm:"column:byte_size;not null;check:generation_outputs_size_limit_check,((content_type = 'image/jpeg' AND byte_size BETWEEN 1 AND 12582912) OR (content_type = 'model/gltf-binary' AND byte_size BETWEEN 1 AND 10485760))"`
-	SHA256             string    `gorm:"column:sha256;type:char(64);not null"`
-	ObjectKey          string    `gorm:"column:object_key;type:text;not null;default:''"`
-	ObjectVersionID    string    `gorm:"column:object_version_id;type:text;not null"`
-	PublishedAt        time.Time `gorm:"column:published_at;type:timestamptz;not null"`
+	ID                 string     `gorm:"column:id;type:uuid;primaryKey"`
+	TaskID             string     `gorm:"column:task_id;type:uuid;not null;uniqueIndex:generation_outputs_task_unique"`
+	OwnerID            string     `gorm:"column:owner_id;type:uuid;not null;index:generation_outputs_owner_idx"`
+	LookID             string     `gorm:"column:look_id;type:uuid;not null"`
+	LookRevision       int        `gorm:"column:look_revision;not null;check:generation_outputs_look_revision_check,look_revision >= 1"`
+	Purpose            string     `gorm:"column:purpose;type:text;not null;check:generation_outputs_purpose_check,purpose IN ('image','model')"`
+	SourceImageAssetID string     `gorm:"column:source_image_asset_id;type:text"`
+	SourceImageSHA256  string     `gorm:"column:source_image_sha256;type:char(64)"`
+	ContentType        string     `gorm:"column:content_type;type:text;not null;check:generation_outputs_content_type_check,content_type IN ('image/jpeg','model/gltf-binary')"`
+	ByteSize           int64      `gorm:"column:byte_size;not null;check:generation_outputs_size_limit_check,((content_type = 'image/jpeg' AND byte_size BETWEEN 1 AND 12582912) OR (content_type = 'model/gltf-binary' AND byte_size BETWEEN 1 AND 10485760))"`
+	SHA256             string     `gorm:"column:sha256;type:char(64);not null"`
+	ObjectKey          string     `gorm:"column:object_key;type:text;not null;default:''"`
+	ObjectVersionID    string     `gorm:"column:object_version_id;type:text;not null"`
+	PublishedAt        time.Time  `gorm:"column:published_at;type:timestamptz;not null"`
+	ConfirmedAt        *time.Time `gorm:"column:confirmed_at;type:timestamptz;check:generation_outputs_confirmation_check,confirmed_at IS NULL OR (purpose = 'image' AND confirmed_at >= published_at)"`
 }
 
 func (generationOutputRecord) TableName() string { return "generation_outputs" }
@@ -206,17 +207,10 @@ func requireGenerationImageSource(tx *gorm.DB, task generationapp.Task) error {
 	if task.Purpose == generationapp.PurposeImage {
 		return requireGenerationInputMedia(tx, task)
 	}
-	var output generationOutputRecord
-	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
-		"id = ? AND owner_id = ? AND look_id = ? AND look_revision = ? AND purpose = ? AND content_type = ? AND sha256 = ?",
-		task.Inputs.ImageAssetID,
-		task.OwnerID,
-		task.LookID,
-		task.LookRevision,
-		string(generationapp.PurposeImage),
-		generationapp.OutputContentTypeJPEG,
-		task.Inputs.ImageSHA256,
-	).First(&output).Error; err != nil {
+	// Resolve the source task first, then lock task -> output in the same order
+	// as confirmation and deletion. The initial lookup is only an identity hint.
+	var candidate generationOutputRecord
+	if err := tx.Where("id = ? AND owner_id = ?", task.Inputs.ImageAssetID, task.OwnerID).First(&candidate).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return generationapp.ErrGenerationSourceUnavailable
 		}
@@ -225,11 +219,28 @@ func requireGenerationImageSource(tx *gorm.DB, task generationapp.Task) error {
 	var source generationJobRecord
 	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
 		"id = ? AND owner_id = ? AND status = ? AND access_revoked_at IS NULL AND result_asset_id = ?",
-		output.TaskID,
+		candidate.TaskID,
 		task.OwnerID,
 		string(generationapp.StatusSucceeded),
-		output.ID,
+		candidate.ID,
 	).First(&source).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return generationapp.ErrGenerationSourceUnavailable
+		}
+		return err
+	}
+	var output generationOutputRecord
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
+		"id = ? AND task_id = ? AND owner_id = ? AND look_id = ? AND look_revision = ? AND purpose = ? AND content_type = ? AND sha256 = ? AND confirmed_at IS NOT NULL",
+		task.Inputs.ImageAssetID,
+		candidate.TaskID,
+		task.OwnerID,
+		task.LookID,
+		task.LookRevision,
+		string(generationapp.PurposeImage),
+		generationapp.OutputContentTypeJPEG,
+		task.Inputs.ImageSHA256,
+	).First(&output).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return generationapp.ErrGenerationSourceUnavailable
 		}
@@ -477,6 +488,9 @@ func (r *GenerationRepository) readTaskView(database *gorm.DB, task generationap
 				return generationapp.TaskView{}, err
 			}
 			view.Asset = &domain
+			if task.Purpose == generationapp.PurposeImage {
+				view.ImageConfirmedAt = output.ConfirmedAt
+			}
 		}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return generationapp.TaskView{}, generationapp.ErrGenerationUnavailable
@@ -564,7 +578,7 @@ func generationLookupError(err error) error {
 }
 
 func generationGenerationError(err error) error {
-	if errors.Is(err, generationapp.ErrGenerationNotFound) || errors.Is(err, generationapp.ErrGenerationUnavailable) || errors.Is(err, generationapp.ErrInvalidGenerationInput) || errors.Is(err, generationapp.ErrGenerationDisabled) || errors.Is(err, generationapp.ErrGenerationQuotaExceeded) || errors.Is(err, generationapp.ErrGenerationBudgetExceeded) || errors.Is(err, generationapp.ErrGenerationConcurrency) || errors.Is(err, generationapp.ErrGenerationCurrency) || errors.Is(err, generationapp.ErrGenerationIdempotencyConflict) || errors.Is(err, generationapp.ErrGenerationNotCancellable) || errors.Is(err, generationapp.ErrGenerationRetryNotReady) || errors.Is(err, generationapp.ErrGenerationRetryExhausted) || errors.Is(err, generationapp.ErrGenerationLeaseHeld) || errors.Is(err, generationapp.ErrGenerationLeaseExpired) || errors.Is(err, generationapp.ErrGenerationLeaseConflict) || errors.Is(err, generationapp.ErrInvalidGenerationLease) || errors.Is(err, generationapp.ErrInvalidGenerationCleanup) || errors.Is(err, generationapp.ErrGenerationCleanupNotReady) || errors.Is(err, generationapp.ErrGenerationCleanupInProgress) || errors.Is(err, generationapp.ErrGenerationCleanupClaim) || errors.Is(err, generationapp.ErrGenerationCleanupExhausted) || errors.Is(err, generationapp.ErrGenerationSourceUnavailable) {
+	if errors.Is(err, generationapp.ErrGenerationNotFound) || errors.Is(err, generationapp.ErrGenerationUnavailable) || errors.Is(err, generationapp.ErrInvalidGenerationInput) || errors.Is(err, generationapp.ErrGenerationDisabled) || errors.Is(err, generationapp.ErrGenerationQuotaExceeded) || errors.Is(err, generationapp.ErrGenerationBudgetExceeded) || errors.Is(err, generationapp.ErrGenerationConcurrency) || errors.Is(err, generationapp.ErrGenerationCurrency) || errors.Is(err, generationapp.ErrGenerationIdempotencyConflict) || errors.Is(err, generationapp.ErrGenerationNotCancellable) || errors.Is(err, generationapp.ErrGenerationRetryNotReady) || errors.Is(err, generationapp.ErrGenerationRetryExhausted) || errors.Is(err, generationapp.ErrGenerationLeaseHeld) || errors.Is(err, generationapp.ErrGenerationLeaseExpired) || errors.Is(err, generationapp.ErrGenerationLeaseConflict) || errors.Is(err, generationapp.ErrInvalidGenerationLease) || errors.Is(err, generationapp.ErrInvalidGenerationCleanup) || errors.Is(err, generationapp.ErrGenerationCleanupNotReady) || errors.Is(err, generationapp.ErrGenerationCleanupInProgress) || errors.Is(err, generationapp.ErrGenerationCleanupClaim) || errors.Is(err, generationapp.ErrGenerationCleanupExhausted) || errors.Is(err, generationapp.ErrGenerationSourceUnavailable) || errors.Is(err, generationapp.ErrImageNotConfirmable) {
 		return err
 	}
 	return generationapp.ErrGenerationUnavailable

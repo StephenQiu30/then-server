@@ -18,6 +18,7 @@ type GenerationHTTPService interface {
 	GetOutput(context.Context, string, string) (generationapp.OutputAsset, error)
 	List(context.Context, string, int, *string) (generationapp.TaskPage, error)
 	Cancel(context.Context, string, string) (generationapp.TaskView, error)
+	ConfirmImage(context.Context, string, string) (generationapp.TaskView, error)
 	Delete(context.Context, string, string) (generationapp.DeleteResult, error)
 	ListUnknown(context.Context, string, int, *string) (generationapp.UnknownSubmissionPage, error)
 	ReconcileUnknown(context.Context, string, generationapp.ReconcileUnknownInput) (generationapp.SubmissionReconciliation, error)
@@ -142,6 +143,17 @@ func (h *GenerationHandler) cancel(ctx context.Context, input *generationJobInpu
 	return &generationJobOutput{RequestID: requestID(ctx), Body: generationJobResponse(view)}, nil
 }
 
+func (h *GenerationHandler) confirmImage(ctx context.Context, input *generationJobInput) (*generationJobOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	view, err := h.service.ConfirmImage(ctx, input.Session, input.ID)
+	if err != nil {
+		return nil, h.error(ctx, err)
+	}
+	return &generationJobOutput{RequestID: requestID(ctx), Body: generationJobResponse(view)}, nil
+}
+
 func (h *GenerationHandler) delete(ctx context.Context, input *generationJobInput) (*generationJobOutput, error) {
 	if err := h.available(ctx, input.Session); err != nil {
 		return nil, err
@@ -205,7 +217,7 @@ func (h *GenerationHandler) error(ctx context.Context, err error) error {
 		return newErrorResponse(http.StatusBadRequest, requestID(ctx))
 	case errors.Is(err, generationapp.ErrGenerationNotFound):
 		return newErrorResponse(http.StatusNotFound, requestID(ctx))
-	case errors.Is(err, generationapp.ErrGenerationIdempotencyConflict), errors.Is(err, generationapp.ErrGenerationNotCancellable), errors.Is(err, generationapp.ErrGenerationQuotaExceeded), errors.Is(err, generationapp.ErrGenerationBudgetExceeded), errors.Is(err, generationapp.ErrGenerationConcurrency), errors.Is(err, generationapp.ErrGenerationCurrency), errors.Is(err, generationapp.ErrGenerationCleanupInProgress), errors.Is(err, generationapp.ErrGenerationSourceUnavailable), errors.Is(err, generationapp.ErrGenerationRevisionConflict), errors.Is(err, generationapp.ErrGenerationLeaseHeld), errors.Is(err, generationapp.ErrGenerationLeaseExpired), errors.Is(err, generationapp.ErrInvalidGenerationState), errors.Is(err, generationapp.ErrExternalTaskConflict):
+	case errors.Is(err, generationapp.ErrGenerationIdempotencyConflict), errors.Is(err, generationapp.ErrGenerationNotCancellable), errors.Is(err, generationapp.ErrGenerationQuotaExceeded), errors.Is(err, generationapp.ErrGenerationBudgetExceeded), errors.Is(err, generationapp.ErrGenerationConcurrency), errors.Is(err, generationapp.ErrGenerationCurrency), errors.Is(err, generationapp.ErrGenerationCleanupInProgress), errors.Is(err, generationapp.ErrGenerationSourceUnavailable), errors.Is(err, generationapp.ErrImageNotConfirmable), errors.Is(err, generationapp.ErrGenerationRevisionConflict), errors.Is(err, generationapp.ErrGenerationLeaseHeld), errors.Is(err, generationapp.ErrGenerationLeaseExpired), errors.Is(err, generationapp.ErrInvalidGenerationState), errors.Is(err, generationapp.ErrExternalTaskConflict):
 		response := newErrorResponse(http.StatusConflict, requestID(ctx))
 		response.Code, response.Message = "CONFLICT", "Generation request conflicts with the current task or admission limits."
 		return response
@@ -232,7 +244,7 @@ func generationJobResponse(view generationapp.TaskView) GenerationJobResponse {
 	}
 	if view.Asset != nil {
 		asset := view.Asset
-		response.Output = &GenerationOutputResponse{ID: asset.ID, ContentType: asset.ContentType, ByteSize: asset.ByteSize, SHA256: asset.SHA256, ObjectVersionID: asset.ObjectVersionID, PublishedAt: asset.PublishedAt}
+		response.Output = &GenerationOutputResponse{ID: asset.ID, ContentType: asset.ContentType, ByteSize: asset.ByteSize, SHA256: asset.SHA256, ObjectVersionID: asset.ObjectVersionID, PublishedAt: asset.PublishedAt, ConfirmedAt: view.ImageConfirmedAt}
 	}
 	return response
 }

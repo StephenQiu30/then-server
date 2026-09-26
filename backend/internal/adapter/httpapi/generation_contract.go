@@ -36,12 +36,13 @@ type CreateGenerationJobRequest struct {
 }
 
 type GenerationOutputResponse struct {
-	ID              string    `json:"id" format:"uuid"`
-	ContentType     string    `json:"content_type" enum:"image/jpeg,model/gltf-binary"`
-	ByteSize        int64     `json:"byte_size" minimum:"1"`
-	SHA256          string    `json:"sha256" pattern:"^[a-f0-9]{64}$"`
-	ObjectVersionID string    `json:"object_version_id"`
-	PublishedAt     time.Time `json:"published_at" format:"date-time"`
+	ID              string     `json:"id" format:"uuid"`
+	ContentType     string     `json:"content_type" enum:"image/jpeg,model/gltf-binary"`
+	ByteSize        int64      `json:"byte_size" minimum:"1"`
+	SHA256          string     `json:"sha256" pattern:"^[a-f0-9]{64}$"`
+	ObjectVersionID string     `json:"object_version_id"`
+	PublishedAt     time.Time  `json:"published_at" format:"date-time"`
+	ConfirmedAt     *time.Time `json:"confirmed_at,omitempty" format:"date-time"`
 }
 
 type GenerationOutputAccessResponse struct {
