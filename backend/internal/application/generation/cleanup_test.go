@@ -88,6 +88,27 @@ func TestCleanupRequestRejectsObjectKeyOutsideTaskOwnership(t *testing.T) {
 	}
 }
 
+func TestCleanupRequestRetainsUnsafeTargetForRepair(t *testing.T) {
+	task := mustTask(validCreateInput())
+	if err := task.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	target := CleanupTarget{Kind: CleanupTargetProvider, ID: "provider-task-1", Provider: "fixture"}
+	request, err := NewCleanupRequest("cleanup-unsafe", task, CleanupScopeTask, []CleanupTarget{target}, generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := request.RejectUnsafeTarget(generationTestNow.Add(2 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if request.Status != CleanupFailed || request.StableError != CleanupIdentityMismatchCode || request.NextAttemptAt != nil || request.Attempts != 0 || len(request.Targets) != 1 || request.Targets[0] != target {
+		t.Fatalf("unsafe target was not retained without deletion: %+v", request)
+	}
+	if err := request.RejectUnsafeTarget(generationTestNow); !errors.Is(err, ErrInvalidGenerationCleanup) {
+		t.Fatalf("unsafe target accepted an older timestamp: %v", err)
+	}
+}
+
 func TestCleanupRequestExhaustsAfterMaximumAttempts(t *testing.T) {
 	task := mustTask(validCreateInput())
 	if err := task.RevokeAccess(generationTestNow.Add(time.Minute)); err != nil {

@@ -43,6 +43,8 @@ const (
 	CleanupTargetProvider CleanupTargetKind = "provider_task"
 )
 
+const CleanupIdentityMismatchCode = "cleanup_identity_mismatch"
+
 // CleanupTarget snapshots the private object identity or provider task that
 // still needs removal. The manifest is internal and is never returned by the
 // public task API. Empty object keys are retained only for legacy records.
@@ -256,6 +258,20 @@ func (r *CleanupRequest) Exhaust(at time.Time) error {
 	r.StableError = "cleanup_retry_exhausted"
 	r.NextAttemptAt = nil
 	r.UpdatedAt = at
+	return r.Validate()
+}
+
+// RejectUnsafeTarget retains a revoked request for repair while removing it
+// from automatic retries. No target is considered deleted.
+func (r *CleanupRequest) RejectUnsafeTarget(at time.Time) error {
+	if r == nil || r.Validate() != nil || r.Status == CleanupComplete || at.IsZero() || at.Before(r.UpdatedAt) {
+		return ErrInvalidGenerationCleanup
+	}
+	r.Status = CleanupFailed
+	r.CompletedAt = nil
+	r.StableError = CleanupIdentityMismatchCode
+	r.NextAttemptAt = nil
+	r.UpdatedAt = at.UTC()
 	return r.Validate()
 }
 

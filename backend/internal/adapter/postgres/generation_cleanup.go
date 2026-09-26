@@ -572,7 +572,7 @@ func (r *GenerationRepository) ClaimNextCleanup(ctx context.Context, at time.Tim
 		var record generationCleanupRequestRecord
 		readyBefore := at.Add(-staleAfter)
 		query := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("(status IN ? AND attempts < ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (status = ? AND updated_at <= ?)", []string{string(generationapp.CleanupPending), string(generationapp.CleanupFailed)}, generationapp.MaxCleanupAttempts, at, string(generationapp.CleanupRunning), readyBefore).
+			Where("(status IN ? AND stable_error <> ? AND attempts < ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (status = ? AND updated_at <= ?)", []string{string(generationapp.CleanupPending), string(generationapp.CleanupFailed)}, generationapp.CleanupIdentityMismatchCode, generationapp.MaxCleanupAttempts, at, string(generationapp.CleanupRunning), readyBefore).
 			Order("created_at ASC").Order("id ASC")
 		if err := query.First(&record).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -586,7 +586,17 @@ func (r *GenerationRepository) ClaimNextCleanup(ctx context.Context, at time.Tim
 			return err
 		}
 		if err := bindGenerationCleanupProviderInTx(tx, &loaded); err != nil {
-			return err
+			if !errors.Is(err, generationapp.ErrInvalidGenerationCleanup) {
+				return err
+			}
+			if err := loaded.RejectUnsafeTarget(at); err != nil {
+				return err
+			}
+			if err := updateGenerationCleanup(tx, loaded, record.Status, record.Attempts, record.UpdatedAt); err != nil {
+				return err
+			}
+			found = false
+			return nil
 		}
 		if loaded.Status == generationapp.CleanupRunning {
 			previousStatus := string(loaded.Status)
@@ -644,13 +654,18 @@ func bindGenerationCleanupProviderInTx(tx *gorm.DB, request *generationapp.Clean
 	}
 	var task generationJobRecord
 	if err := tx.Select("provider", "external_task_id").Where("owner_id = ? AND id = ?", request.OwnerID, request.TaskID).First(&task).Error; err != nil {
-		return generationLookupError(err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return generationapp.ErrInvalidGenerationCleanup
+		}
+		return err
 	}
 	if task.Provider == "" || task.ExternalTaskID == "" {
 		return generationapp.ErrInvalidGenerationCleanup
 	}
-	for index := range request.Targets {
-		target := &request.Targets[index]
+	candidate := *request
+	candidate.Targets = append([]generationapp.CleanupTarget(nil), request.Targets...)
+	for index := range candidate.Targets {
+		target := &candidate.Targets[index]
 		if target.Kind != generationapp.CleanupTargetProvider {
 			continue
 		}
@@ -659,7 +674,11 @@ func bindGenerationCleanupProviderInTx(tx *gorm.DB, request *generationapp.Clean
 		}
 		target.Provider = task.Provider
 	}
-	return request.Validate()
+	if err := candidate.Validate(); err != nil {
+		return err
+	}
+	request.Targets = candidate.Targets
+	return nil
 }
 
 // CompleteTaskCleanup records a successful deletion and removes the output
