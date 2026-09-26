@@ -2509,31 +2509,48 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 		if err != nil {
 			t.Fatalf("encode fixture cleanup manifest: %v", err)
 		}
-		if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("owner_id = ? AND task_id = ? AND scope = ?", owner.User.ID, taskID, string(generationapp.CleanupScopeTask)).Update("targets", encoded).Error; err != nil {
+		if err := database.WithContext(ctx).Table("generation_cleanup_requests").Where("owner_id = ? AND task_id = ? AND scope = ?", owner.User.ID, taskID, string(generationapp.CleanupScopeTask)).Updates(map[string]any{
+			"targets": encoded, "status": string(generationapp.CleanupPending), "stable_error": "", "next_attempt_at": nil,
+		}).Error; err != nil {
 			t.Fatalf("write fixture cleanup manifest: %v", err)
 		}
 	}
 	setCleanupIdentity(published.View.Task.ID, "seedream", published.View.Task.ExternalTaskID)
-	setCleanupIdentity(modelPublished.View.Task.ID, "seedream", modelPublished.View.Task.ExternalTaskID)
-	if found, err := cleanupWorker.RunOnce(ctx); found || !errors.Is(err, generationapp.ErrInvalidGenerationCleanup) {
-		t.Fatalf("mismatched provider cleanup was not refused: found=%v err=%v", found, err)
+	blocked, completed := 0, 0
+	for range 2 {
+		found, err := cleanupWorker.RunOnce(ctx)
+		if err != nil {
+			t.Fatalf("cleanup queue stopped on an identity mismatch: %v", err)
+		}
+		if found {
+			completed++
+		} else {
+			blocked++
+		}
+	}
+	if blocked != 1 || completed != 1 {
+		t.Fatalf("bad cleanup blocked good cleanup: blocked=%d completed=%d", blocked, completed)
+	}
+	blockedView, err := repository.Get(ctx, owner.User.ID, published.View.Task.ID)
+	if err != nil || blockedView.Cleanup == nil || blockedView.Cleanup.Status != generationapp.CleanupFailed || blockedView.Cleanup.StableError != generationapp.CleanupIdentityMismatchCode || blockedView.Cleanup.NextAttemptAt != nil {
+		t.Fatalf("unsafe cleanup was not retained for repair: view=%+v err=%v", blockedView, err)
+	}
+	if _, err := objects.ReadOutputVersion(ctx, published.View.Asset.ObjectKey, published.View.Asset.ObjectVersionID, published.View.Asset.ByteSize); err != nil {
+		t.Fatalf("unsafe cleanup deleted the image version: %v", err)
+	}
+	if _, err := objects.ReadOutputVersion(ctx, modelAsset.ObjectKey, modelAsset.ObjectVersionID, modelAsset.ByteSize); err == nil {
+		t.Fatal("valid model cleanup did not delete its object version")
 	}
 	setCleanupIdentity(published.View.Task.ID, generationfixture.ProviderName, "fixture:"+uuid.NewString())
-	setCleanupIdentity(modelPublished.View.Task.ID, generationfixture.ProviderName, "fixture:"+uuid.NewString())
-	if found, err := cleanupWorker.RunOnce(ctx); found || !errors.Is(err, generationapp.ErrInvalidGenerationCleanup) {
+	if found, err := cleanupWorker.RunOnce(ctx); found || err != nil {
 		t.Fatalf("mismatched external task cleanup was not refused: found=%v err=%v", found, err)
 	}
-	for _, asset := range []*generationapp.OutputAsset{published.View.Asset, modelAsset} {
-		if _, err := objects.ReadOutputVersion(ctx, asset.ObjectKey, asset.ObjectVersionID, asset.ByteSize); err != nil {
-			t.Fatalf("mismatched cleanup identity deleted an object version: asset=%s err=%v", asset.ID, err)
-		}
+	if _, err := objects.ReadOutputVersion(ctx, published.View.Asset.ObjectKey, published.View.Asset.ObjectVersionID, published.View.Asset.ByteSize); err != nil {
+		t.Fatalf("mismatched external task cleanup deleted the image version: %v", err)
 	}
 	setCleanupIdentity(published.View.Task.ID, "", published.View.Task.ExternalTaskID) // Pre-qualification legacy manifest.
-	setCleanupIdentity(modelPublished.View.Task.ID, generationfixture.ProviderName, modelPublished.View.Task.ExternalTaskID)
-	for range 2 {
-		if found, err := cleanupWorker.RunOnce(ctx); err != nil || !found {
-			t.Fatalf("fixture image/model cleanup did not converge: found=%v err=%v", found, err)
-		}
+	if found, err := cleanupWorker.RunOnce(ctx); err != nil || !found {
+		t.Fatalf("repaired fixture image cleanup did not converge: found=%v err=%v", found, err)
 	}
 	if found, err := cleanupWorker.RunOnce(ctx); err != nil || found {
 		t.Fatalf("fixture cleanup retained unexpected work: found=%v err=%v", found, err)
