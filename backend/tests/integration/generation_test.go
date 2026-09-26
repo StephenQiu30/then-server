@@ -2483,7 +2483,7 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 	if err != nil {
 		t.Fatalf("construct fixture cleanup worker: %v", err)
 	}
-	setCleanupProvider := func(taskID, provider string) {
+	setCleanupIdentity := func(taskID, provider, externalID string) {
 		t.Helper()
 		var row struct{ Targets []byte }
 		query := database.WithContext(ctx).Table("generation_cleanup_requests").Where("owner_id = ? AND task_id = ? AND scope = ?", owner.User.ID, taskID, string(generationapp.CleanupScopeTask))
@@ -2498,6 +2498,7 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 		for index := range targets {
 			if targets[index].Kind == generationapp.CleanupTargetProvider {
 				targets[index].Provider = provider
+				targets[index].ID = externalID
 				foundProvider = true
 			}
 		}
@@ -2512,19 +2513,23 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 			t.Fatalf("write fixture cleanup manifest: %v", err)
 		}
 	}
-	for _, taskID := range []string{published.View.Task.ID, modelPublished.View.Task.ID} {
-		setCleanupProvider(taskID, "seedream")
-	}
+	setCleanupIdentity(published.View.Task.ID, "seedream", published.View.Task.ExternalTaskID)
+	setCleanupIdentity(modelPublished.View.Task.ID, "seedream", modelPublished.View.Task.ExternalTaskID)
 	if found, err := cleanupWorker.RunOnce(ctx); found || !errors.Is(err, generationapp.ErrInvalidGenerationCleanup) {
 		t.Fatalf("mismatched provider cleanup was not refused: found=%v err=%v", found, err)
 	}
+	setCleanupIdentity(published.View.Task.ID, generationfixture.ProviderName, "fixture:"+uuid.NewString())
+	setCleanupIdentity(modelPublished.View.Task.ID, generationfixture.ProviderName, "fixture:"+uuid.NewString())
+	if found, err := cleanupWorker.RunOnce(ctx); found || !errors.Is(err, generationapp.ErrInvalidGenerationCleanup) {
+		t.Fatalf("mismatched external task cleanup was not refused: found=%v err=%v", found, err)
+	}
 	for _, asset := range []*generationapp.OutputAsset{published.View.Asset, modelAsset} {
 		if _, err := objects.ReadOutputVersion(ctx, asset.ObjectKey, asset.ObjectVersionID, asset.ByteSize); err != nil {
-			t.Fatalf("mismatched provider cleanup deleted an object version: asset=%s err=%v", asset.ID, err)
+			t.Fatalf("mismatched cleanup identity deleted an object version: asset=%s err=%v", asset.ID, err)
 		}
 	}
-	setCleanupProvider(published.View.Task.ID, "") // Pre-qualification legacy manifest.
-	setCleanupProvider(modelPublished.View.Task.ID, generationfixture.ProviderName)
+	setCleanupIdentity(published.View.Task.ID, "", published.View.Task.ExternalTaskID) // Pre-qualification legacy manifest.
+	setCleanupIdentity(modelPublished.View.Task.ID, generationfixture.ProviderName, modelPublished.View.Task.ExternalTaskID)
 	for range 2 {
 		if found, err := cleanupWorker.RunOnce(ctx); err != nil || !found {
 			t.Fatalf("fixture image/model cleanup did not converge: found=%v err=%v", found, err)
