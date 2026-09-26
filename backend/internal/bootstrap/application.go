@@ -75,6 +75,7 @@ func Run(log *slog.Logger) error {
 	var runner *eventworkerapp.Runner
 	var cleanupWorker *generationapp.CleanupWorker
 	var retentionWorker *generationapp.RetentionWorker
+	var timeoutWorker *generationapp.TaskTimeoutWorker
 	var generationWorkers []func(context.Context) error
 	var broker *messagequeue.Broker
 	generationWake := newGenerationWakeSignals()
@@ -110,6 +111,12 @@ func Run(log *slog.Logger) error {
 				return err
 			}
 		}
+		if cfg.Generation.Mode == config.GenerationModeLocal && cfg.Generation.LocalImageEndpoint == "" {
+			timeoutWorker, err = generationapp.NewTaskTimeoutWorker(postgres.NewGenerationRepository(pool.ORM()), objects, generationfixture.ProviderName, cfg.Generation.TaskTimeout)
+			if err != nil {
+				return err
+			}
+		}
 		generationWorkers, err = newGenerationWorkerRunners(cfg, pool.ORM(), objects, log, generationWake)
 		if err != nil {
 			return err
@@ -121,6 +128,9 @@ func Run(log *slog.Logger) error {
 		if retentionWorker != nil {
 			workers = append(workers, func(ctx context.Context) error { return retentionWorker.Run(ctx, time.Minute) })
 		}
+		if timeoutWorker != nil {
+			workers = append(workers, func(ctx context.Context) error { return timeoutWorker.Run(ctx, time.Minute) })
+		}
 		workers = append(workers, generationWorkers...)
 		err = runWorkers(ctx, workers...)
 		log.Info("worker_stopped")
@@ -130,6 +140,9 @@ func Run(log *slog.Logger) error {
 		workers := []func(context.Context) error{runner.Run, func(ctx context.Context) error { return cleanupWorker.Run(ctx, time.Second) }, func(ctx context.Context) error { return runAPI(ctx, startup, cfg, pool, objects, log) }}
 		if retentionWorker != nil {
 			workers = append(workers, func(ctx context.Context) error { return retentionWorker.Run(ctx, time.Minute) })
+		}
+		if timeoutWorker != nil {
+			workers = append(workers, func(ctx context.Context) error { return timeoutWorker.Run(ctx, time.Minute) })
 		}
 		workers = append(workers, generationWorkers...)
 		err = runWorkers(ctx, workers...)

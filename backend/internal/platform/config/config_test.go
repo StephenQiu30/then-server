@@ -118,6 +118,7 @@ func TestGenerationConfigurationRequiresExplicitBoundedPolicy(t *testing.T) {
 		"GENERATION_MAX_BUDGET_MINOR_UNITS":  "500",
 		"GENERATION_MAX_SUBMISSION_ATTEMPTS": "2",
 		"GENERATION_PROVIDER_TIMEOUT":        "30s",
+		"GENERATION_TASK_TIMEOUT":            "30m",
 		"GENERATION_RETENTION":               "24h",
 	}
 	valid, err := Load(func(key string) (string, bool) { value, exists := base[key]; return value, exists })
@@ -137,6 +138,8 @@ func TestGenerationConfigurationRequiresExplicitBoundedPolicy(t *testing.T) {
 		{"invalid currency", "GENERATION_CURRENCY", "US D"},
 		{"negative quota", "GENERATION_MAX_QUOTA_UNITS", "-1"},
 		{"unbounded timeout", "GENERATION_PROVIDER_TIMEOUT", "11m"},
+		{"missing task timeout", "GENERATION_TASK_TIMEOUT", "0s"},
+		{"unbounded task timeout", "GENERATION_TASK_TIMEOUT", "25h"},
 		{"invalid enable flag", "GENERATION_ENABLED", "yes"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -160,6 +163,7 @@ func TestGenerationLocalModeIsZeroCostAndLoopbackOnly(t *testing.T) {
 		"GENERATION_MAX_QUOTA_UNITS":         "10",
 		"GENERATION_MAX_SUBMISSION_ATTEMPTS": "2",
 		"GENERATION_PROVIDER_TIMEOUT":        "30s",
+		"GENERATION_TASK_TIMEOUT":            "30m",
 		"GENERATION_RETENTION":               "24h",
 	}
 	local, err := Load(func(key string) (string, bool) { value, exists := base[key]; return value, exists })

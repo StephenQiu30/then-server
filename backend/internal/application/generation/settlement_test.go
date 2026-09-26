@@ -95,6 +95,24 @@ func TestPublishOutputRequiresMatchingReservationAndLineage(t *testing.T) {
 	}
 }
 
+func TestTaskTimeoutSettlesOnlyExpiredTaskLease(t *testing.T) {
+	input := validCreateInput()
+	input.Cost = CostEstimate{Currency: "USD", EstimatedMinorUnits: 25, ReservedQuotaUnits: 1}
+	task := mustTask(input)
+	reservation, err := NewQuotaReservation("reservation-timeout", task, generationTestNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease := acquireTestLease(t, &task, generationTestNow.Add(time.Minute), time.Minute)
+	if _, err := FinalizeWithoutOutput(task, &reservation, StatusCanceled, "", lease.ExpiresAt); !errors.Is(err, ErrInvalidGenerationSettlement) {
+		t.Fatalf("expired lease accepted ordinary cancellation: %v", err)
+	}
+	settled, err := FinalizeWithoutOutput(task, &reservation, StatusExpired, "", lease.ExpiresAt)
+	if err != nil || settled.Task.Status != StatusExpired || settled.Task.LeaseUntil != nil || settled.Task.StatusRevision != task.StatusRevision+1 || settled.Reservation == nil || settled.Reservation.State != ReservationReleased || reservation.State != ReservationReserved {
+		t.Fatalf("expired lease did not settle atomically: %+v, %v", settled, err)
+	}
+}
+
 func TestFinalizeWithoutOutputReleasesReservationAndReplays(t *testing.T) {
 	input := validCreateInput()
 	input.Cost = CostEstimate{Currency: "USD", EstimatedMinorUnits: 25, ReservedQuotaUnits: 1}

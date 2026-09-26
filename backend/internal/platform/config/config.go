@@ -36,6 +36,7 @@ type GenerationConfig struct {
 	MaxBudgetMinorUnits   int64
 	MaxSubmissionAttempts int
 	ProviderTimeout       time.Duration
+	TaskTimeout           time.Duration
 	Retention             time.Duration
 }
 
@@ -268,6 +269,10 @@ func loadGenerationConfig(get func(string, string) string) (GenerationConfig, er
 	if err != nil {
 		return GenerationConfig{}, err
 	}
+	taskTimeout, err := parseOptionalDuration("GENERATION_TASK_TIMEOUT", get("GENERATION_TASK_TIMEOUT", "0s"))
+	if err != nil {
+		return GenerationConfig{}, err
+	}
 	retention, err := parseOptionalDuration("GENERATION_RETENTION", get("GENERATION_RETENTION", "0s"))
 	if err != nil {
 		return GenerationConfig{}, err
@@ -283,6 +288,7 @@ func loadGenerationConfig(get func(string, string) string) (GenerationConfig, er
 		MaxBudgetMinorUnits:   maxBudgetMinorUnits,
 		MaxSubmissionAttempts: maxSubmissionAttempts,
 		ProviderTimeout:       providerTimeout,
+		TaskTimeout:           taskTimeout,
 		Retention:             retention,
 	}
 	if err := validateGenerationConfig(configuration); err != nil {
@@ -305,7 +311,7 @@ func validateGenerationConfig(configuration GenerationConfig) error {
 		if configuration.Currency != "" || configuration.MaxBudgetMinorUnits != 0 {
 			return fmt.Errorf("GENERATION_*: local mode requires empty currency and zero budget")
 		}
-		if configuration.MaxConcurrentTasks < 1 || configuration.MaxConcurrentTasks > 1000 || configuration.MaxQuotaUnits < 1 || configuration.MaxQuotaUnits > 1_000_000 || configuration.MaxSubmissionAttempts < 1 || configuration.MaxSubmissionAttempts > 10 || configuration.ProviderTimeout <= 0 || configuration.ProviderTimeout > 10*time.Minute || configuration.Retention <= 0 || configuration.Retention > 365*24*time.Hour {
+		if configuration.MaxConcurrentTasks < 1 || configuration.MaxConcurrentTasks > 1000 || configuration.MaxQuotaUnits < 1 || configuration.MaxQuotaUnits > 1_000_000 || configuration.MaxSubmissionAttempts < 1 || configuration.MaxSubmissionAttempts > 10 || configuration.ProviderTimeout <= 0 || configuration.ProviderTimeout > 10*time.Minute || configuration.TaskTimeout < time.Minute || configuration.TaskTimeout > 24*time.Hour || configuration.Retention <= 0 || configuration.Retention > 365*24*time.Hour {
 			return fmt.Errorf("GENERATION_*: local mode requires bounded concurrency, quota, attempts, timeout and retention")
 		}
 		if configuration.LocalImageEndpoint != "" {
@@ -315,7 +321,7 @@ func validateGenerationConfig(configuration GenerationConfig) error {
 		}
 		return nil
 	}
-	if configuration.Mode != GenerationModeRemote || !validCurrency(configuration.Currency) || configuration.MaxConcurrentTasks < 1 || configuration.MaxConcurrentTasks > 1000 || configuration.MaxQuotaUnits < 1 || configuration.MaxQuotaUnits > 1_000_000 || configuration.MaxBudgetMinorUnits < 1 || configuration.MaxBudgetMinorUnits > 10_000_000_000 || configuration.MaxSubmissionAttempts < 1 || configuration.MaxSubmissionAttempts > 10 || configuration.ProviderTimeout <= 0 || configuration.ProviderTimeout > 10*time.Minute || configuration.Retention <= 0 || configuration.Retention > 365*24*time.Hour {
+	if configuration.Mode != GenerationModeRemote || !validCurrency(configuration.Currency) || configuration.MaxConcurrentTasks < 1 || configuration.MaxConcurrentTasks > 1000 || configuration.MaxQuotaUnits < 1 || configuration.MaxQuotaUnits > 1_000_000 || configuration.MaxBudgetMinorUnits < 1 || configuration.MaxBudgetMinorUnits > 10_000_000_000 || configuration.MaxSubmissionAttempts < 1 || configuration.MaxSubmissionAttempts > 10 || configuration.ProviderTimeout <= 0 || configuration.ProviderTimeout > 10*time.Minute || configuration.TaskTimeout < time.Minute || configuration.TaskTimeout > 24*time.Hour || configuration.Retention <= 0 || configuration.Retention > 365*24*time.Hour {
 		return fmt.Errorf("GENERATION_*: remote mode requires bounded currency, budget, quota, attempts, timeout and retention")
 	}
 	if configuration.LocalImageEndpoint != "" {

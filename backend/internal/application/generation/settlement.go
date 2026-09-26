@@ -64,7 +64,7 @@ func PublishOutput(task Task, reservation *QuotaReservation, asset OutputAsset, 
 // and releases its temporary hold. Repeating the same terminal command is
 // idempotent when the task already carries the same failure and released hold.
 func FinalizeWithoutOutput(task Task, reservation *QuotaReservation, next Status, failureCode string, at time.Time) (Settlement, error) {
-	if !task.validTaskFacts() || !validSettlementTime(task, at) || !validSettlementLease(task, at) || !terminalWithoutOutput(next) || !reservationMatchesTask(task, reservation) {
+	if !task.validTaskFacts() || !validSettlementTime(task, at) || !(validSettlementLease(task, at) || (next == StatusExpired && validExpiredSettlementLease(task, at))) || !terminalWithoutOutput(next) || !reservationMatchesTask(task, reservation) {
 		return Settlement{}, ErrInvalidGenerationSettlement
 	}
 	if next == StatusFailed && !validToken(failureCode, 96) {
@@ -112,6 +112,12 @@ func validSettlementLease(task Task, at time.Time) bool {
 		return task.LeaseOwner == "" && task.LeaseAttempt >= 0
 	}
 	return task.validateActiveLeaseAt(at) == nil
+}
+
+// An overdue task may still carry an expired worker lease. Its terminal
+// transaction advances the status revision, fencing any late worker write.
+func validExpiredSettlementLease(task Task, at time.Time) bool {
+	return task.LeaseUntil != nil && task.LeaseOwner != "" && !at.Before(*task.LeaseUntil) && task.validLeaseFacts()
 }
 
 func validActiveSettlementLease(task Task, at time.Time) bool {
