@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { UserRoundIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -19,9 +20,21 @@ export function SiteNav() {
       <div className="mx-auto flex w-full max-w-none flex-wrap items-center justify-between gap-x-8 gap-y-2 px-gutter py-4 min-[641px]:px-8 min-[1069px]:px-12">
         <Link
           href="/"
-          className="text-xl font-semibold tracking-tight whitespace-nowrap"
+          className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap"
+          aria-label="穿见，返回首页"
         >
-          于是 <span className="font-normal">OOTD</span>
+          <Image
+            src="/brand/chuanjian-icon.png"
+            alt=""
+            width={36}
+            height={36}
+            className="size-9 shrink-0"
+            priority
+          />
+          <span className="text-xl font-semibold tracking-tight">穿见</span>
+          <span className="hidden border-l border-border pl-2 text-[10px] font-medium tracking-[0.18em] text-muted-foreground min-[641px]:inline">
+            CHUANJIAN
+          </span>
         </Link>
         <nav
           aria-label="主要导航"

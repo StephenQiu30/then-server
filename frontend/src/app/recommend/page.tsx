@@ -3,7 +3,7 @@ import { RecommendationExperience } from '@/components/recommendation/recommenda
 import { isSceneId, type SceneId } from '@/components/recommendation/scenes'
 
 export const metadata: Metadata = {
-  title: '真实衣橱推荐 · 于是 OOTD',
+  title: '真实衣橱推荐 · 穿见',
   description: '确认场景与约束，从本人真实衣橱查看少量可解释的穿搭。',
 }
 

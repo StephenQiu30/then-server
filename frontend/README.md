@@ -1,6 +1,6 @@
 # Then Frontend
 
-“于是”Web 前端。项目使用 Next.js App Router、React、TypeScript、shadcn/ui + Radix Primitives、Tailwind CSS、TanStack Query、Axios、ESLint 与 Prettier。不使用 Vite 或 React Router。
+“穿见”Web 前端（内部工程名 Then，原展示名“于是”）。项目使用 Next.js App Router、React、TypeScript、shadcn/ui + Radix Primitives、Tailwind CSS、TanStack Query、Axios、ESLint 与 Prettier。不使用 Vite 或 React Router。
 
 前后端工程总规范见 [PROJECT.md](../PROJECT.md)。2026-09-22 已按 [17-27](../docs/plan/17-27-Web设计体系与工程规范同步执行计划.md) 初始化 radix-nova / Lucide / RSC 和统一语义 token。账户页面按 [17-13](../docs/plan/17-13-Web账户管理执行计划.md) 实现；无图衣橱、计划和实际记录核验页分别按 [17-31](../docs/plan/17-31-Web衣橱数据核验执行计划.md)、[17-32](../docs/plan/17-32-Web穿搭计划数据核验执行计划.md)、[17-33](../docs/plan/17-33-Web实际穿着数据核验执行计划.md) 实现。首页、404 与错误重试共用基础页面结构。
 
