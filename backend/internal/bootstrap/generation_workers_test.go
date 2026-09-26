@@ -82,6 +82,24 @@ func TestGenerationWorkerRunnersStayClosedOutsideLocalFixtureMode(t *testing.T) 
 	}
 }
 
+func TestGenerationWorkerLeaseCoversConfiguredExternalBudget(t *testing.T) {
+	for _, timeout := range []time.Duration{time.Second, 30 * time.Second, 10 * time.Minute} {
+		leaseTTL := generationWorkerLeaseTTL(timeout)
+		if leaseTTL < timeout+30*time.Second || leaseTTL > 30*time.Minute {
+			t.Fatalf("unsafe lease duration for external timeout %s: %s", timeout, leaseTTL)
+		}
+		if err := (generationapp.SubmissionWorkerPolicy{WorkerID: "worker", LeaseTTL: leaseTTL, ProviderTimeout: timeout, Retry: generationapp.RetryPolicy{MaxAttempts: 2, BaseDelay: time.Second, MaxDelay: time.Minute}}).Validate(); err != nil {
+			t.Fatalf("submission policy rejected runtime lease for %s: %v", timeout, err)
+		}
+		if err := (generationapp.ObservationWorkerPolicy{WorkerID: "worker", LeaseTTL: leaseTTL, ProviderTimeout: timeout, PollInterval: time.Second}).Validate(); err != nil {
+			t.Fatalf("observation policy rejected runtime lease for %s: %v", timeout, err)
+		}
+		if err := (generationapp.ResultWorkerPolicy{WorkerID: "worker", LeaseTTL: leaseTTL, FetchTimeout: timeout, RetryDelay: time.Second}).Validate(); err != nil {
+			t.Fatalf("result policy rejected runtime lease for %s: %v", timeout, err)
+		}
+	}
+}
+
 func TestRunGenerationQueueProcessesReadyWorkAndStopsWithContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0

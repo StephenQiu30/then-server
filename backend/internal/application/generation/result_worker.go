@@ -58,7 +58,7 @@ type ResultWorkerPolicy struct {
 }
 
 func (p ResultWorkerPolicy) Validate() error {
-	if !validID(p.WorkerID) || (p.Provider != "" && !validToken(p.Provider, 96)) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.FetchTimeout <= 0 || p.FetchTimeout > 10*time.Minute || p.RetryDelay <= 0 || p.RetryDelay > maxWorkerRetryDelay {
+	if !validID(p.WorkerID) || (p.Provider != "" && !validToken(p.Provider, 96)) || p.LeaseTTL < p.FetchTimeout+minGenerationWorkerLeaseMargin || p.LeaseTTL > 30*time.Minute || p.FetchTimeout <= 0 || p.FetchTimeout > 10*time.Minute || p.RetryDelay <= 0 || p.RetryDelay > maxWorkerRetryDelay {
 		return ErrInvalidGenerationResultWorker
 	}
 	return nil

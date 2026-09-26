@@ -59,7 +59,7 @@ type SubmissionWorkerPolicy struct {
 }
 
 func (p SubmissionWorkerPolicy) Validate() error {
-	if !validID(p.WorkerID) || (p.Provider != "" && !validToken(p.Provider, 96)) || p.LeaseTTL <= 0 || p.LeaseTTL > 30*time.Minute || p.ProviderTimeout <= 0 || p.ProviderTimeout > 10*time.Minute {
+	if !validID(p.WorkerID) || (p.Provider != "" && !validToken(p.Provider, 96)) || p.LeaseTTL < p.ProviderTimeout+minGenerationWorkerLeaseMargin || p.LeaseTTL > 30*time.Minute || p.ProviderTimeout <= 0 || p.ProviderTimeout > 10*time.Minute {
 		return ErrInvalidGenerationWorker
 	}
 	if err := p.Retry.Validate(); err != nil {

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	generationWorkerLeaseTTL       = time.Minute
+	generationWorkerLeaseMargin    = time.Minute
 	generationWorkerPollInterval   = time.Second
 	generationWorkerRetryDelay     = 2 * time.Second
 	generationWorkerRetryMaxDelay  = time.Minute
@@ -23,6 +23,10 @@ const (
 )
 
 type generationQueueStep func(context.Context) (bool, error)
+
+func generationWorkerLeaseTTL(timeout time.Duration) time.Duration {
+	return timeout + generationWorkerLeaseMargin
+}
 
 type generationWakeSignals struct {
 	submission  chan struct{}
@@ -110,6 +114,7 @@ func newGenerationWorkerRunners(cfg config.Config, database *gorm.DB, objects *o
 		return nil, err
 	}
 	repository := store.NewGenerationRepository(database)
+	leaseTTL := generationWorkerLeaseTTL(cfg.Generation.ProviderTimeout)
 	retry := generationapp.RetryPolicy{
 		MaxAttempts: cfg.Generation.MaxSubmissionAttempts,
 		BaseDelay:   time.Second,
@@ -118,7 +123,7 @@ func newGenerationWorkerRunners(cfg config.Config, database *gorm.DB, objects *o
 	submission, err := generationapp.NewSubmissionWorker(repository, fixture, generationapp.SubmissionWorkerPolicy{
 		WorkerID:        "generation-submission-local",
 		Provider:        generationfixture.ProviderName,
-		LeaseTTL:        generationWorkerLeaseTTL,
+		LeaseTTL:        leaseTTL,
 		ProviderTimeout: cfg.Generation.ProviderTimeout,
 		Retry:           retry,
 	})
@@ -128,7 +133,7 @@ func newGenerationWorkerRunners(cfg config.Config, database *gorm.DB, objects *o
 	observation, err := generationapp.NewObservationWorker(repository, fixture, generationapp.ObservationWorkerPolicy{
 		WorkerID:        "generation-observation-local",
 		Provider:        generationfixture.ProviderName,
-		LeaseTTL:        generationWorkerLeaseTTL,
+		LeaseTTL:        leaseTTL,
 		ProviderTimeout: cfg.Generation.ProviderTimeout,
 		PollInterval:    generationWorkerPollInterval,
 	})
@@ -138,7 +143,7 @@ func newGenerationWorkerRunners(cfg config.Config, database *gorm.DB, objects *o
 	result, err := generationapp.NewResultWorker(repository, fixture, objects, generationapp.ResultWorkerPolicy{
 		WorkerID:     "generation-result-local",
 		Provider:     generationfixture.ProviderName,
-		LeaseTTL:     generationWorkerLeaseTTL,
+		LeaseTTL:     leaseTTL,
 		FetchTimeout: cfg.Generation.ProviderTimeout,
 		RetryDelay:   generationWorkerRetryDelay,
 	})
