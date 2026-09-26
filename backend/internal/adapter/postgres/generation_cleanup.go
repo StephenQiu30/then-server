@@ -129,11 +129,11 @@ func addTargetToRevokedGenerationCleanupInTx(tx *gorm.DB, task generationapp.Tas
 		if mutationAt.Before(request.UpdatedAt) {
 			mutationAt = request.UpdatedAt
 		}
-		previousUpdatedAt := request.UpdatedAt
+		previousTargetCount := len(request.Targets)
 		if err := request.AddTarget(target, mutationAt); err != nil {
 			return err
 		}
-		if request.UpdatedAt.Equal(previousUpdatedAt) {
+		if len(request.Targets) == previousTargetCount {
 			continue
 		}
 		if err := updateGenerationCleanup(tx, request, record.Status, record.Attempts, record.UpdatedAt); err != nil {

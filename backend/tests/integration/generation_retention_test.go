@@ -207,4 +207,74 @@ func TestGenerationRetentionRevokesPublishedImageAndDependentModel(t *testing.T)
 	if processed, err := repository.ExpirePublishedOutputs(ctx, deadline.Add(-time.Hour+time.Minute), deadline.Add(time.Minute), 10); err != nil || processed != 0 {
 		t.Fatalf("completed expiration was not idempotent: count=%d err=%v", processed, err)
 	}
+
+	// A task deadline is independent of the successful output retention clock.
+	queuedAt := replacement.View.Task.CreatedAt.Add(time.Second)
+	_, queuedLease, err := repository.AcquireLease(ctx, replacement.View.Task.ID, "timeout-in-flight", queuedAt, 2*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if due, err := repository.ListDueTasks(ctx, generationfixture.ProviderName, replacement.View.Task.CreatedAt.Add(-time.Second), queuedAt, 10); err != nil || len(due) != 0 {
+		t.Fatalf("task listed before deadline: due=%d err=%v", len(due), err)
+	}
+	if expired, err := repository.ExpireTaskIfDue(ctx, replacement.View.Task.ID, generationfixture.ProviderName, replacement.View.Task.CreatedAt, replacement.View.Task.CreatedAt.Add(time.Hour), nil); err != nil || expired {
+		t.Fatalf("live lease was expired: expired=%v err=%v", expired, err)
+	}
+	queuedDeadline := queuedLease.ExpiresAt.Add(time.Second)
+	if expired, err := repository.ExpireTaskIfDue(ctx, replacement.View.Task.ID, generationfixture.ProviderName, replacement.View.Task.CreatedAt, queuedDeadline, nil); err != nil || !expired {
+		t.Fatalf("overdue task did not expire: expired=%v err=%v", expired, err)
+	}
+	queuedView, err := repository.Get(ctx, owner.User.ID, replacement.View.Task.ID)
+	if err != nil || queuedView.Task.Status != generationapp.StatusExpired || queuedView.Task.AccessRevokedAt == nil || queuedView.Cleanup == nil || queuedView.Cleanup.Status != generationapp.CleanupPending {
+		t.Fatalf("expired task did not release/revoke: view=%+v err=%v", queuedView, err)
+	}
+	if _, err := repository.ReleaseLease(ctx, queuedLease, queuedDeadline); !errors.Is(err, generationapp.ErrGenerationLeaseConflict) && !errors.Is(err, generationapp.ErrGenerationLeaseExpired) {
+		t.Fatalf("stale worker mutated expired task: %v", err)
+	}
+	if expired, err := repository.ExpireTaskIfDue(ctx, replacement.View.Task.ID, generationfixture.ProviderName, replacement.View.Task.CreatedAt, queuedDeadline, nil); err != nil || expired {
+		t.Fatalf("terminal timeout was not idempotent: expired=%v err=%v", expired, err)
+	}
+
+	imageRequest.IdempotencyKey = uuid.NewString()
+	imageRequest.Parameters = []byte(`{"seed":"timeout-unpublished"}`)
+	unpublished, err := service.Create(ctx, owner.Token, imageRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found, _, err := submission.RunNext(ctx); err != nil || !found {
+		t.Fatalf("submit timeout task: found=%v err=%v", found, err)
+	}
+	if found, _, err := observation.RunNext(ctx); err != nil || !found {
+		t.Fatalf("observe timeout task: found=%v err=%v", found, err)
+	}
+	current, err := repository.Get(ctx, owner.User.ID, unpublished.View.Task.ID)
+	if err != nil || current.Task.Status != generationapp.StatusValidating {
+		t.Fatalf("task did not reach validating: view=%+v err=%v", current, err)
+	}
+	key, err := generationapp.OutputObjectKey(current.Task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version, err := objects.PutDerived(ctx, key, strings.NewReader("unpublished-output"), int64(len("unpublished-output")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions, err := objects.ListOutputVersions(ctx, key)
+	if err != nil || len(versions) != 1 || versions[0] != version {
+		t.Fatalf("unpublished version inventory: versions=%v err=%v", versions, err)
+	}
+	resultDeadline := current.Task.CreatedAt.Add(time.Hour)
+	if expired, err := repository.ExpireTaskIfDue(ctx, current.Task.ID, generationfixture.ProviderName, current.Task.CreatedAt, resultDeadline, versions); err != nil || !expired {
+		t.Fatalf("validating task did not expire: expired=%v err=%v", expired, err)
+	}
+	expiredView, err := repository.Get(ctx, owner.User.ID, current.Task.ID)
+	if err != nil || expiredView.Task.Status != generationapp.StatusExpired || expiredView.Cleanup == nil || len(expiredView.Cleanup.Targets) != 2 {
+		t.Fatalf("timeout omitted provider/object cleanup: targets=%+v view=%+v err=%v", expiredView.Cleanup.Targets, expiredView, err)
+	}
+	if found, err := cleanup.RunOnceAt(ctx, resultDeadline.Add(time.Second)); err != nil || !found {
+		t.Fatalf("timeout cleanup: found=%v err=%v", found, err)
+	}
+	if _, err := objects.ReadOutputVersion(ctx, key, version, int64(len("unpublished-output"))); err == nil {
+		t.Fatal("timed out task left an unpublished output version")
+	}
 }
