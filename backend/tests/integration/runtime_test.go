@@ -44,15 +44,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host, err := container.Host(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	port, err := container.MappedPort(ctx, "5432/tcp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	u := url.URL{Scheme: "postgres", User: url.UserPassword("then_test", password), Host: net.JoinHostPort(host, port.Port()), Path: "/then_test", RawQuery: "sslmode=disable"}
+	u := url.URL{Scheme: "postgres", User: url.UserPassword("then_test", password), Host: mappedAddress(t, ctx, container, "5432/tcp"), Path: "/then_test", RawQuery: "sslmode=disable"}
 	redisContainer, err := testcontainer.Create(t, ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "redis:8.10.0@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366",
@@ -63,15 +55,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	redisHost, err := redisContainer.Host(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	redisPort, err := redisContainer.MappedPort(ctx, "6379/tcp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	redisURL := "redis://" + net.JoinHostPort(redisHost, redisPort.Port()) + "/0"
+	redisURL := "redis://" + mappedAddress(t, ctx, redisContainer, "6379/tcp") + "/0"
 	cfg, err := config.Load(func(key string) (string, bool) {
 		if key == "DATABASE_URL" {
 			return u.String(), true

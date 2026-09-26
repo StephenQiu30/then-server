@@ -23,17 +23,22 @@ func TestFixtureCleanupCompletesOnlyStatelessFixtureProviderTasks(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	providerTarget := generationapp.CleanupTarget{Kind: generationapp.CleanupTargetProvider, ID: fixtureTaskID(uuid.NewString())}
+	providerTarget := generationapp.CleanupTarget{Kind: generationapp.CleanupTargetProvider, ID: fixtureTaskID(uuid.NewString()), Provider: ProviderName}
 	for range 2 {
 		if err := executor.DeleteProviderTask(context.Background(), providerTarget); err != nil {
 			t.Fatalf("stateless fixture cleanup was not idempotent: %v", err)
 		}
 	}
-	for _, id := range []string{"remote-task", "fixture:not-a-uuid"} {
-		err := executor.DeleteProviderTask(context.Background(), generationapp.CleanupTarget{Kind: generationapp.CleanupTargetProvider, ID: id})
+	for _, target := range []generationapp.CleanupTarget{
+		{Kind: generationapp.CleanupTargetProvider, ID: "remote-task", Provider: ProviderName},
+		{Kind: generationapp.CleanupTargetProvider, ID: "fixture:not-a-uuid", Provider: ProviderName},
+		{Kind: generationapp.CleanupTargetProvider, ID: providerTarget.ID, Provider: "seedream"},
+		{Kind: generationapp.CleanupTargetProvider, ID: providerTarget.ID},
+	} {
+		err := executor.DeleteProviderTask(context.Background(), target)
 		var targetErr *generationapp.CleanupTargetError
 		if !errors.As(err, &targetErr) || targetErr.Code != "provider_cleanup_unavailable" {
-			t.Fatalf("foreign provider target was treated as fixture: id=%q err=%v", id, err)
+			t.Fatalf("foreign provider target was treated as fixture: target=%+v err=%v", target, err)
 		}
 	}
 	objectTarget := generationapp.CleanupTarget{Kind: generationapp.CleanupTargetObject, ID: uuid.NewString(), ObjectKey: "owners/" + uuid.NewString() + "/generation/" + uuid.NewString() + "/output.jpg", ObjectVersionID: "version"}

@@ -392,11 +392,21 @@ func mappedAddress(t *testing.T, ctx context.Context, container testcontainers.C
 	if err != nil {
 		t.Fatal(err)
 	}
-	mapped, err := container.MappedPort(ctx, port)
-	if err != nil {
-		t.Fatal(err)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mapped, err := container.MappedPort(ctx, port)
+		if err == nil {
+			return net.JoinHostPort(host, mapped.Port())
+		}
+		if ctx.Err() != nil || time.Now().After(deadline) {
+			t.Fatalf("container port %s mapping unavailable: %v", port, err)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
-	return net.JoinHostPort(host, mapped.Port())
 }
 
 func postJSON(t *testing.T, client *http.Client, method, endpoint string, body any, expected int, output any) {

@@ -295,7 +295,7 @@ func generationCleanupTargets(database *gorm.DB, task generationapp.Task) ([]gen
 		return nil, err
 	}
 	if task.ExternalTaskID != "" {
-		targets = append(targets, generationapp.CleanupTarget{Kind: generationapp.CleanupTargetProvider, ID: task.ExternalTaskID})
+		targets = append(targets, generationapp.CleanupTarget{Kind: generationapp.CleanupTargetProvider, ID: task.ExternalTaskID, Provider: task.Provider})
 	}
 	return targets, nil
 }
@@ -521,6 +521,7 @@ func (r *GenerationRepository) BeginTaskCleanup(ctx context.Context, requestID s
 	if r == nil || r.database == nil {
 		return generationapp.CleanupRequest{}, nil, generationapp.ErrGenerationUnavailable
 	}
+	at = at.UTC().Truncate(time.Microsecond)
 	var request generationapp.CleanupRequest
 	var targets []generationapp.CleanupTarget
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -530,6 +531,9 @@ func (r *GenerationRepository) BeginTaskCleanup(ctx context.Context, requestID s
 		}
 		loaded, err := generationCleanupFromRecord(record)
 		if err != nil {
+			return err
+		}
+		if err := bindGenerationCleanupProviderInTx(tx, &loaded); err != nil {
 			return err
 		}
 		targets, err = loaded.Begin(at)
@@ -581,6 +585,9 @@ func (r *GenerationRepository) ClaimNextCleanup(ctx context.Context, at time.Tim
 		if err != nil {
 			return err
 		}
+		if err := bindGenerationCleanupProviderInTx(tx, &loaded); err != nil {
+			return err
+		}
 		if loaded.Status == generationapp.CleanupRunning {
 			previousStatus := string(loaded.Status)
 			previousAttempts := loaded.Attempts
@@ -619,6 +626,40 @@ func (r *GenerationRepository) ClaimNextCleanup(ctx context.Context, at time.Tim
 		return generationapp.CleanupRequest{}, nil, false, generationGenerationError(err)
 	}
 	return request, targets, found, nil
+}
+
+// Legacy manifests predate provider-qualified targets. Bind them to the
+// immutable task provider before any external side effect and persist the
+// qualified snapshot with the claim.
+func bindGenerationCleanupProviderInTx(tx *gorm.DB, request *generationapp.CleanupRequest) error {
+	needsProvider := false
+	for _, target := range request.Targets {
+		if target.Kind == generationapp.CleanupTargetProvider {
+			needsProvider = true
+			break
+		}
+	}
+	if !needsProvider {
+		return nil
+	}
+	var task generationJobRecord
+	if err := tx.Select("provider").Where("owner_id = ? AND id = ?", request.OwnerID, request.TaskID).First(&task).Error; err != nil {
+		return generationLookupError(err)
+	}
+	if task.Provider == "" {
+		return generationapp.ErrInvalidGenerationCleanup
+	}
+	for index := range request.Targets {
+		target := &request.Targets[index]
+		if target.Kind != generationapp.CleanupTargetProvider {
+			continue
+		}
+		if target.Provider != "" && target.Provider != task.Provider {
+			return generationapp.ErrInvalidGenerationCleanup
+		}
+		target.Provider = task.Provider
+	}
+	return request.Validate()
 }
 
 // CompleteTaskCleanup records a successful deletion and removes the output
