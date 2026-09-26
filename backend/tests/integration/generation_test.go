@@ -141,10 +141,7 @@ func TestGenerationCleanupWorkerDeletesExactMinIOVersionAndBlocksProviderCalls(t
 		WaitingFor:   wait.ForHTTP("/minio/health/live").WithPort("9000/tcp").WithStartupTimeout(time.Minute),
 	})
 	endpoint := mappedAddress(t, ctx, container, "9000/tcp")
-	objects, err := objectstore.Open(ctx, endpoint, "then_test", password, false)
-	if err != nil {
-		t.Fatalf("open isolated MinIO: %v", err)
-	}
+	objects := openGenerationObjectStore(t, ctx, endpoint, password)
 
 	ownerID := "00000000-0000-4000-8000-000000000911"
 	taskID := "00000000-0000-4000-8000-000000000912"
@@ -868,10 +865,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		WaitingFor:   wait.ForHTTP("/minio/health/live").WithPort("9000/tcp").WithStartupTimeout(time.Minute),
 	})
 	objectStoreAddress := mappedAddress(t, ctx, objectStoreContainer, "9000/tcp")
-	objects, err := objectstore.Open(ctx, objectStoreAddress, "then_test", objectStorePassword, false)
-	if err != nil {
-		t.Fatalf("open isolated generation object store: %v", err)
-	}
+	objects := openGenerationObjectStore(t, ctx, objectStoreAddress, objectStorePassword)
 
 	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
 	if err != nil {
@@ -2196,6 +2190,24 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	verifyGenerationHTTPQuotaPersistence(t, ctx, database, quotaHTTPGenerations, fifth.User.ID, fifth.Token)
 }
 
+func openGenerationObjectStore(t *testing.T, ctx context.Context, endpoint, password string) *objectstore.Store {
+	t.Helper()
+	for attempt := 0; ; attempt++ {
+		objects, err := objectstore.Open(ctx, endpoint, "then_test", password, false)
+		if err == nil {
+			return objects
+		}
+		if attempt == 19 {
+			t.Fatalf("open isolated generation object store after retries: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("open isolated generation object store: %v", ctx.Err())
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+}
+
 func integrationGenerationJPEG(t *testing.T) []byte {
 	t.Helper()
 	var source bytes.Buffer
@@ -2239,17 +2251,7 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 		WaitingFor:   wait.ForHTTP("/minio/health/live").WithPort("9000/tcp").WithStartupTimeout(time.Minute),
 	})
 	objectStoreAddress := mappedAddress(t, ctx, objectStoreContainer, "9000/tcp")
-	var objects *objectstore.Store
-	for attempt := 0; attempt < 20; attempt++ {
-		objects, err = objectstore.Open(ctx, objectStoreAddress, "then_test", objectStorePassword, false)
-		if err == nil {
-			break
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("open worker workflow object store: %v", err)
-	}
+	objects := openGenerationObjectStore(t, ctx, objectStoreAddress, objectStorePassword)
 
 	accounts, err := accountapp.NewAccountService(store.NewAccountRepository(database))
 	if err != nil {
