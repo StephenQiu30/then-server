@@ -558,6 +558,9 @@ func (r *GenerationRepository) ClaimNextCleanup(ctx context.Context, at time.Tim
 	if r == nil || r.database == nil || at.IsZero() || staleAfter <= 0 {
 		return generationapp.CleanupRequest{}, nil, false, generationapp.ErrGenerationUnavailable
 	}
+	// PostgreSQL stores microseconds. Return the same timestamp that the
+	// database persists so completion can match the claim on every platform.
+	at = at.UTC().Truncate(time.Microsecond)
 	var request generationapp.CleanupRequest
 	var targets []generationapp.CleanupTarget
 	found := false

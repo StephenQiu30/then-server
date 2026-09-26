@@ -1829,9 +1829,13 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if len(sourceRequests) != 1 || sourceRequests[0].Scope != generationapp.CleanupScopeSource || sourceRequests[0].SourceMediaID != "00000000-0000-4000-8000-000000000201" {
 		t.Fatalf("source cleanup did not retain the source relationship: %+v", sourceRequests)
 	}
-	claimedSource, sourceTargets, found, err := workerRepository.ClaimNextCleanup(ctx, sourceRequests[0].UpdatedAt.Add(time.Minute), time.Minute)
+	sourceClaimAt := sourceRequests[0].UpdatedAt.Add(time.Minute).UTC().Truncate(time.Microsecond).Add(123 * time.Nanosecond)
+	claimedSource, sourceTargets, found, err := workerRepository.ClaimNextCleanup(ctx, sourceClaimAt, time.Minute)
 	if err != nil || !found || claimedSource.Status != generationapp.CleanupRunning || len(sourceTargets) != 0 {
 		t.Fatalf("cleanup worker did not claim source cleanup: found=%v request=%+v targets=%+v err=%v", found, claimedSource, sourceTargets, err)
+	}
+	if !claimedSource.UpdatedAt.Equal(sourceClaimAt.UTC().Truncate(time.Microsecond)) {
+		t.Fatalf("cleanup claim timestamp did not match PostgreSQL precision: claimed=%s input=%s", claimedSource.UpdatedAt, sourceClaimAt)
 	}
 	recoveryAt := claimedSource.UpdatedAt.Add(time.Minute)
 	recoveredSource, _, found, err := workerRepository.ClaimNextCleanup(ctx, recoveryAt, time.Minute)
