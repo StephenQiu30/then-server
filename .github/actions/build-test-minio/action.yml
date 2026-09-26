@@ -1,0 +1,55 @@
+name: Build the pinned MinIO test image
+description: Build the MinIO release used by integration tests from its pinned upstream source commit.
+inputs:
+  image:
+    description: Local Docker image name made available to the test job.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check out pinned MinIO source
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        repository: minio/minio
+        ref: 07c3a429bfed433e49018cb0f78a52145d4bedeb
+        path: .ci/minio-source
+        persist-credentials: false
+
+    - name: Set up the MinIO source toolchain
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      with:
+        go-version: 1.24.2
+        cache-dependency-path: .ci/minio-source/go.sum
+
+    - name: Build the MinIO test image
+      shell: bash
+      env:
+        THEN_TEST_IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+        source_dir="$GITHUB_WORKSPACE/.ci/minio-source"
+        # RELEASE.2025-09-07T16-13-09Z resolves to this immutable source commit.
+        expected_sha="07c3a429bfed433e49018cb0f78a52145d4bedeb"
+        actual_sha="$(git -C "$source_dir" rev-parse HEAD)"
+        if [[ "$actual_sha" != "$expected_sha" ]]; then
+          echo "MinIO source checkout did not match the pinned commit" >&2
+          exit 1
+        fi
+
+        image_context="$RUNNER_TEMP/then-minio-image"
+        mkdir -p "$image_context"
+        (
+          cd "$source_dir"
+          GOTOOLCHAIN=local GOOS=linux CGO_ENABLED=0 go build -trimpath -o "$image_context/minio" .
+        )
+        cat > "$image_context/Dockerfile" <<'EOF'
+        FROM scratch
+        WORKDIR /tmp
+        ENV HOME=/tmp MINIO_UPDATE=off
+        WORKDIR /data
+        COPY minio /usr/local/bin/minio
+        ENTRYPOINT ["/usr/local/bin/minio"]
+        EOF
+        docker build --tag "$THEN_TEST_IMAGE" "$image_context"
+        echo "THEN_TEST_MINIO_IMAGE=$THEN_TEST_IMAGE" >> "$GITHUB_ENV"
+        rm -rf "$source_dir"

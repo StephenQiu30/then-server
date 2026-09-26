@@ -30,6 +30,7 @@ import (
 	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
 	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
 	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
+	"github.com/StephenQiu30/then-server/backend/tests/internal/testcontainer"
 	"github.com/google/uuid"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -133,7 +134,7 @@ func TestGenerationCleanupWorkerDeletesExactMinIOVersionAndBlocksProviderCalls(t
 
 	password := rand.Text()
 	container := integrationContainer(t, ctx, testcontainers.ContainerRequest{
-		Image:        "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+		Image:        testcontainer.MinIOImage(),
 		Cmd:          []string{"server", "/data"},
 		Env:          map[string]string{"MINIO_ROOT_USER": "then_test", "MINIO_ROOT_PASSWORD": password},
 		ExposedPorts: []string{"9000/tcp"},
@@ -860,7 +861,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 
 	objectStorePassword := rand.Text()
 	objectStoreContainer := integrationContainer(t, ctx, testcontainers.ContainerRequest{
-		Image:        "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+		Image:        testcontainer.MinIOImage(),
 		Cmd:          []string{"server", "/data"},
 		Env:          map[string]string{"MINIO_ROOT_USER": "then_test", "MINIO_ROOT_PASSWORD": objectStorePassword},
 		ExposedPorts: []string{"9000/tcp"},
@@ -2202,7 +2203,7 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 
 	objectStorePassword := rand.Text()
 	objectStoreContainer := integrationContainer(t, ctx, testcontainers.ContainerRequest{
-		Image:        "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+		Image:        testcontainer.MinIOImage(),
 		Cmd:          []string{"server", "/data"},
 		Env:          map[string]string{"MINIO_ROOT_USER": "then_test", "MINIO_ROOT_PASSWORD": objectStorePassword},
 		ExposedPorts: []string{"9000/tcp"},

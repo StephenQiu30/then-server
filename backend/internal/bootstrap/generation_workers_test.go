@@ -81,8 +81,7 @@ func TestRunGenerationQueueProcessesReadyWorkAndStopsWithContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	wake := newGenerationWakeSignals()
-	err := runGenerationQueue(ctx, log, "test", wake.channel("result"), wake, func(context.Context) (bool, error) {
+	err := runGenerationQueue(ctx, log, "test", nil, nil, func(context.Context) (bool, error) {
 		calls++
 		if calls == 1 {
 			return true, nil
