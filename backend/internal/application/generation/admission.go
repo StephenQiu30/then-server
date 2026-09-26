@@ -1,6 +1,9 @@
 package generation
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 var (
 	ErrGenerationDisabled        = errors.New("generation is disabled")
@@ -39,6 +42,7 @@ type AdmissionPolicy struct {
 	MaxConcurrentTasks  int
 	MaxQuotaUnits       int
 	MaxBudgetMinorUnits int64
+	OutputRetention     time.Duration
 }
 
 // AdmissionUsage is the current usage snapshot for the policy scope. The
@@ -54,6 +58,9 @@ type AdmissionUsage struct {
 // Validate checks that an enabled policy has explicit, positive limits. An
 // unset or disabled policy must not accidentally open a billable entry point.
 func (p AdmissionPolicy) Validate() error {
+	if p.OutputRetention < 0 || p.OutputRetention > 365*24*time.Hour {
+		return ErrInvalidGenerationInput
+	}
 	if !p.Enabled {
 		return nil
 	}

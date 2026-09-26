@@ -1603,7 +1603,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if foreignConfirmation.Code != http.StatusNotFound {
 		t.Fatalf("cross-owner image confirmation status=%d body=%s", foreignConfirmation.Code, foreignConfirmation.Body.String())
 	}
-	confirmed, err := workerRepository.ConfirmImage(ctx, second.User.ID, published.Task.ID, published.Asset.PublishedAt.Add(time.Second))
+	confirmed, err := workerRepository.ConfirmImage(ctx, second.User.ID, published.Task.ID, published.Asset.PublishedAt.Add(time.Second), 0)
 	if err != nil || confirmed.ImageConfirmedAt == nil || confirmed.Asset == nil || confirmed.Asset.ID != published.Asset.ID {
 		t.Fatalf("confirm published image at synthetic worker time: view=%+v err=%v", confirmed, err)
 	}

@@ -7,6 +7,15 @@ import (
 	"time"
 )
 
+func TestOutputExpiryUsesPublicationDeadline(t *testing.T) {
+	published := generationTestNow
+	if OutputExpired(published, time.Hour, published.Add(time.Hour-time.Nanosecond)) ||
+		!OutputExpired(published, time.Hour, published.Add(time.Hour)) ||
+		OutputExpired(published, 0, published.Add(24*time.Hour)) {
+		t.Fatal("output retention boundary changed")
+	}
+}
+
 func imageOutputFact() OutputFact {
 	return OutputFact{
 		ObjectKey:       "owners/owner-1/generation/job-1/output.jpg",
