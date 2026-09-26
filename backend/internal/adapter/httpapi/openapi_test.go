@@ -54,6 +54,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		"deleteSession":                   true,
 		"getCurrentUser":                  true,
 		"getGenerationOutputAccess":       true,
+		"confirmGenerationImage":          true,
 		"listCurrentUserSessions":         true,
 		"revokeCurrentUserSession":        true,
 		"putProfileAvatar":                true,
@@ -196,7 +197,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.30.0" || operations != 129 || len(spec.Paths) != 97 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.31.0" || operations != 130 || len(spec.Paths) != 98 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d paths=%d", spec.OpenAPI, spec.Info.Version, operations, len(spec.Paths))
 	}
 	mediaRequest := spec.Components.Schemas["CreateMediaUploadRequest"]
@@ -205,7 +206,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 		!schemaEnumContains(mediaRequest.Properties["category"].Enum, mediaapp.MediaCategoryOrdinaryImage) {
 		t.Fatal("generated media upload contract is missing the generation-input purpose categories")
 	}
-	for _, operationID := range []string{"listCurrentUserSessions", "revokeCurrentUserSession", "getGenerationOutputAccess", "listUnknownGenerationSubmissions", "reconcileUnknownGenerationSubmission"} {
+	for _, operationID := range []string{"listCurrentUserSessions", "revokeCurrentUserSession", "getGenerationOutputAccess", "confirmGenerationImage", "listUnknownGenerationSubmissions", "reconcileUnknownGenerationSubmission"} {
 		if !identifiers[operationID] {
 			t.Fatalf("generated contract is missing session operation %s", operationID)
 		}
@@ -271,6 +272,11 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 	}
 	if _, acceptsCost := generationRequest.Properties["cost"]; acceptsCost {
 		t.Fatal("generation request accepts a client-provided cost or quota estimate")
+	}
+	output, exists := spec.Components.Schemas["GenerationOutputResponse"]
+	_, confirms := output.Properties["confirmed_at"]
+	if !exists || !confirms || slices.Contains(output.Required, "confirmed_at") {
+		t.Fatal("generated image output contract must expose optional confirmation time")
 	}
 }
 

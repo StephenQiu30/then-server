@@ -444,6 +444,12 @@ func generationOutputAccessRequest(method, taskID, token string) *http.Request {
 	return request
 }
 
+func generationImageConfirmationRequest(taskID, token string) *http.Request {
+	request := httptest.NewRequest(http.MethodPost, "/generation-jobs/"+taskID+"/confirm-image", nil)
+	request.AddCookie(&http.Cookie{Name: "then_session", Value: token})
+	return request
+}
+
 func verifyGenerationHTTPQuotaPersistence(t *testing.T, ctx context.Context, database *gorm.DB, service *generationapp.Service, ownerID, ownerToken string) {
 	t.Helper()
 	seedGenerationInputMedia(t, ctx, database, ownerID, []generationapp.InputReference{
@@ -1018,6 +1024,9 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("accept quota-backed generation task: %v", err)
 	}
+	if _, err := paidGenerations.ConfirmImage(ctx, second.Token, paidCreated.View.Task.ID); !errors.Is(err, generationapp.ErrImageNotConfirmable) {
+		t.Fatalf("queued image task was confirmable: %v", err)
+	}
 	if paidCreated.Reused || paidCreated.View.Reservation == nil || paidCreated.View.Reservation.State != generationapp.ReservationReserved || paidCreated.View.Reservation.ReservedQuotaUnits != 2 || paidCreated.View.Reservation.EstimatedMinorUnits != 10 {
 		t.Fatalf("quota-backed generation task did not persist its reservation: %+v", paidCreated)
 	}
@@ -1586,6 +1595,24 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if _, err := paidGenerations.Create(ctx, second.Token, invalidSource); !errors.Is(err, generationapp.ErrGenerationSourceUnavailable) {
 		t.Fatalf("model source hash mismatch was accepted with error %v", err)
 	}
+	if _, err := paidGenerations.Create(ctx, second.Token, modelInput); !errors.Is(err, generationapp.ErrGenerationSourceUnavailable) {
+		t.Fatalf("unconfirmed image was accepted as a model source: %v", err)
+	}
+	foreignConfirmation := httptest.NewRecorder()
+	outputRouter.ServeHTTP(foreignConfirmation, generationImageConfirmationRequest(published.Task.ID, first.Token))
+	if foreignConfirmation.Code != http.StatusNotFound {
+		t.Fatalf("cross-owner image confirmation status=%d body=%s", foreignConfirmation.Code, foreignConfirmation.Body.String())
+	}
+	confirmed, err := workerRepository.ConfirmImage(ctx, second.User.ID, published.Task.ID, published.Asset.PublishedAt.Add(time.Second))
+	if err != nil || confirmed.ImageConfirmedAt == nil || confirmed.Asset == nil || confirmed.Asset.ID != published.Asset.ID {
+		t.Fatalf("confirm published image at synthetic worker time: view=%+v err=%v", confirmed, err)
+	}
+	replayConfirmation := httptest.NewRecorder()
+	outputRouter.ServeHTTP(replayConfirmation, generationImageConfirmationRequest(published.Task.ID, second.Token))
+	var replayedConfirmation httpapi.GenerationJobResponse
+	if err := json.Unmarshal(replayConfirmation.Body.Bytes(), &replayedConfirmation); err != nil || replayConfirmation.Code != http.StatusOK || replayedConfirmation.Output == nil || replayedConfirmation.Output.ConfirmedAt == nil || !replayedConfirmation.Output.ConfirmedAt.Equal(*confirmed.ImageConfirmedAt) {
+		t.Fatalf("image confirmation replay changed the decision: status=%d job=%+v err=%v", replayConfirmation.Code, replayedConfirmation, err)
+	}
 	purposePolicy := generationapp.AdmissionPolicy{Enabled: true, Currency: "USD", MaxConcurrentTasks: 1, MaxQuotaUnits: 5, MaxBudgetMinorUnits: 100}
 	purposeEstimator := generationapp.CostEstimatorFunc(func(generationapp.Purpose, string, string, []byte) (generationapp.CostEstimate, error) {
 		return generationapp.CostEstimate{Currency: "USD", EstimatedMinorUnits: 60, ReservedQuotaUnits: 3}, nil
@@ -1621,6 +1648,9 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if modelCreated.View.Task.Status != generationapp.StatusQueued || modelCreated.View.Reservation == nil || modelCreated.View.Reservation.Purpose != generationapp.PurposeModel || modelCreated.View.Reservation.EstimatedMinorUnits != 60 || modelCreated.View.Reservation.ReservedQuotaUnits != 3 {
 		t.Fatalf("model purpose reservation was not persisted independently: %+v", modelCreated)
 	}
+	if _, err := purposeGenerations.ConfirmImage(ctx, second.Token, modelCreated.View.Task.ID); !errors.Is(err, generationapp.ErrImageNotConfirmable) {
+		t.Fatalf("model task was confirmable as an image: %v", err)
+	}
 	purposeImageLeaseAt := purposeImage.View.Task.UpdatedAt.Add(time.Minute)
 	_, purposeImageLease, err := workerRepository.AcquireLease(ctx, purposeImage.View.Task.ID, "worker-purpose-image", purposeImageLeaseAt, 5*time.Minute)
 	if err != nil {
@@ -1641,6 +1671,11 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	sourceRequests, err := workerRepository.RequestSourceCleanup(ctx, second.User.ID, paidInput.Inputs.References[0].MediaID, deletionAt)
 	if err != nil || len(sourceRequests) != 1 || sourceRequests[0].TaskID != paidCreated.View.Task.ID || sourceRequests[0].Scope != generationapp.CleanupScopeSource {
 		t.Fatalf("source cleanup did not claim the image task: requests=%+v err=%v", sourceRequests, err)
+	}
+	revokedConfirmation := httptest.NewRecorder()
+	outputRouter.ServeHTTP(revokedConfirmation, generationImageConfirmationRequest(published.Task.ID, second.Token))
+	if revokedConfirmation.Code != http.StatusConflict {
+		t.Fatalf("revoked image remained confirmable: status=%d body=%s", revokedConfirmation.Code, revokedConfirmation.Body.String())
 	}
 	dependentModel, err := workerRepository.Get(ctx, second.User.ID, modelCreated.View.Task.ID)
 	if err != nil {
@@ -2348,6 +2383,9 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 	if err != nil || !found || published.Outcome != generationapp.ResultOutcomePublished || published.View.Task.Status != generationapp.StatusSucceeded || published.View.Asset == nil || published.View.Task.ResultAssetID != published.View.Asset.ID || published.View.Task.LeaseOwner != "" {
 		t.Fatalf("result worker did not validate and publish fixture output: found=%v result=%+v err=%v", found, published, err)
 	}
+	if published.View.ImageConfirmedAt != nil {
+		t.Fatal("worker implicitly confirmed the image")
+	}
 	outputBytes, err := objects.ReadOutputVersion(ctx, published.View.Asset.ObjectKey, published.View.Asset.ObjectVersionID, generationapp.MaxGenerationImageOutputBytes)
 	if err != nil || len(outputBytes) != int(published.View.Asset.ByteSize) {
 		t.Fatalf("published private output version was not readable: bytes=%d asset=%+v err=%v", len(outputBytes), published.View.Asset, err)
@@ -2357,7 +2395,7 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 		t.Fatalf("local fixture workers changed a foreign provider task: view=%+v err=%v", untouchedForeignTask, err)
 	}
 
-	modelCreated, err := generations.Create(ctx, owner.Token, generationapp.CreateServiceInput{
+	modelRequest := generationapp.CreateServiceInput{
 		IdempotencyKey: uuid.NewString(),
 		LookID:         lookID,
 		LookRevision:   inputs.LookRevision,
@@ -2377,7 +2415,18 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 			ID: uuid.NewString(), Purpose: generationapp.PurposeModel,
 			PolicyVersion: "local-model-v1", AcceptedAt: time.Now().UTC().Add(-time.Second),
 		},
-	})
+	}
+	if _, err := generations.Create(ctx, owner.Token, modelRequest); !errors.Is(err, generationapp.ErrGenerationSourceUnavailable) {
+		t.Fatalf("fixture model accepted unconfirmed image: %v", err)
+	}
+	fixtureRouter := generationOutputAccessRouter(t, ctx, generations, objects)
+	confirmedFixtureResponse := httptest.NewRecorder()
+	fixtureRouter.ServeHTTP(confirmedFixtureResponse, generationImageConfirmationRequest(published.View.Task.ID, owner.Token))
+	var confirmedFixture httpapi.GenerationJobResponse
+	if err := json.Unmarshal(confirmedFixtureResponse.Body.Bytes(), &confirmedFixture); err != nil || confirmedFixtureResponse.Code != http.StatusOK || confirmedFixture.Output == nil || confirmedFixture.Output.ConfirmedAt == nil || confirmedFixture.Output.ID != published.View.Asset.ID {
+		t.Fatalf("HTTP confirmation did not persist fixture image decision: status=%d job=%+v err=%v", confirmedFixtureResponse.Code, confirmedFixture, err)
+	}
+	modelCreated, err := generations.Create(ctx, owner.Token, modelRequest)
 	if err != nil || modelCreated.View.Task.Status != generationapp.StatusQueued || modelCreated.View.Reservation != nil {
 		t.Fatalf("create zero-cost model from published image: view=%+v err=%v", modelCreated.View, err)
 	}
@@ -2402,6 +2451,12 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 	verifiedModel, err := generationapp.VerifyOutputContent(generationapp.PurposeModel, modelBytes)
 	if err != nil || verifiedModel.SHA256 != modelAsset.SHA256 || verifiedModel.ByteSize != modelAsset.ByteSize {
 		t.Fatalf("published model bytes failed independent verification: fact=%+v asset=%+v err=%v", verifiedModel, modelAsset, err)
+	}
+	if err := database.WithContext(ctx).Table("generation_outputs").Where("id = ?", modelAsset.ID).Update("confirmed_at", time.Now().UTC()).Error; err == nil {
+		t.Fatal("database accepted confirmation of a model output")
+	}
+	if err := database.WithContext(ctx).Table("generation_outputs").Where("id = ?", published.View.Asset.ID).Update("confirmed_at", published.View.Asset.PublishedAt.Add(-time.Second)).Error; err == nil {
+		t.Fatal("database accepted image confirmation before publication")
 	}
 	untouchedForeignTask, err = repository.Get(ctx, owner.User.ID, foreignProviderTask.View.Task.ID)
 	if err != nil || untouchedForeignTask.Task.Status != generationapp.StatusQueued || untouchedForeignTask.Task.ExternalTaskID != "" {

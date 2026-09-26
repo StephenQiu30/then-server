@@ -24,6 +24,9 @@ type generationServiceRepositoryStub struct {
 	getCalls            int
 	listCalls           int
 	cancelCalls         int
+	confirmCalls        int
+	confirmedOwner      string
+	confirmedTask       string
 	input               CreateInput
 	policy              AdmissionPolicy
 	result              AcceptanceResult
@@ -64,6 +67,12 @@ func (s *generationServiceRepositoryStub) List(context.Context, string, int, *st
 
 func (s *generationServiceRepositoryStub) RequestCancel(context.Context, string, string, time.Time) (TaskView, error) {
 	s.cancelCalls++
+	return s.view, nil
+}
+
+func (s *generationServiceRepositoryStub) ConfirmImage(_ context.Context, ownerID, taskID string, _ time.Time) (TaskView, error) {
+	s.confirmCalls++
+	s.confirmedOwner, s.confirmedTask = ownerID, taskID
 	return s.view, nil
 }
 

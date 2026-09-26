@@ -12,6 +12,7 @@ import (
 var (
 	ErrGenerationUnavailable = errors.New("generation service unavailable")
 	ErrGenerationNotFound    = errors.New("generation job not found")
+	ErrImageNotConfirmable   = errors.New("generation image is not confirmable")
 )
 
 // Authenticator is the small account boundary needed by generation use cases.
@@ -27,16 +28,18 @@ type Repository interface {
 	Get(context.Context, string, string) (TaskView, error)
 	List(context.Context, string, int, *string) (TaskPage, error)
 	RequestCancel(context.Context, string, string, time.Time) (TaskView, error)
+	ConfirmImage(context.Context, string, string, time.Time) (TaskView, error)
 	RequestTaskCleanup(context.Context, string, string, time.Time) (TaskView, CleanupRequest, error)
 	ListUnknown(context.Context, string, int, *string) (UnknownSubmissionPage, error)
 	ReconcileUnknown(context.Context, string, ReconcileUnknownInput, time.Time) (SubmissionReconciliation, error)
 }
 
 type TaskView struct {
-	Task        Task
-	Reservation *QuotaReservation
-	Asset       *OutputAsset
-	Cleanup     *CleanupRequest
+	Task             Task
+	Reservation      *QuotaReservation
+	Asset            *OutputAsset
+	ImageConfirmedAt *time.Time
+	Cleanup          *CleanupRequest
 }
 
 type TaskPage struct {
@@ -188,6 +191,17 @@ func (s *Service) Cancel(ctx context.Context, token, taskID string) (TaskView, e
 		return TaskView{}, ErrInvalidGenerationInput
 	}
 	return s.repository.RequestCancel(ctx, user.ID, taskID, s.now().UTC())
+}
+
+func (s *Service) ConfirmImage(ctx context.Context, token, taskID string) (TaskView, error) {
+	user, err := s.currentUser(ctx, token)
+	if err != nil {
+		return TaskView{}, err
+	}
+	if !validUUID(taskID) {
+		return TaskView{}, ErrInvalidGenerationInput
+	}
+	return s.repository.ConfirmImage(ctx, user.ID, taskID, s.now().UTC())
 }
 
 func (s *Service) Delete(ctx context.Context, token, taskID string) (DeleteResult, error) {
