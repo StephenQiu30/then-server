@@ -178,6 +178,40 @@ func TestResultWorkerSettlesCancellationBeforeFetchingOutput(t *testing.T) {
 	if fetcher.fetches != 0 || fetcher.reads != 0 {
 		t.Fatalf("canceled validating task fetched output %d times and read bytes %d times", fetcher.fetches, fetcher.reads)
 	}
+	if fetcher.lists != 1 {
+		t.Fatal("cancellation did not inspect previously written output versions")
+	}
+}
+
+func TestResultWorkerRecordsExistingOutputBeforeCancellation(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
+	if err := repository.task.RequestCancel(generationTestNow.Add(5*time.Minute + 30*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	fetcher := &resultWorkerFetcherStub{versions: []string{"previous-version"}}
+	worker := newResultWorker(t, repository, fetcher)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if err != nil || result.Outcome != ResultOutcomeCanceled || result.View.Task.Status != StatusCanceled {
+		t.Fatalf("cancel with existing output = %+v, %v", result, err)
+	}
+	if len(repository.unpublishedTargets) != 1 || repository.unpublishedTargets[0].ObjectVersionID != "previous-version" || fetcher.fetches != 0 {
+		t.Fatalf("existing output was not queued before cancellation: targets=%+v fetches=%d", repository.unpublishedTargets, fetcher.fetches)
+	}
+}
+
+func TestResultWorkerDoesNotFinalizeCancellationWithoutOutputInventory(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t)}
+	if err := repository.task.RequestCancel(generationTestNow.Add(5*time.Minute + 30*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	fetcher := &resultWorkerFetcherStub{listErr: errors.New("object inventory unavailable")}
+	worker := newResultWorker(t, repository, fetcher)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrGenerationOutputInventoryUnknown) || result.View.Task.Status != StatusValidating || result.View.Task.NextAttemptAt == nil || fetcher.fetches != 0 {
+		t.Fatalf("unknown output inventory finalized cancellation: view=%+v fetches=%d err=%v", result.View, fetcher.fetches, err)
+	}
 }
 
 func TestResultWorkerKeepsValidatingTaskOnFetchFailure(t *testing.T) {

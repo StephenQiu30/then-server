@@ -157,25 +157,9 @@ func (w *ResultWorker) RunNext(ctx context.Context) (bool, ResultWorkerResult, e
 }
 
 func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Lease, now func() time.Time) (ResultWorkerResult, error) {
-	if view.Task.CancelRequestedAt != nil {
-		canceled, err := w.repository.FinalizeWithoutOutput(ctx, lease, StatusCanceled, "", now().UTC())
-		if err != nil {
-			return ResultWorkerResult{View: view, Outcome: ResultOutcomeCanceled}, err
-		}
-		return ResultWorkerResult{View: canceled, Outcome: ResultOutcomeCanceled}, nil
-	}
 	objectKey, err := OutputObjectKey(view.Task)
 	if err != nil {
 		return w.releaseWithError(ctx, lease, view, err, now)
-	}
-	request := FetchRequest{
-		TaskID:         view.Task.ID,
-		ExternalTaskID: view.Task.ExternalTaskID,
-		ObjectKey:      objectKey,
-		Purpose:        view.Task.Purpose,
-		LookID:         view.Task.LookID,
-		LookRevision:   view.Task.LookRevision,
-		Inputs:         cloneSnapshot(view.Task.Inputs),
 	}
 	fetchContext, cancel := context.WithTimeout(ctx, w.policy.FetchTimeout)
 	defer cancel()
@@ -193,7 +177,27 @@ func (w *ResultWorker) runClaimed(ctx context.Context, view TaskView, lease Leas
 				return w.releaseWithError(ctx, lease, view, err, now)
 			}
 		}
-		return w.releaseWithError(ctx, lease, view, ErrGenerationOutputCleanupPending, now)
+		if view.Task.CancelRequestedAt == nil {
+			return w.releaseWithError(ctx, lease, view, ErrGenerationOutputCleanupPending, now)
+		}
+	}
+	// A previous fetch can have written an unreported version before cancellation.
+	// Keep its exact cleanup target before the task becomes terminal.
+	if view.Task.CancelRequestedAt != nil {
+		canceled, err := w.repository.FinalizeWithoutOutput(ctx, lease, StatusCanceled, "", now().UTC())
+		if err != nil {
+			return ResultWorkerResult{View: view, Outcome: ResultOutcomeCanceled}, err
+		}
+		return ResultWorkerResult{View: canceled, Outcome: ResultOutcomeCanceled}, nil
+	}
+	request := FetchRequest{
+		TaskID:         view.Task.ID,
+		ExternalTaskID: view.Task.ExternalTaskID,
+		ObjectKey:      objectKey,
+		Purpose:        view.Task.Purpose,
+		LookID:         view.Task.LookID,
+		LookRevision:   view.Task.LookRevision,
+		Inputs:         cloneSnapshot(view.Task.Inputs),
 	}
 	fetched, fetchErr := w.fetcher.Fetch(fetchContext, request)
 	if fetchErr != nil {

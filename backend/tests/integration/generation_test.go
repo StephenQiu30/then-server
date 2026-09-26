@@ -1527,16 +1527,45 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if err != nil || cancelRequested.Task.CancelRequestedAt == nil || cancelRequested.Task.Status != generationapp.StatusValidating {
 		t.Fatalf("request cancellation after provider acceptance: view=%+v err=%v", cancelRequested, err)
 	}
-	cancelResultView, cancelResultLease, found, err := workerRepository.ClaimNextResultLease(ctx, "worker-cancel-result", cancelRequested.Task.UpdatedAt, 10*time.Minute)
-	if err != nil || !found {
-		t.Fatalf("claim canceled result lease: found=%v err=%v", found, err)
-	}
-	canceledResult, err := workerRepository.FinalizeWithoutOutput(ctx, cancelResultLease, generationapp.StatusCanceled, "", cancelResultView.Task.UpdatedAt)
+	cancelOutputKey, err := generationapp.OutputObjectKey(cancelRequested.Task)
 	if err != nil {
-		t.Fatalf("settle canceled result before fetch: %v", err)
+		t.Fatalf("derive canceled task output key: %v", err)
 	}
-	if canceledResult.Task.Status != generationapp.StatusCanceled || canceledResult.Task.ResultAssetID != "" || canceledResult.Task.LeaseOwner != "" || canceledResult.Reservation == nil || canceledResult.Reservation.State != generationapp.ReservationReleased {
-		t.Fatalf("canceled result settlement was not atomic: %+v", canceledResult)
+	staleOutput := []byte("unreported output before cancellation")
+	staleVersion, err := objects.PutDerived(ctx, cancelOutputKey, bytes.NewReader(staleOutput), int64(len(staleOutput)))
+	if err != nil {
+		t.Fatalf("write unreported canceled output: %v", err)
+	}
+	fetchesBeforeCancel := resultFetcher.fetchCalls
+	canceledResult, err := resultWorker.RunOnceAt(ctx, cancelCreated.View.Task.ID, cancelRequested.Task.UpdatedAt.Add(time.Second))
+	if err != nil || canceledResult.Outcome != generationapp.ResultOutcomeCanceled || canceledResult.View.Task.Status != generationapp.StatusCanceled || canceledResult.View.Task.ResultAssetID != "" || canceledResult.View.Task.LeaseOwner != "" || canceledResult.View.Reservation == nil || canceledResult.View.Reservation.State != generationapp.ReservationReleased || resultFetcher.fetchCalls != fetchesBeforeCancel {
+		t.Fatalf("canceled result settlement skipped recovery or fetched output: result=%+v fetches=%d err=%v", canceledResult, resultFetcher.fetchCalls, err)
+	}
+	var cancelCleanup struct {
+		ID      string
+		Targets []byte
+	}
+	if err := database.WithContext(ctx).Table("generation_cleanup_requests").Select("id, targets").Where("task_id = ? AND scope = ?", cancelCreated.View.Task.ID, string(generationapp.CleanupScopeOrphanOutput)).Scan(&cancelCleanup).Error; err != nil {
+		t.Fatalf("read canceled output cleanup: %v", err)
+	}
+	var cancelTargets []generationapp.CleanupTarget
+	if err := json.Unmarshal(cancelCleanup.Targets, &cancelTargets); err != nil || cancelCleanup.ID == "" || len(cancelTargets) != 1 || cancelTargets[0].ObjectKey != cancelOutputKey || cancelTargets[0].ObjectVersionID != staleVersion {
+		t.Fatalf("cancellation did not retain exact orphan output version: targets=%+v err=%v", cancelTargets, err)
+	}
+	cancelCleanupAt := canceledResult.View.Task.UpdatedAt.Add(time.Second)
+	claimedCancelCleanup, targets, err := workerRepository.BeginTaskCleanup(ctx, cancelCleanup.ID, cancelCleanupAt)
+	if err != nil || len(targets) != 1 {
+		t.Fatalf("claim canceled output cleanup: targets=%+v err=%v", targets, err)
+	}
+	if err := orphanCleanupExecutor.DeleteObject(ctx, targets[0]); err != nil {
+		t.Fatalf("delete canceled output version: %v", err)
+	}
+	if _, err := workerRepository.CompleteTaskCleanup(ctx, claimedCancelCleanup, cancelCleanupAt.Add(time.Second)); err != nil {
+		t.Fatalf("complete canceled output cleanup: %v", err)
+	}
+	if output, err := objects.OpenDerivedVersion(ctx, cancelOutputKey, staleVersion); err == nil {
+		output.Close()
+		t.Fatal("canceled output version remained readable after cleanup")
 	}
 
 	modelInput := paidInput
