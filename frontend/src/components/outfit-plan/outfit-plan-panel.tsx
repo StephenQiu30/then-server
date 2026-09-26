@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
@@ -256,26 +255,12 @@ export function OutfitPlanPanel() {
 
   return (
     <PageShell>
-      <header className="flex flex-col items-start gap-4">
-        <Link href="/" className="text-link underline-offset-4 hover:underline">
-          于是 OOTD
-        </Link>
+      <header className="flex flex-col items-start gap-3 border-b border-border pb-8">
         <Badge variant="secondary">计划</Badge>
         <h1 className="page-title">我的穿搭计划</h1>
         <p className="max-w-2xl text-muted-foreground">
           用真实衣物记录准备穿什么。计划、实际穿着和 Look 各自独立。
         </p>
-        <div className="flex flex-wrap gap-3">
-          <Button asChild variant="outline">
-            <Link href="/wardrobe">管理衣橱</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/wear">查看实际穿着</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/account">账户资料</Link>
-          </Button>
-        </div>
       </header>
       {currentUser.isPending ||
       (currentUser.isError && accountStatus(currentUser.error) === 401) ? (
@@ -313,7 +298,7 @@ export function OutfitPlanPanel() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <div className="grid gap-6 min-[900px]:grid-cols-2 min-[900px]:items-start">
+          <div className="grid gap-8 min-[900px]:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] min-[900px]:items-start">
             <PlanEditor
               form={form}
               onChange={setForm}

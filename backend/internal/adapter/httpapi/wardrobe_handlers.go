@@ -12,12 +12,38 @@ import (
 type WardrobeHTTPService interface {
 	CreateWardrobeItem(context.Context, string, wardrobeapp.CreateWardrobeItemInput) (wardrobeapp.WardrobeItem, error)
 	ListWardrobeItems(context.Context, string, int, *string, wardrobeapp.WardrobeListFilter) (wardrobeapp.WardrobePage, error)
+	RecommendWardrobe(context.Context, string, wardrobeapp.RecommendationContext) (wardrobeapp.RecommendationResult, error)
 	GetWardrobeItem(context.Context, string, string) (wardrobeapp.WardrobeItem, error)
 	UpdateWardrobeItem(context.Context, string, string, int, wardrobeapp.UpdateWardrobeItemInput) (wardrobeapp.WardrobeItem, error)
 	ArchiveWardrobeItem(context.Context, string, string, int) (wardrobeapp.WardrobeItem, error)
 	RestoreWardrobeItem(context.Context, string, string, int) (wardrobeapp.WardrobeItem, error)
 	GetWardrobeDeletionImpact(context.Context, string, string) (wardrobeapp.WardrobeDeletionImpact, error)
 	DeleteWardrobeItem(context.Context, string, string, int, wardrobeapp.WardrobeHistoryPolicy, string) error
+}
+
+func (h *WardrobeHandler) recommend(ctx context.Context, input *wardrobeRecommendationInput) (*wardrobeRecommendationOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	result, err := h.service.RecommendWardrobe(ctx, input.Session, wardrobeapp.RecommendationContext{
+		LocalDate: input.Body.LocalDate, TimeZone: input.Body.TimeZone,
+		FormalityBand: input.Body.FormalityBand, WarmthBand: input.Body.WarmthBand,
+		RequiresRainSuitability:    input.Body.RequiresRainSuitability,
+		RequiresWalkingSuitability: input.Body.RequiresWalkingSuitability,
+		IncludePackedItems:         input.Body.IncludePackedItems,
+	})
+	if err != nil {
+		return nil, h.error(ctx, err)
+	}
+	candidates := make([]WardrobeRecommendationCandidateResponse, 0, len(result.Candidates))
+	for _, candidate := range result.Candidates {
+		items := make([]WardrobeItemResponse, 0, len(candidate.Items))
+		for _, item := range candidate.Items {
+			items = append(items, wardrobeResponse(item))
+		}
+		candidates = append(candidates, WardrobeRecommendationCandidateResponse{Items: items, Reasons: candidate.Reasons, Uncertainties: candidate.Uncertainties})
+	}
+	return &wardrobeRecommendationOutput{RequestID: requestID(ctx), Body: WardrobeRecommendationResponse{PolicyVersion: result.PolicyVersion, Candidates: candidates, Gap: result.Gap}}, nil
 }
 
 type WardrobeHandler struct {

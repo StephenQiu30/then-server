@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
@@ -214,27 +213,12 @@ export function WardrobePanel() {
 
   return (
     <PageShell>
-      <header className="flex flex-col items-start gap-4">
-        <Link href="/" className="text-link underline-offset-4 hover:underline">
-          于是 OOTD
-        </Link>
-        <Badge variant="secondary">衣橱</Badge>
+      <header className="flex flex-col items-start gap-3 border-b border-border pb-8">
+        <Badge variant="secondary">真实衣橱</Badge>
         <h1 className="page-title">我的衣橱</h1>
         <p className="max-w-2xl text-muted-foreground">
-          记录真实拥有的衣物。这里使用账户数据核验；离线 Look 与推荐仍按 App
-          计划交付。
+          从一件常穿的衣物开始整理。只有你确认、当前可用的衣物才会进入普通推荐。
         </p>
-        <div className="flex flex-wrap gap-3">
-          <Button asChild variant="outline">
-            <Link href="/plans">查看穿搭计划</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/wear">查看实际穿着</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/account">账户资料</Link>
-          </Button>
-        </div>
       </header>
       {currentUser.isPending ||
       (currentUser.isError && accountStatus(currentUser.error) === 401) ? (
@@ -273,7 +257,7 @@ export function WardrobePanel() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <div className="grid gap-6 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] min-[900px]:items-start">
+          <div className="grid gap-8 min-[900px]:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] min-[900px]:items-start">
             <WardrobeEditor
               form={form}
               onChange={setForm}

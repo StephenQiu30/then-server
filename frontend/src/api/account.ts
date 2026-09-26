@@ -2,6 +2,37 @@
 /* eslint-disable */
 import request, { type RequestOptions } from '../lib/api/request'
 
+/** 注销后查询删除回执 GET /account-deletion-requests/${param0} */
+export async function getAccountDeletionReceipt(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.getAccountDeletionReceiptParams,
+  options?: RequestOptions,
+) {
+  const { id: param0, ...queryParams } = params
+  return request<API.AccountDeletionReceiptResponse>(
+    `/account-deletion-requests/${param0}`,
+    {
+      method: 'GET',
+      params: { ...queryParams },
+      ...(options || {}),
+    },
+  )
+}
+
+/** 撤销删除回执查询权 DELETE /account-deletion-requests/${param0} */
+export async function revokeAccountDeletionReceipt(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.revokeAccountDeletionReceiptParams,
+  options?: RequestOptions,
+) {
+  const { id: param0, ...queryParams } = params
+  return request<any>(`/account-deletion-requests/${param0}`, {
+    method: 'DELETE',
+    params: { ...queryParams },
+    ...(options || {}),
+  })
+}
+
 /** 获取本人账户 GET /users/me */
 export async function getCurrentUser(options?: RequestOptions) {
   return request<API.UserResponse>('/users/me', {
@@ -36,6 +67,37 @@ export async function updateCurrentUser(
       'Content-Type': 'application/json',
     },
     data: body,
+    ...(options || {}),
+  })
+}
+
+/** 分页列出本人有效会话 GET /users/me/sessions */
+export async function listCurrentUserSessions(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.listCurrentUserSessionsParams,
+  options?: RequestOptions,
+) {
+  return request<API.SessionPageResponse>('/users/me/sessions', {
+    method: 'GET',
+    params: {
+      // limit has a default value: 50
+      limit: '50',
+      ...params,
+    },
+    ...(options || {}),
+  })
+}
+
+/** 撤销本人指定会话 DELETE /users/me/sessions/${param0} */
+export async function revokeCurrentUserSession(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.revokeCurrentUserSessionParams,
+  options?: RequestOptions,
+) {
+  const { session_id: param0, ...queryParams } = params
+  return request<any>(`/users/me/sessions/${param0}`, {
+    method: 'DELETE',
+    params: { ...queryParams },
     ...(options || {}),
   })
 }

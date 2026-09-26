@@ -1,8 +1,32 @@
 declare namespace API {
-  type AccountDeletionResponse = {
+  type AccountDeletionReceiptResponse = {
+    access_closed: boolean
     completed_at?: string
+    generation_count: number
     id: string
     media_count: number
+    phase:
+      | 'media_cleanup'
+      | 'media_cleanup_retry_observed'
+      | 'generation_cleanup'
+      | 'complete'
+    receipt_expires_at: string
+    remaining_generation_count: number
+    remaining_media_count: number
+    requested_at: string
+    retry_observed: boolean
+    status: 'pending' | 'complete'
+    updated_at: string
+  }
+
+  type AccountDeletionResponse = {
+    completed_at?: string
+    generation_count: number
+    id: string
+    media_count: number
+    receipt_expires_at: string
+    /** 仅在注销 202 响应交付一次；请安全保存 */
+    receipt_token: string
     requested_at: string
     status: 'pending' | 'complete'
   }
@@ -74,6 +98,10 @@ declare namespace API {
     status: 'open' | 'upheld' | 'reversed'
   }
 
+  type archiveWardrobeItemParams = {
+    item_id: string
+  }
+
   type AuthenticatedUserResponse = {
     user: UserResponse
   }
@@ -108,6 +136,10 @@ declare namespace API {
   type CalendarMonthResponse = {
     days: any
     month: string
+  }
+
+  type cancelGenerationJobParams = {
+    job_id: string
   }
 
   type cancelOutfitPlanParams = {
@@ -166,6 +198,16 @@ declare namespace API {
     version_id: string
   }
 
+  type ConfirmMailChallengeInputBody = {
+    token: string
+  }
+
+  type ConfirmPasswordResetInputBody = {
+    /** 12–72 个 UTF-8 字节 */
+    new_password: string
+    token: string
+  }
+
   type ConfirmSelfAdultDeclarationRequest = {
     /** 用户主动确认照片仅属于本人且已年满 18 周岁；必须为 true */
     confirms_self_and_adult: true
@@ -175,12 +217,12 @@ declare namespace API {
 
   type ConsentResponse = {
     agreed_at: string
-    category: 'person_photo'
+    category: 'person_photo' | 'ordinary_image'
     id: string
     max_retention_hours: 24
-    policy_version: 'person-photo-v1'
+    policy_version: 'person-photo-v1' | 'generation-input-v1'
     processor: 'then'
-    purpose: 'avatar_source_preparation'
+    purpose: 'avatar_source_preparation' | 'generation_input'
     region: 'local-development'
     status: 'active' | 'withdrawn'
     training_allowed: false
@@ -218,13 +260,18 @@ declare namespace API {
 
   type CreateConsentRequest = {
     actively_agreed: true
-    category: 'person_photo'
+    category: 'person_photo' | 'ordinary_image'
     max_retention_hours: 24
-    policy_version: 'person-photo-v1'
+    policy_version: 'person-photo-v1' | 'generation-input-v1'
     processor: 'then'
-    purpose: 'avatar_source_preparation'
+    purpose: 'avatar_source_preparation' | 'generation_input'
     region: 'local-development'
     training_allowed: false
+  }
+
+  type CreateDataExportInputBody = {
+    mode: 'structured' | 'with_media'
+    password: string
   }
 
   type CreateDiaryEntryRequest = {
@@ -240,11 +287,31 @@ declare namespace API {
     wear_event_id?: string
   }
 
+  type CreateGenerationJobRequest = {
+    consent: GenerationConsentRequest
+    idempotency_key: string
+    image_asset_id?: string
+    image_sha256?: string
+    inputs: any
+    look_id: string
+    look_revision: number
+    model: string
+    parameters?: Record<string, any>
+    provider: string
+    purpose: 'image' | 'model'
+  }
+
   type CreateMediaUploadRequest = {
     byte_size: number
+    category?: 'person_photo' | 'ordinary_image'
     consent_id?: string
     content_type: 'image/jpeg'
-    purpose: 'avatar_source_preparation' | 'diary_image' | 'community_publish'
+    purpose:
+      | 'avatar_source_preparation'
+      | 'generation_input'
+      | 'diary_image'
+      | 'community_publish'
+      | 'profile_avatar'
     sha256: string
   }
 
@@ -326,6 +393,17 @@ declare namespace API {
     time_zone: string
   }
 
+  type DataExportResponse = {
+    completed_at?: string
+    counts: Record<string, any>
+    created_at: string
+    expires_at: string
+    id: string
+    mode: 'structured' | 'with_media'
+    omissions: any
+    status: 'preparing' | 'ready' | 'partial' | 'failed' | 'expired' | 'revoked'
+  }
+
   type decideCommentModerationParams = {
     comment_id: string
   }
@@ -358,6 +436,10 @@ declare namespace API {
     expected_revision?: number
   }
 
+  type deleteGenerationJobParams = {
+    job_id: string
+  }
+
   type deleteMediaParams = {
     media_id: string
   }
@@ -369,6 +451,10 @@ declare namespace API {
 
   type deletePostParams = {
     post_id: string
+    expected_revision?: number
+  }
+
+  type deleteProfileAvatarParams = {
     expected_revision?: number
   }
 
@@ -433,11 +519,16 @@ declare namespace API {
     wear_event_id?: string
   }
 
+  type downloadDataExportParams = {
+    id: string
+  }
+
   type ErrorResponse = {
     code:
       | 'BAD_REQUEST'
       | 'EMAIL_CONFLICT'
       | 'CONFLICT'
+      | 'EXPORT_NOT_READY'
       | 'PAYLOAD_TOO_LARGE'
       | 'AUTHENTICATION_FAILED'
       | 'FORBIDDEN'
@@ -470,12 +561,109 @@ declare namespace API {
     handle: string
   }
 
+  type GenerationCleanupResponse = {
+    access_revoked_at: string
+    attempts: number
+    completed_at?: string
+    id: string
+    next_attempt_at?: string
+    status: 'pending' | 'running' | 'complete' | 'failed'
+  }
+
+  type GenerationConsentRequest = {
+    accepted_at: string
+    id: string
+    policy_version: string
+    purpose: 'image' | 'model'
+  }
+
+  type GenerationInputReferenceRequest = {
+    media_id: string
+    ordinal: number
+    revision: number
+    role: 'person' | 'garment' | 'look_image'
+    sha256: string
+  }
+
+  type GenerationJobPageResponse = {
+    jobs: any
+    next_after_id?: string
+  }
+
+  type GenerationJobResponse = {
+    access_revoked_at?: string
+    cancel_requested_at?: string
+    cleanup?: GenerationCleanupResponse
+    created_at: string
+    external_task_id?: string
+    failure_code?: string
+    id: string
+    look_id: string
+    look_revision: number
+    match?: 'none' | 'idempotent_replay' | 'content_dedupe'
+    model: string
+    output?: GenerationOutputResponse
+    provider: string
+    purpose: 'image' | 'model'
+    reservation?: GenerationReservationResponse
+    result_asset_id?: string
+    reused?: boolean
+    status:
+      | 'queued'
+      | 'running'
+      | 'validating'
+      | 'succeeded'
+      | 'failed'
+      | 'canceled'
+      | 'expired'
+    status_revision: number
+    submission_attempt: number
+    submission_state: 'not_started' | 'in_flight' | 'unknown' | 'accepted'
+    updated_at: string
+  }
+
+  type GenerationOutputAccessResponse = {
+    byte_size: number
+    content_type: 'image/jpeg' | 'model/gltf-binary'
+    expires_at: string
+    sha256: string
+    url: string
+  }
+
+  type GenerationOutputResponse = {
+    byte_size: number
+    content_type: 'image/jpeg' | 'model/gltf-binary'
+    id: string
+    object_version_id: string
+    published_at: string
+    sha256: string
+  }
+
+  type GenerationReservationResponse = {
+    created_at: string
+    currency?: string
+    estimated_minor_units: number
+    id: string
+    reserved_quota_units: number
+    state: 'reserved' | 'released' | 'consumed'
+    state_revision: number
+    updated_at: string
+  }
+
+  type getAccountDeletionReceiptParams = {
+    id: string
+  }
+
   type getCalendarMonthParams = {
     month?: string
   }
 
   type getConsentParams = {
     consent_id: string
+  }
+
+  type getDataExportParams = {
+    id: string
   }
 
   type getDeletionRequestParams = {
@@ -488,6 +676,14 @@ declare namespace API {
 
   type getDiaryEntryParams = {
     entry_id: string
+  }
+
+  type getGenerationJobParams = {
+    job_id: string
+  }
+
+  type getGenerationOutputAccessParams = {
+    job_id: string
   }
 
   type getMediaParams = {
@@ -520,6 +716,11 @@ declare namespace API {
 
   type getPublicPostParams = {
     post_id: string
+  }
+
+  type getPublicProfileAvatarParams = {
+    /** 公开主页唯一标识 */
+    handle: string
   }
 
   type getPublicProfileParams = {
@@ -597,11 +798,21 @@ declare namespace API {
     status?: 'open' | 'resolved' | 'dismissed'
   }
 
+  type listCurrentUserSessionsParams = {
+    limit?: number
+    offset?: number
+  }
+
   type listDiaryEntriesParams = {
     limit?: number
     after_id?: string
     date_from?: string
     date_to?: string
+  }
+
+  type listGenerationJobsParams = {
+    limit?: number
+    after_id?: string
   }
 
   type listModerationActionsParams = {
@@ -666,9 +877,21 @@ declare namespace API {
     handle: string
   }
 
+  type listSyncChangesParams = {
+    after?: string
+    limit?: number
+  }
+
+  type listUnknownGenerationSubmissionsParams = {
+    limit?: number
+    after_id?: string
+  }
+
   type listWardrobeItemsParams = {
     limit?: number
     after_id?: string
+    lifecycle?: 'active' | 'archived' | 'all'
+    availability?: 'wearable' | 'laundry' | 'lent_out' | 'packed'
   }
 
   type listWearEventsParams = {
@@ -699,7 +922,12 @@ declare namespace API {
     id: string
     pixel_height?: number
     pixel_width?: number
-    purpose: 'avatar_source_preparation' | 'diary_image' | 'community_publish'
+    purpose:
+      | 'avatar_source_preparation'
+      | 'generation_input'
+      | 'diary_image'
+      | 'community_publish'
+      | 'profile_avatar'
     reason?: string
     status:
       | 'pending_upload'
@@ -889,6 +1117,8 @@ declare namespace API {
   }
 
   type PublicProfileResponse = {
+    /** 当前有头像时指向同源净化图；无头像为 null */
+    avatar_url: any
     bio?: string
     created_at: string
     display_name: string
@@ -906,6 +1136,11 @@ declare namespace API {
     handle: string
   }
 
+  type PutProfileAvatarRequest = {
+    expected_revision: number
+    media_id: string
+  }
+
   type PutProfileRequest = {
     /** 公开简介；空白值保存为未设置 */
     bio?: string
@@ -918,6 +1153,18 @@ declare namespace API {
   type ReadinessResponse = {
     request_id: string
     status: 'ready'
+  }
+
+  type reconcileUnknownGenerationSubmissionParams = {
+    job_id: string
+  }
+
+  type ReconcileUnknownSubmissionRequest = {
+    decision: 'accepted' | 'not_accepted'
+    evidence_reference: string
+    evidence_type: 'provider_console' | 'provider_query' | 'support_case'
+    expected_revision: number
+    external_task_id?: string
   }
 
   type RegisterAccountRequest = {
@@ -947,6 +1194,10 @@ declare namespace API {
     reports: any
   }
 
+  type RequestPasswordResetInputBody = {
+    email: string
+  }
+
   type ResolveAppealRequest = {
     resolution_code: string
     status: 'upheld' | 'reversed'
@@ -971,6 +1222,22 @@ declare namespace API {
 
   type restoreUserParams = {
     user_id: string
+  }
+
+  type restoreWardrobeItemParams = {
+    item_id: string
+  }
+
+  type revokeAccountDeletionReceiptParams = {
+    id: string
+  }
+
+  type revokeCurrentUserSessionParams = {
+    session_id: string
+  }
+
+  type revokeDataExportParams = {
+    id: string
   }
 
   type SaveFeedbackRequest = {
@@ -1003,9 +1270,28 @@ declare namespace API {
     withdrawn_at?: string
   }
 
+  type SessionPageResponse = {
+    items: any
+    next_offset: number
+  }
+
+  type SessionResponse = {
+    created_at: string
+    current: boolean
+    expires_at: string
+    id: string
+  }
+
   type SetUserStatusRequest = {
     expected_revision: number
     reason_code: string
+  }
+
+  type SubmissionReconciliationResponse = {
+    audit_id: string
+    decision: 'accepted' | 'not_accepted'
+    job: GenerationJobResponse
+    recorded_at: string
   }
 
   type submitPostParams = {
@@ -1014,6 +1300,25 @@ declare namespace API {
 
   type suspendUserParams = {
     user_id: string
+  }
+
+  type SyncChangeResponse = {
+    action: 'upsert' | 'delete'
+    entity_id: string
+    kind:
+      | 'wardrobe_item'
+      | 'outfit_plan'
+      | 'wear_event'
+      | 'wear_feedback'
+      | 'diary_entry'
+    revision: number
+    seq: number
+  }
+
+  type SyncChangesResponse = {
+    changes: any
+    has_more: boolean
+    next_cursor: string
   }
 
   type TransitionOutfitPlanRequest = {
@@ -1030,6 +1335,25 @@ declare namespace API {
 
   type unfollowProfileParams = {
     handle: string
+  }
+
+  type UnknownSubmissionPageResponse = {
+    jobs: any
+    next_after_id?: string
+  }
+
+  type UnknownSubmissionResponse = {
+    access_revoked_at?: string
+    cancel_requested_at?: string
+    created_at: string
+    id: string
+    model: string
+    provider: string
+    purpose: 'image' | 'model'
+    status_revision: number
+    submission_attempt: number
+    unknown_at: string
+    updated_at: string
   }
 
   type unlikePostParams = {
@@ -1126,6 +1450,8 @@ declare namespace API {
     created_at: string
     display_name: string
     email: string
+    /** 当前登录邮箱已完成验证 */
+    email_verified: boolean
     id: string
     revision: number
     role: 'user' | 'moderator' | 'admin'
@@ -1164,6 +1490,7 @@ declare namespace API {
   }
 
   type WardrobeItemResponse = {
+    archived_at?: string
     attributes: WardrobeAttributesResponse
     availability: 'wearable' | 'laundry' | 'lent_out' | 'packed'
     category:
@@ -1176,15 +1503,42 @@ declare namespace API {
       | 'accessory'
     created_at: string
     id: string
+    lifecycle: 'active' | 'archived'
     name: string
     revision: number
     source: 'wardrobe' | 'quick_add'
     updated_at: string
   }
 
+  type WardrobeLifecycleRequest = {
+    expected_revision: number
+  }
+
   type WardrobePageResponse = {
     items: any
     next_after_id?: string
+  }
+
+  type WardrobeRecommendationCandidateResponse = {
+    items: any
+    reasons: any
+    uncertainties: any
+  }
+
+  type WardrobeRecommendationRequest = {
+    formality_band?: 'casual' | 'smart_casual' | 'formal'
+    include_packed_items: boolean
+    local_date: string
+    requires_rain_suitability: boolean
+    requires_walking_suitability: boolean
+    time_zone: string
+    warmth_band?: 'light' | 'medium' | 'warm'
+  }
+
+  type WardrobeRecommendationResponse = {
+    candidates: any
+    gap?: string
+    policy_version: string
   }
 
   type WardrobeSuitabilityAttributeResponse = {
