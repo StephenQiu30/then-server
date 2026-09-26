@@ -2462,4 +2462,63 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 	if err != nil || untouchedForeignTask.Task.Status != generationapp.StatusQueued || untouchedForeignTask.Task.ExternalTaskID != "" {
 		t.Fatalf("model workers changed a foreign provider task: view=%+v err=%v", untouchedForeignTask, err)
 	}
+
+	deletedImage, err := generations.Delete(ctx, owner.Token, published.View.Task.ID)
+	if err != nil || deletedImage.Cleanup.Status != generationapp.CleanupPending || deletedImage.View.Asset != nil {
+		t.Fatalf("image deletion did not revoke its output: result=%+v err=%v", deletedImage, err)
+	}
+	baseCleanup, err := objectstore.NewGenerationCleanupExecutor(objects)
+	if err != nil {
+		t.Fatalf("construct private object cleanup: %v", err)
+	}
+	fixtureCleanup, err := generationfixture.NewCleanupExecutor(baseCleanup)
+	if err != nil {
+		t.Fatalf("construct stateless fixture cleanup: %v", err)
+	}
+	cleanupWorker, err := generationapp.NewCleanupWorker(repository, fixtureCleanup, generationapp.CleanupRetryPolicy{LeaseTTL: time.Minute, BaseDelay: time.Second, MaxDelay: time.Minute})
+	if err != nil {
+		t.Fatalf("construct fixture cleanup worker: %v", err)
+	}
+	for range 2 {
+		if found, err := cleanupWorker.RunOnce(ctx); err != nil || !found {
+			t.Fatalf("fixture image/model cleanup did not converge: found=%v err=%v", found, err)
+		}
+	}
+	if found, err := cleanupWorker.RunOnce(ctx); err != nil || found {
+		t.Fatalf("fixture cleanup retained unexpected work: found=%v err=%v", found, err)
+	}
+	for _, taskID := range []string{published.View.Task.ID, modelPublished.View.Task.ID} {
+		view, err := repository.Get(ctx, owner.User.ID, taskID)
+		if err != nil || view.Asset != nil || view.Cleanup == nil || view.Cleanup.Status != generationapp.CleanupComplete {
+			t.Fatalf("fixture task did not reach complete cleanup: task=%s view=%+v err=%v", taskID, view, err)
+		}
+	}
+	for _, asset := range []*generationapp.OutputAsset{published.View.Asset, modelAsset} {
+		if _, err := objects.ReadOutputVersion(ctx, asset.ObjectKey, asset.ObjectVersionID, asset.ByteSize); err == nil {
+			t.Fatalf("fixture cleanup left output version readable: asset=%s", asset.ID)
+		}
+	}
+	untouchedForeignTask, err = repository.Get(ctx, owner.User.ID, foreignProviderTask.View.Task.ID)
+	if err != nil || untouchedForeignTask.Task.Status != generationapp.StatusQueued || untouchedForeignTask.Cleanup != nil {
+		t.Fatalf("fixture cleanup touched foreign provider task: view=%+v err=%v", untouchedForeignTask, err)
+	}
+
+	removeSyntheticGenerationInputMedia(t, ctx, database, owner.User.ID, inputs.References)
+	accountDeletion, err := accounts.DeleteCurrentUser(ctx, owner.Token)
+	if err != nil || accountDeletion.Status != accountapp.AccountDeletionPending || accountDeletion.GenerationCount != 3 || accountDeletion.RemainingGenerationCount != 3 {
+		t.Fatalf("account deletion did not retain fixture cleanup work: receipt=%+v err=%v", accountDeletion, err)
+	}
+	for range 3 {
+		if found, err := cleanupWorker.RunOnce(ctx); err != nil || !found {
+			t.Fatalf("account fixture cleanup did not converge: found=%v err=%v", found, err)
+		}
+	}
+	accountReceipt, err := accounts.GetDeletionReceipt(ctx, accountDeletion.ID, accountDeletion.ReceiptToken)
+	if err != nil || accountReceipt.Status != accountapp.AccountDeletionComplete || accountReceipt.RemainingGenerationCount != 0 || accountReceipt.Phase != "complete" {
+		t.Fatalf("account deletion did not complete after fixture cleanup: receipt=%+v err=%v", accountReceipt, err)
+	}
+	var remainingTasks int64
+	if err := database.WithContext(ctx).Table("generation_jobs").Where("owner_id = ?", owner.User.ID).Count(&remainingTasks).Error; err != nil || remainingTasks != 0 {
+		t.Fatalf("account generation jobs remained after completed receipt: count=%d err=%v", remainingTasks, err)
+	}
 }
