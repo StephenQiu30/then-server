@@ -2239,7 +2239,14 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 		WaitingFor:   wait.ForHTTP("/minio/health/live").WithPort("9000/tcp").WithStartupTimeout(time.Minute),
 	})
 	objectStoreAddress := mappedAddress(t, ctx, objectStoreContainer, "9000/tcp")
-	objects, err := objectstore.Open(ctx, objectStoreAddress, "then_test", objectStorePassword, false)
+	var objects *objectstore.Store
+	for attempt := 0; attempt < 20; attempt++ {
+		objects, err = objectstore.Open(ctx, objectStoreAddress, "then_test", objectStorePassword, false)
+		if err == nil {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 	if err != nil {
 		t.Fatalf("open worker workflow object store: %v", err)
 	}
@@ -2346,5 +2353,56 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 	untouchedForeignTask, err := repository.Get(ctx, owner.User.ID, foreignProviderTask.View.Task.ID)
 	if err != nil || untouchedForeignTask.Task.Status != generationapp.StatusQueued || untouchedForeignTask.Task.SubmissionState != generationapp.SubmissionNotStarted || untouchedForeignTask.Task.ExternalTaskID != "" || untouchedForeignTask.Task.LeaseOwner != "" {
 		t.Fatalf("local fixture workers changed a foreign provider task: view=%+v err=%v", untouchedForeignTask, err)
+	}
+
+	modelCreated, err := generations.Create(ctx, owner.Token, generationapp.CreateServiceInput{
+		IdempotencyKey: uuid.NewString(),
+		LookID:         lookID,
+		LookRevision:   inputs.LookRevision,
+		Purpose:        generationapp.PurposeModel,
+		Provider:       generationfixture.ProviderName,
+		Model:          generationfixture.ModelModel,
+		Parameters:     []byte(`{"seed":"model-workflow"}`),
+		Inputs: generationapp.InputSnapshot{
+			LookID: lookID, LookRevision: inputs.LookRevision,
+			ImageAssetID: published.View.Asset.ID, ImageSHA256: published.View.Asset.SHA256,
+			References: []generationapp.InputReference{{
+				MediaID: published.View.Asset.ID, Role: generationapp.InputRoleLookImage,
+				Ordinal: 0, Revision: 1, SHA256: published.View.Asset.SHA256,
+			}},
+		},
+		Consent: generationapp.ConsentReceipt{
+			ID: uuid.NewString(), Purpose: generationapp.PurposeModel,
+			PolicyVersion: "local-model-v1", AcceptedAt: time.Now().UTC().Add(-time.Second),
+		},
+	})
+	if err != nil || modelCreated.View.Task.Status != generationapp.StatusQueued || modelCreated.View.Reservation != nil {
+		t.Fatalf("create zero-cost model from published image: view=%+v err=%v", modelCreated.View, err)
+	}
+	if found, submitted, err := submissionWorker.RunNext(ctx); err != nil || !found || submitted.View.Task.ID != modelCreated.View.Task.ID || submitted.Outcome != generationapp.SubmissionOutcomeAccepted {
+		t.Fatalf("fixture model submission failed: found=%v result=%+v err=%v", found, submitted, err)
+	}
+	if found, observed, err := observationWorker.RunNext(ctx); err != nil || !found || observed.View.Task.ID != modelCreated.View.Task.ID || observed.Outcome != generationapp.ObservationOutcomeValidating {
+		t.Fatalf("fixture model observation failed: found=%v result=%+v err=%v", found, observed, err)
+	}
+	found, modelPublished, err := resultWorker.RunNext(ctx)
+	if err != nil || !found || modelPublished.Outcome != generationapp.ResultOutcomePublished || modelPublished.View.Task.Status != generationapp.StatusSucceeded || modelPublished.View.Asset == nil {
+		t.Fatalf("fixture model result failed: found=%v result=%+v err=%v", found, modelPublished, err)
+	}
+	modelAsset := modelPublished.View.Asset
+	if modelAsset.ContentType != generationapp.OutputContentTypeGLB || modelAsset.Lineage.SourceImageAssetID != published.View.Asset.ID || modelAsset.Lineage.SourceImageSHA256 != published.View.Asset.SHA256 || modelAsset.Lineage.LookRevision != inputs.LookRevision {
+		t.Fatalf("fixture model source lineage or GLB type changed: asset=%+v", modelAsset)
+	}
+	modelBytes, err := objects.ReadOutputVersion(ctx, modelAsset.ObjectKey, modelAsset.ObjectVersionID, generationapp.MaxGenerationModelOutputBytes)
+	if err != nil {
+		t.Fatalf("read published model version: %v", err)
+	}
+	verifiedModel, err := generationapp.VerifyOutputContent(generationapp.PurposeModel, modelBytes)
+	if err != nil || verifiedModel.SHA256 != modelAsset.SHA256 || verifiedModel.ByteSize != modelAsset.ByteSize {
+		t.Fatalf("published model bytes failed independent verification: fact=%+v asset=%+v err=%v", verifiedModel, modelAsset, err)
+	}
+	untouchedForeignTask, err = repository.Get(ctx, owner.User.ID, foreignProviderTask.View.Task.ID)
+	if err != nil || untouchedForeignTask.Task.Status != generationapp.StatusQueued || untouchedForeignTask.Task.ExternalTaskID != "" {
+		t.Fatalf("model workers changed a foreign provider task: view=%+v err=%v", untouchedForeignTask, err)
 	}
 }

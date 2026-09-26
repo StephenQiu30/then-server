@@ -12,7 +12,7 @@ import (
 	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
 )
 
-func TestGenerationAdmissionPolicyEnablesOnlyZeroCostFixtureImages(t *testing.T) {
+func TestGenerationAdmissionPolicyEnablesOnlyZeroCostFixtureTasks(t *testing.T) {
 	local := config.GenerationConfig{
 		Mode:               config.GenerationModeLocal,
 		Enabled:            true,
@@ -27,13 +27,18 @@ func TestGenerationAdmissionPolicyEnablesOnlyZeroCostFixtureImages(t *testing.T)
 	if err != nil || quote.EstimatedMinorUnits != 0 || quote.ReservedQuotaUnits != 0 || quote.Currency != "" {
 		t.Fatalf("fixture quote was not zero-cost: quote=%+v err=%v", quote, err)
 	}
+	modelQuote, err := estimator.Estimate(generationapp.PurposeModel, "fixture", "fixture-model-v1", []byte(`{}`))
+	if err != nil || modelQuote.EstimatedMinorUnits != 0 || modelQuote.ReservedQuotaUnits != 0 || modelQuote.Currency != "" {
+		t.Fatalf("fixture model quote was not zero-cost: quote=%+v err=%v", modelQuote, err)
+	}
 	for _, request := range []struct {
 		purpose  generationapp.Purpose
 		provider string
 		model    string
 	}{
 		{generationapp.PurposeImage, "remote-provider", "remote-model"},
-		{generationapp.PurposeModel, "fixture", "fixture-model-v1"},
+		{generationapp.PurposeModel, "fixture", "fixture-image-v1"},
+		{generationapp.PurposeImage, "fixture", "fixture-model-v1"},
 	} {
 		if _, err := estimator.Estimate(request.purpose, request.provider, request.model, []byte(`{}`)); err != generationapp.ErrInvalidGenerationInput {
 			t.Fatalf("unsupported local fixture request was accepted: %+v err=%v", request, err)
