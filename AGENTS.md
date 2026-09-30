@@ -13,6 +13,7 @@ then-server/
 ├── AGENTS.md
 ├── README.md
 ├── CONTRIBUTING.md
+├── CHANGELOG.md                    # 简短改动记录
 ├── PROJECT.md                     # 产品边界、Web 组件体系与前后端目录规范
 ├── DESIGN.md                      # App 与 Web 唯一视觉和交互设计标准
 ├── docker-compose.yml
@@ -54,5 +55,7 @@ UI 开发前读取 `DESIGN.md` 并按其中颜色、字体、间距、组件和�
 ## 文档维护
 
 原地更新有效 Design/PRD/Plan/Acceptance；删除已被替代的方案、旧业务迁移和重复实验日志，同步所有索引与交叉链接。保留尚未完成的需求、阻断及必要可复核证据。README 只给入口与当前边界，具体状态归单切片 checklist，测试结果归 Acceptance；不得把开发完成等同于发布完成。
+
+完成切片后在根目录 `CHANGELOG.md` 按日期倒序补充简短改动，每项一句话。Plan/Backlog 原地更新状态，Acceptance 保留验证范围、结果及证据入口；相同验证统一记录一次，删除重复完成说明、逐轮耗时和已解决故障的过程日志。
 
 编号是稳定追踪身份，不为删除后的空号全量重排。PRD/Acceptance 同领域对应，Plan 使用 FF-SS；新切片继续递增、不复用退役编号，阅读次序维护在索引。完整规则见 [执行计划编号规范](docs/plan/README.md#编号与阅读顺序)。
