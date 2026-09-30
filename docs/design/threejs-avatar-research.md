@@ -1,16 +1,16 @@
 # Three.js、Tripo 与图片转三维研究
 
-核查：2026-09-22。当前采用方向为 **完整穿搭图 → Tripo 静态 GLB → Three.js**；生产供应商与样本验收仍待完成。主设计归 [Design 20](20-OOTD完整产品能力与阶段架构设计.md)，本文件只保存可核实证据，不另立人物基线。
+核查：2026-09-30。当前 POC 为 **受控完整参考图 → 本地 img2threejs 工厂 → Three.js 纹理处理/静态 GLB 导出**；实际模型与 Demo 待验，Tripo 保留为后续云候选。主设计归 [Design 20](20-OOTD完整产品能力与阶段架构设计.md)，本文件只保存可核实证据，不另立人物基线。
 
 ## 三种名称必须区分
 
 | 项目 | 官方能力/源码证据 | 对本项目的意义 |
 | --- | --- | --- |
-| [Tripo 云 API](https://developers.tripo3d.ai/en/docs/introduction) | 图片/多视图转模型、纹理、自动绑骨、动作、分割/补全等独立接口 | 使用图片转带纹理 GLB 即可；其他调用不是展示前置 |
+| [Tripo 云 API](https://developers.tripo3d.ai/en/docs/introduction) | 图片/多视图转模型、纹理、自动绑骨、动作、分割/补全等独立接口 | 后续云候选，当前不调用；其他能力不是静态展示前置 |
 | [TripoSR](https://github.com/VAST-AI-Research/TripoSR) | 开源单图三维重建；代码/权重许可见仓库 | 自部署几何实验，不等于 Tripo 云服务或完整人物/服装系统 |
-| [img2threejs](https://github.com/img2threejs/img2threejs/tree/6e60b5e22419464b4853e01ddb6c0e6f6659a733) | 将视觉目标变成程序化 Three.js 场景，另有 GLB/character 插件 | 不需要加入 Then 生产链，不能把名称理解成图片直接得到可换装角色 |
+| [img2threejs](https://github.com/img2threejs/img2threejs/tree/6e60b5e22419464b4853e01ddb6c0e6f6659a733) | 代理视觉分析、spec 和分阶段程序化 Three.js 工厂；另有导出/外部资产插件 | 当前本地 POC 工具，实际静态纹理 GLB 与后端调用合同须验证；不是自动转模型 API 或可换装角色保证 |
 
-GitHub 核对 img2threejs main `6e60b5e22419464b4853e01ddb6c0e6f6659a733`：主线输出 TypeScript/THREE.Group；人物示例仍有占位内容，img2glb 插件调用托管 TRELLIS，character 插件消费既有 rigged GLB，未提供可靠的人物/衣物资产生产链。仓库可运行不等于已经解决穿搭保真、同骨架衣物或眼部资产。
+实际下载并核对 img2threejs `6e60b5e22419464b4853e01ddb6c0e6f6659a733`（SKILL 2.0.0、Apache-2.0）：核心 Python 3.10+ 入场/spec/构建门禁可在本机执行，输出 TypeScript/THREE.Group，依赖宿主代理完成视觉判断与建模。托管 TRELLIS 和外部 rigged GLB 插件不进入本轮。已完成的入场检查与依赖结果归 [Acceptance 14](../acceptance/14-AI虚拟试穿验收.md#14-02-基线证据2026-09-30)；仍须实际验证纹理导出、对应性与后端自动执行，不能把代码工厂计为模型通过。
 
 ## Three.js 加载与观察
 
