@@ -59,7 +59,7 @@ func TestGenerationRetentionRevokesPublishedImageAndDependentModel(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := store.NewGenerationRepository(database)
+	repository := store.NewGenerationRepository(database, 0)
 	policy := generationapp.AdmissionPolicy{Enabled: true, ZeroCost: true, MaxConcurrentTasks: 2, MaxQuotaUnits: 2, OutputRetention: time.Hour}
 	service, err := generationapp.NewService(accounts, repository, policy)
 	if err != nil {

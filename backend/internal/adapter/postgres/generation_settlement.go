@@ -17,6 +17,9 @@ import (
 // worker/object-store adapter before this call.
 func (r *GenerationRepository) PublishOutput(ctx context.Context, lease generationapp.Lease, asset generationapp.OutputAsset, at time.Time) (generationapp.TaskView, error) {
 	return r.settleGenerationTask(ctx, lease, at, func(task generationapp.Task, reservation *generationapp.QuotaReservation) (generationapp.Settlement, error) {
+		if !task.Status.Terminal() && generationapp.TaskProcessingExpired(task.CreatedAt, r.taskTimeout, at) {
+			return generationapp.Settlement{}, generationapp.ErrGenerationTaskTimedOut
+		}
 		return generationapp.PublishOutput(task, reservation, asset, at)
 	})
 }

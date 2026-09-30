@@ -53,6 +53,7 @@ type observationWorkerRepositoryStub struct {
 	task               Task
 	reservation        *QuotaReservation
 	unpublishedTargets []CleanupTarget
+	publishErr         error
 }
 
 func (r *observationWorkerRepositoryStub) AcquireObservationLease(_ context.Context, _ string, owner string, at time.Time, ttl time.Duration) (TaskView, Lease, error) {

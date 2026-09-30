@@ -2,8 +2,17 @@ package generation
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+var ErrGenerationTaskTimedOut = errors.New("generation task processing deadline reached")
+
+// TaskProcessingExpired includes time spent queued and waiting for retries.
+// Zero leaves task timing disabled for an inert provider-neutral repository.
+func TaskProcessingExpired(createdAt time.Time, timeout time.Duration, at time.Time) bool {
+	return timeout > 0 && !at.Before(createdAt.Add(timeout))
+}
 
 // TaskTimeoutRepository keeps the due check and terminal settlement atomic.
 type TaskTimeoutRepository interface {

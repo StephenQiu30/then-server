@@ -86,6 +86,9 @@ func (r *observationWorkerRepositoryStub) PublishOutput(_ context.Context, lease
 	if err := r.task.ValidateLease(lease, at); err != nil {
 		return TaskView{}, err
 	}
+	if r.publishErr != nil {
+		return TaskView{}, r.publishErr
+	}
 	settlement, err := PublishOutput(r.task, r.reservation, asset, at)
 	if err != nil {
 		return TaskView{}, err
@@ -141,6 +144,25 @@ func TestResultWorkerPublishesValidatedOutputAtomically(t *testing.T) {
 	}
 	if result.View.Task.LeaseOwner != "" || fetcher.fetches != 1 || fetcher.reads != 1 || fetcher.readKey != result.View.Asset.ObjectKey || fetcher.readVersion != result.View.Asset.ObjectVersionID || fetcher.readLimit != MaxGenerationImageOutputBytes || fetcher.request.TaskID != repository.task.ID || fetcher.request.ObjectKey != "owners/owner-1/generation/job-1/output.jpg" || fetcher.request.LookID != repository.task.LookID || fetcher.request.LookRevision != repository.task.LookRevision || !inputSnapshotsEqual(fetcher.request.Inputs, repository.task.Inputs) {
 		t.Fatalf("publication retained lease or fetched unexpected count: task=%+v fetches=%d", result.View.Task, fetcher.fetches)
+	}
+}
+
+func TestResultWorkerKeepsLateOutputVersionForCleanup(t *testing.T) {
+	repository := &observationWorkerRepositoryStub{task: validatingResultTask(t), publishErr: ErrGenerationTaskTimedOut}
+	data := validGenerationJPEG(t)
+	fetcher := &resultWorkerFetcherStub{result: fetchedImageResult(repository.task, data), outputBytes: data}
+	worker := newResultWorker(t, repository, fetcher)
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrGenerationTaskTimedOut) || result.View.Task.Status != StatusValidating || result.View.Asset != nil || result.View.Task.ResultAssetID != "" {
+		t.Fatalf("late output was published: result=%+v err=%v", result, err)
+	}
+	if result.View.Task.LeaseOwner != "" || len(repository.unpublishedTargets) != 1 {
+		t.Fatalf("late output retained lease or lost cleanup: task=%+v targets=%+v", result.View.Task, repository.unpublishedTargets)
+	}
+	target := repository.unpublishedTargets[0]
+	if target.ObjectKey != fetcher.result.Fact.ObjectKey || target.ObjectVersionID != fetcher.result.Fact.ObjectVersionID {
+		t.Fatalf("cleanup lost exact late output version: %+v", target)
 	}
 }
 

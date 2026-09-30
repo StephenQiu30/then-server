@@ -40,6 +40,7 @@ type submissionWorkerRepositoryStub struct {
 	task        Task
 	reservation *QuotaReservation
 	lease       *Lease
+	beginErr    error
 }
 
 func (r *submissionWorkerRepositoryStub) view() TaskView {
@@ -75,6 +76,9 @@ func (r *submissionWorkerRepositoryStub) ReleaseLease(_ context.Context, lease L
 }
 
 func (r *submissionWorkerRepositoryStub) BeginSubmission(_ context.Context, lease Lease, at time.Time) (TaskView, Submission, error) {
+	if r.beginErr != nil {
+		return TaskView{}, Submission{}, r.beginErr
+	}
 	submission, err := r.task.BeginSubmission(at)
 	if err != nil {
 		return TaskView{}, Submission{}, err
@@ -210,6 +214,20 @@ func TestSubmissionWorkerRecordsAcceptedIdentityBeforeReleasingLease(t *testing.
 	}
 	if replayed.Outcome != SubmissionOutcomeAlreadyAccepted || provider.calls != 1 {
 		t.Fatalf("accepted task was submitted again: outcome=%s calls=%d", replayed.Outcome, provider.calls)
+	}
+}
+
+func TestSubmissionWorkerReleasesLeaseWhenDeadlinePreventsSubmission(t *testing.T) {
+	provider := &submissionWorkerProviderStub{}
+	worker, repository, _ := newSubmissionWorkerTest(t, provider, mustTask(validCreateInput()), submissionWorkerPolicy())
+	repository.beginErr = ErrGenerationTaskTimedOut
+
+	result, err := worker.RunOnce(context.Background(), repository.task.ID)
+	if !errors.Is(err, ErrGenerationTaskTimedOut) || provider.calls != 0 {
+		t.Fatalf("expired task was submitted: calls=%d err=%v", provider.calls, err)
+	}
+	if repository.lease != nil || result.View.Task.LeaseOwner != "" || result.View.Task.SubmissionState != SubmissionNotStarted || result.View.Task.ExternalTaskID != "" {
+		t.Fatalf("expired task retained lease or submission effects: view=%+v lease=%+v", result.View, repository.lease)
 	}
 }
 
