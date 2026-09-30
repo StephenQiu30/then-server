@@ -23,6 +23,7 @@ Go + Gin/Huma + GORM/AutoMigrate + PostgreSQL 已实现健康检查、注册/登
 | [docs](docs/README.md) | 当前 Design → PRD → Plan → Acceptance |
 | [BACKLOG.md](BACKLOG.md) | 全局任务顺序、依赖、checklist 与验收出口 |
 | [HANDOVER.md](HANDOVER.md) | 当前进度快照、未完成边界和接手步骤 |
+| [CHANGELOG.md](CHANGELOG.md) | 按日期记录的简短改动摘要 |
 | [产品计划](docs/plan/10-OOTD产品实施计划.md) | 全部切片的当前状态、缺口与下一步 |
 | [系统验收](docs/acceptance/10-OOTD产品系统验收.md) | 局部证据与完整产品的验收边界 |
 | [docker-compose.yml](docker-compose.yml) / [docker-compose-env.yml](docker-compose-env.yml) | 明确需要隔离环境时使用，非日常默认启动 |

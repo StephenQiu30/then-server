@@ -19,6 +19,7 @@
 | Woo 页面与研究 | [UI 设计](design/17-Woo页面与三维穿搭UI设计.md)、[Woo 证据](design/18-Woo立体数字衣橱技术路线研究与决策.md)、[市场研究](design/19-数字衣橱与虚拟试穿竞品研究.md) |
 | Three.js / GLB 与资产交付 | [当前研究与选型](design/threejs-avatar-research.md)、[离线 Look 闭环](plan/11-05-三维人物与造型闭环执行计划.md)、[完整图与按需三维生成](plan/14-01-完整穿搭图与按需三维生成执行计划.md) |
 | 已测结果与发布缺口 | [系统验收](acceptance/10-OOTD产品系统验收.md) |
+| 修改了什么 | [更新日志](../CHANGELOG.md) |
 | 启动服务 / Swagger | [后端 README](../backend/README.md) |
 
 ## 功能追踪
@@ -42,3 +43,5 @@
 [Design 索引](design/README.md) → [PRD 索引](prd/README.md) → [Plan 与 SOP](plan/README.md) → [Acceptance 索引](acceptance/README.md)。
 
 Design 管方案，PRD 管行为，单切片 Plan 合并 spec/checklist，Acceptance 管实际结果。[Backlog](../BACKLOG.md)是用户要求的全局排序与勾选视图，沿用原任务ID；完成时先更新Plan/Acceptance再同步，不独立改写任务事实。直接更新现行章节，不再另建平行清单或互相矛盾的“最新结论”。删除被替代文档时同步引用；有效需求、尚未完成的门禁和必要失败证据保留。文件名保持语义化，不为编号连续而重命名已有有效文件。
+
+改动摘要统一写入根目录 [CHANGELOG.md](../CHANGELOG.md)，每项一句话；Plan/Backlog 更新当前状态，Acceptance 汇总必要验证依据，不追加重复的完成或测试过程记录。
