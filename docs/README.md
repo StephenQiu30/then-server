@@ -1,47 +1,43 @@
 # 项目文档
 
-> 2026-09-22 当前工程变更：Kafka 与 `backend/main.go` 入口见 [17-26](plan/17-26-Kafka与工程规范化执行计划.md)。旧 completed Plan/Acceptance 的 RabbitMQ/cmd 路径保留为当时版本证据，不作为当前运行命令。
-
-更新：2026-09-22。仅维护当前有效设计、需求、执行计划和验收；已退役功能、被替代的技术方案和重复实验记录已清理。
+更新：2026-09-30。当前需求为本人自用的 Woo 风格虚拟人偶每日穿搭 App。设计去重后，产品、技术、研究成本各有单一入口；既有服务端/Web合同及原执行证据单独保留，不作个人App前置。
 
 ## 从这里开始
 
 | 需要了解 | 入口 |
 | --- | --- |
-| 接手当前项目 | [交接记录](../HANDOVER.md)：双仓库现状、未完成边界与下一步 |
-| 当前后端需求与数据设计 | [领域](design/21-后端产品边界与领域设计.md)、[数据库](design/22-后端数据库设计.md)、[API](design/23-后端接口设计.md)、[审核计划](plan/19-01-后端需求与数据设计审核计划.md) |
-| 整体进度、阻断与下一步 | [产品实施计划](plan/10-OOTD产品实施计划.md) |
-| 完整任务清单、勾选、执行顺序与验收 | [产品 Backlog](../BACKLOG.md)：当前任务、既有发布缺口、后续需求、周期和完成证据 |
-| 完整产品与分期 | [Design 20](design/20-OOTD完整产品能力与阶段架构设计.md)、[PRD 10](prd/10-OOTD产品需求.md) |
-| 当前低成本产品路线 | [完整设计与费用口径](design/20-OOTD完整产品能力与阶段架构设计.md)、[竞品/供应商/源码审计](design/19-数字衣橱与虚拟试穿竞品研究.md)；2026-09-22 已批准设计替换，实施/供应商准入待验 |
-| 当前技术栈与变更规则 | [Design 01](design/01-技术选型.md) |
-| 后端目录、规范与 SOP | [Design 02](design/02-后端架构.md)、[后端规范](../backend/AGENTS.md) |
-| Woo 页面与研究 | [UI 设计](design/17-Woo页面与三维穿搭UI设计.md)、[Woo 证据](design/18-Woo立体数字衣橱技术路线研究与决策.md)、[市场研究](design/19-数字衣橱与虚拟试穿竞品研究.md) |
-| Three.js / GLB 与资产交付 | [当前研究与选型](design/threejs-avatar-research.md)、[离线 Look 闭环](plan/11-05-三维人物与造型闭环执行计划.md)、[完整图与按需三维生成](plan/14-01-完整穿搭图与按需三维生成执行计划.md) |
-| 已测结果与发布缺口 | [系统验收](acceptance/10-OOTD产品系统验收.md) |
-| 修改了什么 | [更新日志](../CHANGELOG.md) |
-| 启动服务 / Swagger | [后端 README](../backend/README.md) |
+| 当前需求和范围 | [PRD10](prd/10-OOTD产品需求.md)、[需求索引](prd/README.md) |
+| 页面、数据与运行设计 | [Design03](design/03-OOTD产品总体设计.md)：本人参考、Look/日期、文件、任务、三维、导出与删除 |
+| 技术决定与启用边界 | [Design01](design/01-技术选型.md) |
+| Woo效果、官方证据、候选与成本 | [Design29](design/29-Woo虚拟人偶与自用成本决策.md) |
+| 先验证什么 | [PRD10功能拆解](prd/10-OOTD产品需求.md#功能到执行的拆解)：先一套满意可旋转的本人Look，再五套代表样本；设备与真实费用待验 |
+| 原工程进度/完成依据 | [产品计划](plan/10-OOTD产品实施计划.md)、[Backlog](../BACKLOG.md)、[交接](../HANDOVER.md)：原结果不变，新执行须映射当前REQ |
+| 历史研究与失败证据 | [Acceptance10](acceptance/10-OOTD产品系统验收.md#历史研究与工程证据)、[Acceptance14](acceptance/14-AI虚拟试穿验收.md#当前-poc-与-demo-验收) |
+| 保留哪些工程设计 | [设计索引](design/README.md#保留的工程合同)：数据库、API、账号与Web等独特合同 |
+| 原后端工程规范 | [PROJECT.md](../PROJECT.md)、[Design02](design/02-后端架构.md)、[后端AGENTS](../backend/AGENTS.md) |
+| 合并了哪些设计 | [Design03历史追溯](design/03-OOTD产品总体设计.md#历史设计追溯) |
+| 改动摘要 | [CHANGELOG](../CHANGELOG.md) |
 
 ## 功能追踪
 
-本轮将当前设计分解为[功能需求与计划映射](prd/10-OOTD产品需求.md#功能到执行的拆解)、[13项统一非功能要求](prd/10-OOTD产品需求.md#非功能性需求)、[里程碑/依赖/后续准入](plan/10-OOTD产品实施计划.md#里程碑与验收出口)与[可执行验收协议](acceptance/10-OOTD产品系统验收.md#非功能验收协议)。文档可用于后续开发与验收；新路线代码、正式资产和真实Provider测试仍未完成。
+产品实现设计集中在Design03；当前行为以PRD为准。原领域验收保留状态及证据，不因链接迁移或需求确认认领新版本通过。
 
-| 功能 | 设计 | 需求 | 验收 |
+| 功能 | 当前需求 | 设计入口 | 原验收 |
 | --- | --- | --- | --- |
-| 每日记录与图文社区 | [Design 21](design/21-后端产品边界与领域设计.md) | [PRD 19](prd/19-每日记录与穿搭社区需求.md) | [Acceptance 19](acceptance/19-每日记录与穿搭社区验收.md) |
-| 人物与可选照片 | [Design 04](design/04-数字形象与照片采集设计.md) | [PRD 11](prd/11-数字形象与照片采集需求.md) | [Acceptance 11](acceptance/11-数字形象与照片采集验收.md) |
-| 内置衣物与真实衣橱 | [Design 05](design/05-数字衣橱与衣物录入设计.md) | [PRD 12](prd/12-数字衣橱与衣物录入需求.md) | [Acceptance 12](acceptance/12-数字衣橱与衣物录入验收.md) |
-| 推荐 | [Design 06](design/06-穿搭推荐设计.md) | [PRD 13](prd/13-穿搭推荐需求.md) | [Acceptance 13](acceptance/13-穿搭推荐验收.md) |
-| 本人 AI 试穿 | [Design 07](design/07-AI虚拟试穿设计.md) | [PRD 14](prd/14-AI虚拟试穿需求.md) | [Acceptance 14](acceptance/14-AI虚拟试穿验收.md) |
-| 独立视频（deferred） | [Design 08](design/08-动态预览设计.md) | [PRD 15](prd/15-动态预览需求.md) | [Acceptance 15](acceptance/15-动态预览验收.md) |
-| 计划、实际穿着与反馈 | [Design 09](design/09-穿搭记录与反馈设计.md) | [PRD 16](prd/16-穿搭记录与反馈需求.md) | [Acceptance 16](acceptance/16-穿搭记录与反馈验收.md) |
-| 账号与云任务 | [Design 10](design/10-OOTD服务端与异步任务设计.md)、[账号](design/15-账号认证与账户数据设计.md) | [PRD 17](prd/17-云端生成与任务管理需求.md) | [Acceptance 17](acceptance/17-云端生成与任务管理验收.md) |
-| 隐私与数据控制 | [Design 11](design/11-OOTD权限隐私与安全设计.md) | [PRD 18](prd/18-隐私与数据控制需求.md) | [Acceptance 18](acceptance/18-隐私与数据控制验收.md) |
+| 本人虚拟形象/照片 | [PRD11](prd/11-数字形象与照片采集需求.md) | [输入准备](design/03-OOTD产品总体设计.md#人物参考与输入准备) | [Acceptance11](acceptance/11-数字形象与照片采集验收.md) |
+| 手工照片衣橱 | [PRD12](prd/12-数字衣橱与衣物录入需求.md) | [数据/版本](design/03-OOTD产品总体设计.md#数据版本与日期)、[文件保存](design/03-OOTD产品总体设计.md#媒体保存与恢复) | [Acceptance12](acceptance/12-数字衣橱与衣物录入验收.md) |
+| 推荐延期 | [PRD13](prd/13-穿搭推荐需求.md) | [实施边界](design/03-OOTD产品总体设计.md#实施与证据边界) | [Acceptance13](acceptance/13-穿搭推荐验收.md) |
+| 风格化图/按需模型 | [PRD14](prd/14-AI虚拟试穿需求.md) | [任务设计](design/03-OOTD产品总体设计.md#图片与模型任务) | [Acceptance14](acceptance/14-AI虚拟试穿验收.md) |
+| 静态观察/动态延期 | [PRD15](prd/15-动态预览需求.md) | [三维宿主](design/03-OOTD产品总体设计.md#三维宿主与交互安全) | [Acceptance15](acceptance/15-动态预览验收.md) |
+| 日期/计划/实际/反馈 | [PRD16](prd/16-穿搭记录与反馈需求.md) | [事实与日期](design/03-OOTD产品总体设计.md#数据版本与日期) | [Acceptance16](acceptance/16-穿搭记录与反馈验收.md) |
+| 个人API/任务/费用 | [PRD17](prd/17-云端生成与任务管理需求.md) | [任务设计](design/03-OOTD产品总体设计.md#图片与模型任务) | [Acceptance17](acceptance/17-云端生成与任务管理验收.md) |
+| 隐私/导出/删除 | [PRD18](prd/18-隐私与数据控制需求.md) | [数据控制](design/03-OOTD产品总体设计.md#隐私导出与删除) | [Acceptance18](acceptance/18-隐私与数据控制验收.md) |
+| 私人日记/月历 | [PRD19](prd/19-每日记录与穿搭社区需求.md) | [页面](design/03-OOTD产品总体设计.md#信息架构与页面)、[事实](design/03-OOTD产品总体设计.md#数据版本与日期) | [Acceptance19](acceptance/19-每日记录与穿搭社区验收.md) |
 
 ## 维护规则
 
-[Design 索引](design/README.md) → [PRD 索引](prd/README.md) → [Plan 与 SOP](plan/README.md) → [Acceptance 索引](acceptance/README.md)。
+[Design](design/README.md) → [PRD](prd/README.md) → [Plan](plan/README.md) → [Acceptance](acceptance/README.md)。只在各自责任文档维护一次事实：01管技术、03管产品实现设计、29管官方研究/金额，PRD管行为，Plan管spec/checklist，Acceptance管实测。
 
-Design 管方案，PRD 管行为，单切片 Plan 合并 spec/checklist，Acceptance 管实际结果。[Backlog](../BACKLOG.md)是用户要求的全局排序与勾选视图，沿用原任务ID；完成时先更新Plan/Acceptance再同步，不独立改写任务事实。直接更新现行章节，不再另建平行清单或互相矛盾的“最新结论”。删除被替代文档时同步引用；有效需求、尚未完成的门禁和必要失败证据保留。文件名保持语义化，不为编号连续而重命名已有有效文件。
+旧设计编号保留追溯，不回收或重排；历史链接指向合并说明或承接合同，不能理解为原测试重新验证了新方案。新切片须先映射当前REQ，不照旧分期自动开启账号、公共服务或上线。
 
-改动摘要统一写入根目录 [CHANGELOG.md](../CHANGELOG.md)，每项一句话；Plan/Backlog 更新当前状态，Acceptance 汇总必要验证依据，不追加重复的完成或测试过程记录。
+文档清理不修改代码、依赖或验收勾选，不覆盖并行改动；改动摘要写入根CHANGELOG。

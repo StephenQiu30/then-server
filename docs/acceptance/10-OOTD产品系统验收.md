@@ -2,13 +2,24 @@
 
 更新：2026-09-23。新设计标准已替换，整体 pending，完整产品未交付。现有账户、衣橱、计划/实际、日记/社区和工程规范的开发证据留在对应 Acceptance；17-40 补充本地服务端同步证据，17-41 补充衣橱归档/恢复与筛选服务端证据，没有重新执行 App、Provider、真机或远程 CI。
 
-既有[需求调研与源码审计](../design/19-数字衣橱与虚拟试穿竞品研究.md)证据：基线为 then-server `7826a936`、then-app `7f10376`；八个工程 GLB 的文件大小和 SHA-256 均匹配，直接解析均为 18-joint skin、无内嵌图像/animation clips。该检查不验证画风、穿模、眼部或设备性能，也未重跑 App 构建、真实 Provider 或真机旅程。Look 内存状态/缺槽补默认、Web 业务页面及云任务缺口见审计；下面所有系统场景维持原结果，不因研究或文件格式检查而通过。
+2026-09-30 文档清理仅迁移旧研究证据并修复入口，不重新执行或修改下列验收结果。现行个人需求见 [PRD 10](../prd/10-OOTD产品需求.md)，实现设计见 [Design 03](../design/03-OOTD产品总体设计.md)；本文原系统场景按当时范围理解，不能套为新版的本人虚拟人偶已通过。
+
+## 历史研究与工程证据
+
+原 Design 19 / Three.js / WebGPU 研究登记的2026-09-22审计基线：
+
+- then-server：`7826a9369ed77988152287aa7bd6456abbaec0f2`；then-app：`7f10376b83b9ad290e91a7704149cd0fd105440f`。
+- 八个工程 GLB 合计333,976 bytes、约6,000 triangles；逐文件大小与SHA-256匹配manifest，均18-joint skin、无内嵌图片/animation clips。它们是工程夹具，不证明正式人物画风、穿模、眼部、头发或设备性能；节点微动不能仅由animation clips数量推断。
+- 当时Look/收藏为内存状态，缺槽补默认可能使托盘与舞台不同；Web业务页及真实生成闭环存在当时记录的缺口。这些是旧审计，不能推为本轮代码现状。
+- 原研究引用的 [server CI](https://github.com/StephenQiu30/then-server/actions/runs/35688419663) 与 [App CI](https://github.com/StephenQiu30/then-app/actions/runs/35687995316) 登记为success，只证明各自旧提交的工程门禁；本轮没有重跑CI、App构建、真实Provider或真机。
+
+旧研究正文在清理前已有Git提交 `f7a06a8ca7ae5cc39b17e029aeb62e1fd78e114f` 的原 Design 19、threejs-avatar-research.md 和 webgpu-avatar-assessment.md 中可追溯。新的从零研究见 Design29，不以旧源码审计作为新选型依据。实际本地img2threejs模型失败/no-go保留于[Acceptance14](14-AI虚拟试穿验收.md#当前-poc-与-demo-验收)，不因清理改为pending或通过。
 
 ## 发布判定
 
-离线 Look、用户云图片/模型、真实衣橱日常闭环、日记/社区与同步分别认领。当前首版不以体型、模块衣物、眨眼/注视、独立 AI 视频作为前置；这些延期不等于通过。正式资产、最低真机、隐私/许可与数据恢复证据仍必需。阶段定义归 Design 20，旧 P1/P5 并行路线不再作为判定依据。
+以下为原完整产品验收：离线Look、用户云图片/模型、真实衣橱日常、日记/社区与同步分别认领，阶段依据为原Design20历史版本；体型、模块衣物、眨眼/注视、独立视频延期不等于通过。现行个人范围见PRD10/Design03，新执行须重新映射；本轮不修改原状态或将社区/发布门禁恢复为个人前置。
 
-## 现行系统场景
+## 原系统场景
 
 | ID | 必须验证的完整行为 | 结果/适用范围 |
 | --- | --- | --- |
@@ -25,7 +36,7 @@
 | OOTD-SYS-ACC-011 | Release Archive、许可/隐私披露、最低真机、无障碍、恢复与独立能力关闭 | pending |
 | OOTD-SYS-ACC-012 | 原三视图全组合旅程 | superseded，由 ACC-017 承接 |
 | OOTD-SYS-ACC-013 | 云能力未开启/未同意无隐式上传、匿名云主体或自动生成；本地独立 | pending |
-| OOTD-SYS-ACC-014 | 当前 Woo 可见旅程：内置 Look→选衣/生成完整图→主动 GLB→保存/回看/图片输出 | pending；按 Design 17/18 对照，视频后移 |
+| OOTD-SYS-ACC-014 | 原 Woo 可见旅程：内置 Look→选衣/生成完整图→主动 GLB→保存/回看/图片输出 | pending；原 Design 17/18 已合并追溯，不据此关闭本人新版场景 |
 | OOTD-SYS-ACC-015 | 原逐件网格换装/展示动作工作室 | superseded；静态整套三维由 ACC-017/018，高级角色 deferred |
 | OOTD-SYS-ACC-016 | 当前批准能力的全产品组合：Look、真实日常、日记/社区、所启用同步/数据控制；每个环节证据完整 | pending；不能以离线首片通过认领全部 |
 

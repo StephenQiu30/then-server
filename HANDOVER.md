@@ -10,7 +10,7 @@ Then（于是）是围绕穿搭决策、真实衣橱和每日记录的产品。`
 
 | 要找的事实 | 入口 |
 | --- | --- |
-| 产品边界、分期和技术路线 | [PROJECT.md](PROJECT.md)、[Design 20](docs/design/20-OOTD完整产品能力与阶段架构设计.md)、[技术选型](docs/design/01-技术选型.md) |
+| 产品边界、分期和技术路线 | [PROJECT.md](PROJECT.md)、[产品总体设计](docs/design/03-OOTD产品总体设计.md)、[技术选型](docs/design/01-技术选型.md) |
 | 功能与非功能需求 | [PRD 索引](docs/prd/README.md)，整体见 [PRD 10](docs/prd/10-OOTD产品需求.md) |
 | 全局顺序、依赖、工作量与待办 | [BACKLOG.md](BACKLOG.md)；单项细节见 [Plan 索引](docs/plan/README.md) |
 | 已验证结果与发布门禁 | [Acceptance 索引](docs/acceptance/README.md)，整体见 [系统验收](docs/acceptance/10-OOTD产品系统验收.md) |

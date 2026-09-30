@@ -6,7 +6,7 @@
 
 本片承接 [14-01](14-01-完整穿搭图与按需三维生成执行计划.md) 的本地 POC，新增最小 Demo 与阶段决策，不重复原 DATA/WORKER/DELETE 任务。完整 App 编码、付费 Provider、真实用户照片和生产发布仍未启用。
 
-追踪：[Design 01](../design/01-技术选型.md)/[07](../design/07-AI虚拟试穿设计.md)/[20](../design/20-OOTD完整产品能力与阶段架构设计.md) → TRYON-REQ-008～010、AVATAR-REQ-043、OOTD-REQ-008/011/018 与 OOTD-NFR-002/007/008/009 → [TRYON-ACC-011/012 的本轮适用子范围](../acceptance/14-AI虚拟试穿验收.md#当前-poc-与-demo-验收)、AVATAR-ACC-029 的资产/观察子范围、CLOUD-ACC-012 的本地任务子范围。子范围通过不勾选完整 ACC。
+追踪：[Design 01](../design/01-技术选型.md)/[原 Design 07（已合并）](../design/03-OOTD产品总体设计.md#retired-design-07)/[原 Design 20（已合并）](../design/03-OOTD产品总体设计.md#retired-design-20) → TRYON-REQ-008～010、AVATAR-REQ-043、OOTD-REQ-008/011/018 与 OOTD-NFR-002/007/008/009 → [TRYON-ACC-011/012 的本轮适用子范围](../acceptance/14-AI虚拟试穿验收.md#当前-poc-与-demo-验收)、AVATAR-ACC-029 的资产/观察子范围、CLOUD-ACC-012 的本地任务子范围。子范围通过不勾选完整 ACC。
 
 ## POC 要验证的能力
 
