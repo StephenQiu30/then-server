@@ -1,6 +1,12 @@
 # OOTD 完整产品能力与阶段架构设计
 
-更新：2026-09-22。**设计 `approved`；低成本 Look 链路实施 `pending`。** 用户已授权按调研全面替换设计。本文件是完整产品范围与阶段架构事实源，技术版本归 [Design 01](01-技术选型.md)，稳定需求归 [PRD 10](../prd/10-OOTD产品需求.md)，任务和证据分别归 [Plan 10](../plan/10-OOTD产品实施计划.md) 与 [Acceptance 10](../acceptance/10-OOTD产品系统验收.md)。
+更新：2026-09-30。**完整设计 `approved`；当前真实生成 POC/Demo `pending`，已有后端工程结果按各 Plan 认领。** 本文件是完整产品范围与阶段架构事实源，技术版本归 [Design 01](01-技术选型.md)，稳定需求归 [PRD 10](../prd/10-OOTD产品需求.md)，任务和证据分别归 [Plan 10](../plan/10-OOTD产品实施计划.md) 与 [Acceptance 10](../acceptance/10-OOTD产品系统验收.md)。
+
+## 当前阶段：POC 与最小 Demo
+
+按用户 2026-09-30 的最新要求，先执行 [14-02](../plan/14-02-本地生成POC与最小Demo执行计划.md)：一张实际完整图→本地 img2threejs→受控导出带纹理 GLB→复用既有任务/私有存储和最小 Web 演示。图片生成只有在获准的本地服务实际返回生成字节时才认领；缺服务时明确演示参考图→模型，完整图片能力仍待验。
+
+六套正式内容、完整 App、日记/社区/同步及高级角色等后续能力保留需求，当前先延期扩展。fixture、实际工具集成与产品旅程分别验收；缩小范围不降低原格式、安全、数据一致性、删除及正式发布标准。以下描述完整目标架构和后续产品阶段，不将它们全部作为本轮 POC 前置。
 
 ## 产品决定
 
@@ -62,15 +68,15 @@ flowchart TD
     ImageRequest --> API[Go Gin / Huma]
     API --> PG[PostgreSQL 任务与 Outbox]
     PG --> Queue[Kafka / Go worker]
-    Queue --> ImageProvider[图片编辑 Provider]
+    Queue --> ImageProvider[本地图片服务 / 后续准入 Provider]
     ImageProvider --> Validate[收取与验证]
     Validate --> Storage[私有 MinIO]
     Storage --> Image[完整 Look 图片]
     Image --> Save[保存 / 日期 / 主动分享]
     Image --> ModelRequest[用户请求立体展示]
     ModelRequest --> API
-    Queue --> Tripo[Tripo H3.1 静态 GLB]
-    Tripo --> Validate
+    Queue --> ModelTool[本地 img2threejs / 静态 GLB 导出]
+    ModelTool --> Validate
     Storage --> Cache[受保护缓存 / SHA-256]
     Cache --> Renderer[WKWebView / Three.js]
     Builtin[随包 Look 图片和 GLB] --> Cache
@@ -81,7 +87,7 @@ flowchart TD
 
 SwiftUI + Observation 拥有页面、草稿、任务反馈和保存行为；Three.js 只收取已验证模型句柄与观察命令。GRDB 保存本地业务数据，媒体字节独立受保护存放。Go 沿用现有单 module、单二进制、api/worker/all 和 Gin/Huma/GORM；PostgreSQL 保存任务、媒体、幂等和删除事实。Kafka + Outbox/Inbox 负责可靠唤醒，worker 不占用 HTTP 请求等待供应商完成。首片使用状态轮询，不引入 WebSocket、独立 Python/GPU 服务或新工作流引擎。
 
-运行时 OpenAPI 是唯一接口声明，业务表只在获准实现时增加 GORM record/集中 AutoMigrate；本文的概念对象不构成第二份 DTO/schema。当前已有媒体事件 worker，**尚无真实图片/Tripo 生成 worker，App 也尚无已启用云端 Client**。
+运行时 OpenAPI 是唯一接口声明，业务表只在获准实现时增加 GORM record/集中 AutoMigrate；本文的概念对象不构成第二份 DTO/schema。当前已有媒体事件和 fixture 生成后端工程；**真实图片服务/img2threejs 集成仍待验证，App 尚无已启用云端 Client**。本轮最小 Web Demo 复用同一后端与 Three.js，不先建设完整 SwiftUI/GRDB Look 路径。
 
 ## Look、资产和任务合同
 
@@ -106,7 +112,7 @@ SwiftUI + Observation 拥有页面、草稿、任务反馈和保存行为；Thre
 
 ## 静态 GLB 交付合同
 
-首轮 H3.1 `v3.1-20260211`，standard texture、triangle，约 20,000 面作为实验起点。关闭 rig、retarget、parts、quad、额外智能低模选项；优先普通 GLB 和已支持 PBR 材质/内嵌 PNG/JPEG。无骨架、无动作、无可编辑衣物也可通过“整套立体展示”，但不记为模块换装通过。
+当前 POC 验证实际 img2threejs 导出物；后续 H3.1 候选曾以 `v3.1-20260211`、standard texture、triangle、约 20,000 面为实验起点，启用前须重新核实。各路线均优先普通 GLB 和已支持 PBR 材质/内嵌 PNG/JPEG，不启用 rig、retarget、parts、quad 或额外智能低模服务。无骨架、无动作、无可编辑衣物可满足“整套立体展示”，不记为模块换装通过。
 
 原生 validator 改为版本化完整 Look 合同：允许实际需要的多 mesh/material 和内嵌纹理；验证 GLB 长度、buffer/accessor 边界、有限坐标、贴图尺寸/解码预算、索引、声明字节数与 SHA-256。拒绝外部 URI、未知必要扩展和超预算文件；不靠关闭校验接入。压缩扩展只有在配套解码器及设备收益验证后启用。模型整套校验、加载成功后原子替换，失败保留上一有效画面。
 
@@ -120,9 +126,9 @@ SwiftUI + Observation 拥有页面、草稿、任务反馈和保存行为；Thre
 
 ## 供应商选择与成本
 
-2026-09-22 已通过 GitHub、Context7、Firecrawl 与官方网页核查能力和价格，未发起付费生成。模型展示首选验证 Tripo；图片先验证其托管 Seedream v5。API 接收多图不等于同时保留所有衣物细节，先做授权参考集质量验证，失败才对照 FASHN 等专用 VTON；禁止无提示换供应商或地域。
+以下是 2026-09-22 的官方资料核查与候选测算，未发起付费生成，不代表 2026-09-30 的已复核价格或本轮调用授权。当前按 Design 07/14-02 验证本地路线；若后续另行启用云生成，再核实 Tripo、托管 Seedream v5 或专用 VTON。API 接收多图不等于保留衣物细节；禁止无提示换供应商或地域。
 
-| 调用 | 官方按量价，USD | 本路线用途 |
+| 调用 | 2026-09-22 官方资料按量价，USD | 后续候选用途 |
 | --- | --- | --- |
 | Seedream v5 基础图片编辑 | 5 credits = $0.05/次 | 多参考完整 Look 图片候选，最多四个参考输入 |
 | Tripo H3.1 standard texture | 30 credits = $0.30/次 | 已确认图片 → 整套静态 GLB；标准纹理已包含 |
@@ -132,7 +138,7 @@ SwiftUI + Observation 拥有页面、草稿、任务反馈和保存行为；Thre
 
 价格来源：[Tripo API](https://developers.tripo3d.ai/en/pricing)、[H3.1](https://developers.tripo3d.ai/en/models/v3-1)、[FASHN API](https://help.fashn.ai/plans-and-pricing/api-pricing)。价格有时效，真实调用前复核账单规则。
 
-一次成功图片 + 一次成功 GLB 的调用成本为 **$0.35**；已有合格图片只生成 GLB 为 **$0.30**。六套各一次成功约 $2.10，仅是调用额，不是充值门槛、人工成本或生产资产总成本。以 1,000 个图片结果、10% 主动生成 3D 的假设估算，调用额约 $80；全部生成约 $350。10% 是测算假设，不是用户数据。
+按上述历史单价测算，一次成功图片 + 一次成功 GLB 为 **$0.35**；已有合格图片只生成 GLB 为 **$0.30**。六套各一次成功约 $2.10，仅是调用额，不是当前报价、充值门槛、人工成本或生产资产总成本。以 1,000 个图片结果、10% 主动生成 3D 的假设估算，调用额约 $80；全部生成约 $350。10% 是测算假设，不是用户数据，本地工具也须记录实际计算资源及任何远程模型费用。
 
 实际可保留结果成本按 `N × (0.05 × r_image + p_3d × 0.30 × r_model)` 计算；r 是每个可保留结果对应的实际计费尝试次数。另计上传下载、对象存储、缓存、失败清理、税费、人工审核及固定服务成本。预算控制依赖明确触发、版本去重、配额预留、已计费对账和上限停止，不依赖无限重试。
 
@@ -159,7 +165,9 @@ Tripo [API 条款](https://developers.tripo3d.ai/en/terms) 区分免费/付费�
 
 当前工程微动和既有自动测试继续作为回归证据；不把工程模型、官方样例、API 文档或研究结论记为新路线已实现。
 
-## 阶段、投入与退出
+## POC 决策后的产品阶段、投入与退出
+
+当前 POC/Demo 的步骤和检查点只归 14-02；以下完整产品阶段及投入在其 go/no-go 后重新排期。
 
 | 顺序 | 交付结果 | 退出条件 / 执行 |
 | --- | --- | --- |
