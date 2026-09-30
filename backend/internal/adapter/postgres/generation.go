@@ -16,10 +16,13 @@ import (
 
 // GenerationRepository persists the provider-neutral task workflow. It does
 // not contain a provider client and therefore cannot spend money by itself.
-type GenerationRepository struct{ database *gorm.DB }
+type GenerationRepository struct {
+	database    *gorm.DB
+	taskTimeout time.Duration
+}
 
-func NewGenerationRepository(database *gorm.DB) *GenerationRepository {
-	return &GenerationRepository{database: database}
+func NewGenerationRepository(database *gorm.DB, taskTimeout time.Duration) *GenerationRepository {
+	return &GenerationRepository{database: database, taskTimeout: taskTimeout}
 }
 
 type generationJobRecord struct {

@@ -733,7 +733,7 @@ func TestWithdrawGenerationInputConsentRevokesDependentJobs(t *testing.T) {
 	}
 	seedGenerationInputMedia(t, ctx, database, owner.User.ID, []generationapp.InputReference{person, firstGarment, secondGarment})
 
-	repository := store.NewGenerationRepository(database)
+	repository := store.NewGenerationRepository(database, 0)
 	generations, err := generationapp.NewServiceWithCostEstimator(accounts, repository, generationapp.AdmissionPolicy{
 		Enabled: true, Currency: "USD", MaxConcurrentTasks: 4, MaxQuotaUnits: 4, MaxBudgetMinorUnits: 1000,
 	}, generationapp.CostEstimatorFunc(func(generationapp.Purpose, string, string, []byte) (generationapp.CostEstimate, error) {
@@ -899,7 +899,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 
 	policy := generationapp.AdmissionPolicy{Enabled: true, ZeroCost: true, MaxConcurrentTasks: 4, MaxQuotaUnits: 4}
-	generations, err := generationapp.NewService(accounts, store.NewGenerationRepository(database), policy)
+	generations, err := generationapp.NewService(accounts, store.NewGenerationRepository(database, 0), policy)
 	if err != nil {
 		t.Fatalf("construct generation service: %v", err)
 	}
@@ -1007,7 +1007,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	paidEstimator := generationapp.CostEstimatorFunc(func(generationapp.Purpose, string, string, []byte) (generationapp.CostEstimate, error) {
 		return generationapp.CostEstimate{Currency: "USD", EstimatedMinorUnits: 10, ReservedQuotaUnits: 2}, nil
 	})
-	paidGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database), paidPolicy, paidEstimator)
+	paidGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database, 0), paidPolicy, paidEstimator)
 	if err != nil {
 		t.Fatalf("construct paid generation service: %v", err)
 	}
@@ -1074,7 +1074,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("release quota probe task: %v", err)
 	}
 
-	workerRepository := store.NewGenerationRepository(database)
+	workerRepository := store.NewGenerationRepository(database, 0)
 	queuedClaimAt := created.View.Task.UpdatedAt
 	queuedClaim, queuedLease, found, err := workerRepository.ClaimNextSubmissionLease(ctx, "worker-queue", queuedClaimAt, time.Minute)
 	if err != nil || !found || queuedClaim.Task.ID != created.View.Task.ID || queuedClaim.Task.Status != generationapp.StatusRunning || queuedLease.FencingToken != 1 || queuedLease.Attempt != 1 {
@@ -1465,7 +1465,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 	usedQuotaPolicy := paidPolicy
 	usedQuotaPolicy.MaxQuotaUnits = 3
-	usedQuotaGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database), usedQuotaPolicy, paidEstimator)
+	usedQuotaGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database, 0), usedQuotaPolicy, paidEstimator)
 	if err != nil {
 		t.Fatalf("construct used quota generation service: %v", err)
 	}
@@ -1617,7 +1617,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	purposeEstimator := generationapp.CostEstimatorFunc(func(generationapp.Purpose, string, string, []byte) (generationapp.CostEstimate, error) {
 		return generationapp.CostEstimate{Currency: "USD", EstimatedMinorUnits: 60, ReservedQuotaUnits: 3}, nil
 	})
-	purposeGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database), purposePolicy, purposeEstimator)
+	purposeGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database, 0), purposePolicy, purposeEstimator)
 	if err != nil {
 		t.Fatalf("construct purpose-scoped generation service: %v", err)
 	}
@@ -1662,12 +1662,12 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	}
 	workflowPolicy := paidPolicy
 	workflowPolicy.MaxQuotaUnits = 10
-	paidGenerations, err = generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database), workflowPolicy, paidEstimator)
+	paidGenerations, err = generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database, 0), workflowPolicy, paidEstimator)
 	if err != nil {
 		t.Fatalf("construct generation service for remaining lifecycle checks: %v", err)
 	}
 	deletionAt := published.Task.UpdatedAt.Add(time.Minute)
-	workerRepository = store.NewGenerationRepository(database)
+	workerRepository = store.NewGenerationRepository(database, 0)
 	sourceRequests, err := workerRepository.RequestSourceCleanup(ctx, second.User.ID, paidInput.Inputs.References[0].MediaID, deletionAt)
 	if err != nil || len(sourceRequests) != 1 || sourceRequests[0].TaskID != paidCreated.View.Task.ID || sourceRequests[0].Scope != generationapp.CleanupScopeSource {
 		t.Fatalf("source cleanup did not claim the image task: requests=%+v err=%v", sourceRequests, err)
@@ -2220,7 +2220,7 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		t.Fatalf("expected four atomic reconciliation audit rows, got %d", reconciliationAuditCount)
 	}
 	verifyGenerationHTTPPersistence(t, ctx, database, generations, fourth.User.ID, fourth.Token, second.Token)
-	quotaHTTPGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database), paidPolicy, generationapp.CostEstimatorFunc(func(generationapp.Purpose, string, string, []byte) (generationapp.CostEstimate, error) {
+	quotaHTTPGenerations, err := generationapp.NewServiceWithCostEstimator(accounts, store.NewGenerationRepository(database, 0), paidPolicy, generationapp.CostEstimatorFunc(func(generationapp.Purpose, string, string, []byte) (generationapp.CostEstimate, error) {
 		return generationapp.CostEstimate{Currency: "USD", EstimatedMinorUnits: 60, ReservedQuotaUnits: 1}, nil
 	}))
 	if err != nil {
@@ -2300,7 +2300,7 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 	if err != nil {
 		t.Fatalf("register worker workflow owner: %v", err)
 	}
-	repository := store.NewGenerationRepository(database)
+	repository := store.NewGenerationRepository(database, time.Hour)
 	generations, err := generationapp.NewService(accounts, repository, generationapp.AdmissionPolicy{Enabled: true, ZeroCost: true, MaxConcurrentTasks: 2, MaxQuotaUnits: 2})
 	if err != nil {
 		t.Fatalf("construct worker workflow generation service: %v", err)
@@ -2594,4 +2594,8 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 	if err := database.WithContext(ctx).Table("generation_jobs").Where("owner_id = ?", owner.User.ID).Count(&remainingTasks).Error; err != nil || remainingTasks != 0 {
 		t.Fatalf("account generation jobs remained after completed receipt: count=%d err=%v", remainingTasks, err)
 	}
+
+	t.Run("processing-deadline", func(t *testing.T) {
+		verifyGenerationProcessingDeadline(t, ctx, database, objects, accounts)
+	})
 }

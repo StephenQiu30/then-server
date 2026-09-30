@@ -190,6 +190,10 @@ func (w *SubmissionWorker) runClaimed(ctx context.Context, view TaskView, lease 
 
 	started, submission, err := w.repository.BeginSubmission(ctx, lease, w.now().UTC())
 	if err != nil {
+		if errors.Is(err, ErrGenerationTaskTimedOut) {
+			released, releaseErr := w.repository.ReleaseLease(ctx, lease, w.now().UTC())
+			return SubmissionResult{View: released}, errors.Join(err, releaseErr)
+		}
 		return SubmissionResult{View: view}, err
 	}
 	providerContext, cancel := context.WithTimeout(ctx, w.policy.ProviderTimeout)

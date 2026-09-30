@@ -98,7 +98,7 @@ func Run(log *slog.Logger) error {
 			return executorErr
 		}
 		cleanupWorker, err = generationapp.NewCleanupWorker(
-			postgres.NewGenerationRepository(pool.ORM()),
+			postgres.NewGenerationRepository(pool.ORM(), cfg.Generation.TaskTimeout),
 			fixtureCleanup,
 			generationapp.CleanupRetryPolicy{LeaseTTL: time.Minute, BaseDelay: 5 * time.Second, MaxDelay: 5 * time.Minute},
 		)
@@ -106,13 +106,13 @@ func Run(log *slog.Logger) error {
 			return err
 		}
 		if cfg.Generation.Retention > 0 {
-			retentionWorker, err = generationapp.NewRetentionWorker(postgres.NewGenerationRepository(pool.ORM()), cfg.Generation.Retention)
+			retentionWorker, err = generationapp.NewRetentionWorker(postgres.NewGenerationRepository(pool.ORM(), cfg.Generation.TaskTimeout), cfg.Generation.Retention)
 			if err != nil {
 				return err
 			}
 		}
 		if cfg.Generation.Mode == config.GenerationModeLocal && cfg.Generation.LocalImageEndpoint == "" {
-			timeoutWorker, err = generationapp.NewTaskTimeoutWorker(postgres.NewGenerationRepository(pool.ORM()), objects, generationfixture.ProviderName, cfg.Generation.TaskTimeout)
+			timeoutWorker, err = generationapp.NewTaskTimeoutWorker(postgres.NewGenerationRepository(pool.ORM(), cfg.Generation.TaskTimeout), objects, generationfixture.ProviderName, cfg.Generation.TaskTimeout)
 			if err != nil {
 				return err
 			}
@@ -229,7 +229,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		return err
 	}
 	generationPolicy, generationCostEstimator := generationAdmissionPolicy(cfg.Generation)
-	generations, err := generationapp.NewServiceWithCostEstimator(accounts, postgres.NewGenerationRepository(pool.ORM()), generationPolicy, generationCostEstimator)
+	generations, err := generationapp.NewServiceWithCostEstimator(accounts, postgres.NewGenerationRepository(pool.ORM(), cfg.Generation.TaskTimeout), generationPolicy, generationCostEstimator)
 	if err != nil {
 		return err
 	}

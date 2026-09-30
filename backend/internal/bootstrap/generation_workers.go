@@ -114,7 +114,7 @@ func newGenerationWorkerRunners(cfg config.Config, database *gorm.DB, objects *o
 	if err != nil {
 		return nil, err
 	}
-	repository := store.NewGenerationRepository(database)
+	repository := store.NewGenerationRepository(database, cfg.Generation.TaskTimeout)
 	leaseTTL := generationWorkerLeaseTTL(cfg.Generation.ProviderTimeout)
 	retry := generationapp.RetryPolicy{
 		MaxAttempts: cfg.Generation.MaxSubmissionAttempts,

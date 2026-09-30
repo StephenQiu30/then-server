@@ -65,3 +65,13 @@ func TestTaskTimeoutWorkerInventoriesBeforeSettlement(t *testing.T) {
 		t.Fatalf("inventory failure settled task: settled=%v err=%v", repository.settled, err)
 	}
 }
+
+func TestTaskProcessingDeadlineIncludesQueueAndRetryTime(t *testing.T) {
+	deadline := generationTestNow.Add(time.Hour)
+	if TaskProcessingExpired(generationTestNow, time.Hour, deadline.Add(-time.Nanosecond)) ||
+		!TaskProcessingExpired(generationTestNow, time.Hour, deadline) ||
+		!TaskProcessingExpired(generationTestNow, time.Hour, deadline.Add(time.Second)) ||
+		TaskProcessingExpired(generationTestNow, 0, deadline) {
+		t.Fatal("task processing deadline boundary is incorrect")
+	}
+}

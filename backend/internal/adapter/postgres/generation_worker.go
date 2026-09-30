@@ -51,6 +51,9 @@ func (r *GenerationRepository) acquireLease(ctx context.Context, taskID, owner s
 				return err
 			}
 		}
+		if generationapp.TaskProcessingExpired(task.CreatedAt, r.taskTimeout, at) {
+			return generationapp.ErrGenerationTaskTimedOut
+		}
 		previousRevision := task.StatusRevision
 		if _, err := task.AcquireLease(owner, at, ttl); err != nil {
 			return err
@@ -188,6 +191,9 @@ func (r *GenerationRepository) claimNextLease(ctx context.Context, owner string,
 		var record generationJobRecord
 		query := filter(tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})).
 			Order("created_at ASC").Order("id ASC").Limit(1)
+		if r.taskTimeout > 0 {
+			query = query.Where("created_at > ?", at.UTC().Add(-r.taskTimeout))
+		}
 		if err := query.First(&record).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
@@ -245,6 +251,9 @@ func (r *GenerationRepository) RenewLease(ctx context.Context, lease generationa
 		if err != nil {
 			return err
 		}
+		if generationapp.TaskProcessingExpired(task.CreatedAt, r.taskTimeout, at) {
+			return generationapp.ErrGenerationTaskTimedOut
+		}
 		previousRevision := task.StatusRevision
 		if _, err := task.RenewLease(lease, at, ttl); err != nil {
 			return err
@@ -264,7 +273,7 @@ func (r *GenerationRepository) RenewLease(ctx context.Context, lease generationa
 		return err
 	})
 	if err != nil {
-		return generationapp.TaskView{}, generationapp.Lease{}, generationGenerationError(err)
+		return generationapp.TaskView{}, generationapp.Lease{}, generationWorkerError(err)
 	}
 	return view, renewed, nil
 }
@@ -323,6 +332,9 @@ func (r *GenerationRepository) ReleaseLeaseForRetry(ctx context.Context, lease g
 func (r *GenerationRepository) BeginSubmission(ctx context.Context, lease generationapp.Lease, at time.Time) (generationapp.TaskView, generationapp.Submission, error) {
 	var submission generationapp.Submission
 	view, err := r.mutateLeasedTask(ctx, lease, at, func(task *generationapp.Task) error {
+		if generationapp.TaskProcessingExpired(task.CreatedAt, r.taskTimeout, at) {
+			return generationapp.ErrGenerationTaskTimedOut
+		}
 		var beginErr error
 		submission, beginErr = task.BeginSubmission(at)
 		return beginErr
@@ -482,6 +494,7 @@ func generationWorkerError(err error) error {
 	if errors.Is(err, generationapp.ErrGenerationNotFound) ||
 		errors.Is(err, generationapp.ErrGenerationUnavailable) ||
 		errors.Is(err, generationapp.ErrInvalidGenerationInput) ||
+		errors.Is(err, generationapp.ErrGenerationTaskTimedOut) ||
 		errors.Is(err, generationapp.ErrInvalidGenerationOutput) ||
 		errors.Is(err, generationapp.ErrInvalidGenerationSettlement) ||
 		errors.Is(err, generationapp.ErrGenerationSettlementConflict) ||
