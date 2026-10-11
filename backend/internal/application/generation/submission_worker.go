@@ -20,7 +20,7 @@ var (
 //
 // Querying an accepted provider task and publishing a validated output are
 // intentionally separate operations. This worker only owns the submit edge;
-// a future provider/object-store worker can consume the accepted identity.
+// the observation and result workers can consume the accepted identity.
 type SubmissionWorkerRepository interface {
 	AcquireLease(context.Context, string, string, time.Time, time.Duration) (TaskView, Lease, error)
 	ReleaseLease(context.Context, Lease, time.Time) (TaskView, error)

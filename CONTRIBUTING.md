@@ -4,8 +4,8 @@
 
 ## 工作流程
 
-1. 先阅读任务对应的单功能 PRD、design、产品级计划和验收文档；进入实现的切片还必须阅读已批准的同编号执行计划。
-2. 使用 `go version`，以及任务实际涉及的 `node --version` 与 `npm --version`，确认本机工具链和 Design 01 固定基线一致；iOS 工具链在独立 `then-app` 核对。
+1. 先阅读当前需求、PROJECT、DESIGN 与相关代码。
+2. 使用 `go version`，以及任务实际涉及的 `node --version` 与 `npm --version`，确认本机工具链和 锁文件与工程配置一致；iOS 工具链在独立 `then-app` 核对。
 3. 从 `main` 创建短周期分支，推荐使用 `<type>/<short-name>`，例如 `feat/wardrobe-import`、`fix/tryon-retry` 或 `docs/commit-convention`。
 4. 使用小而聚焦的提交，提交标题和 Pull Request 标题必须遵循下方 Git 提交规范。
 5. 提交 Pull Request 前运行与风险匹配的测试和生成检查。
@@ -13,7 +13,7 @@
 
 ## 后端开发入口
 
-开始后端编码前，按 [目录职责](docs/design/02-后端架构.md#目录)、[服务规范](docs/design/02-后端架构.md#依赖方向)与[开发交付 SOP](docs/design/02-后端架构.md#开发sop)核对切片。依赖精确版本仍归 Design 01；不另建第二份技术规范或重复任务清单。SOP 中未建立的流水线需在对应切片补齐，不能写作已通过。
+开始后端编码前读取 [后端规范](backend/AGENTS.md) 与 [PROJECT.md](PROJECT.md)，依赖版本以 go.mod/go.sum 为准。
 
 ## Git 提交规范
 
@@ -100,12 +100,12 @@ fix(ios,backend): 修复同步         # 包含多个 scope
 ## 文档和契约
 
 - 用户可见项目名使用“于是”；本仓库名使用 `then-server`；iOS 仓库名使用 `then-app`，技术标识使用 `ThenApp`；本地统一放在 `Then/` 父目录。
-- 工具链、依赖、供应商或最低系统版本变更必须先更新 `docs/design/01-技术选型.md` 并说明迁移与回滚。
+- 工具链、依赖、供应商或最低系统版本变更必须更新对应锁文件与工程配置并说明迁移与回滚。
 - 接口变更必须先修改 Huma operation、请求/响应类型与 tag，并验证运行时 `/openapi.json`；不得提交第二份 OpenAPI 契约。
 - Web 接口调用必须由同一 OpenAPI 生成到 `frontend/src/api/`，不得手写第二份请求模型。
 - 当前无历史数据的开发 schema 只由 Repository 内 GORM record 定义，并由 Main 启动时集中 `AutoMigrate`；需要保留数据或进入生产前另立版本化迁移计划。
-- 产品或架构行为变化时，同步更新 `docs/` 中的对应文档。
-- 交付按 design → PRD → execution plan → implementation → acceptance 推进。执行计划仅为已排期的可独立交付切片创建，并在同一文件中统一范围契约、任务、依赖与完成证据；不得用任务表反向替代产品或设计决策。
+- 产品或架构行为变化时，同步更新根目录工程规范。
+- 交付按当前需求 → 最小实现 → 验证推进；结果明确说明验证范围与尚未通过的条件。
 
 ## 质量和安全
 

@@ -75,7 +75,7 @@ type ObservationResult struct {
 
 // ObservationWorker queries one accepted provider task. A provider success
 // observation intentionally stops at validating; fetching, validating and
-// publishing an output are separate operations owned by a future object-store
+// publishing an output are separate operations owned by the result
 // worker.
 type ObservationWorker struct {
 	repository ObservationWorkerRepository

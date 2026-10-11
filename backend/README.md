@@ -55,9 +55,9 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 
 ## 生成配置与费用边界
 
-生成相关环境变量统一由 `internal/platform/config` 解析。默认 `GENERATION_MODE=off`、`GENERATION_ENABLED=false` 和 `GENERATION_PROVIDER_CALLS_ENABLED=false`：不会向图片/模型服务发起请求，也不会产生供应商生成费用。`GENERATION_MODE=local` 只允许确定性 fixture 或回环 `GENERATION_LOCAL_IMAGE_ENDPOINT`，货币和外部预算必须为零；`GENERATION_MODE=remote` 只表达后续远程意图，仍受供应商门禁限制。预算、配额、并发、最大提交次数、超时和保留期集中校验。
+生成相关环境变量统一由 `internal/platform/config` 解析。默认 `GENERATION_MODE=off` 和 `GENERATION_PROVIDER_CALLS_ENABLED=false`：不会向图片/模型服务发起请求，也不会产生供应商生成费用。`GENERATION_MODE=local` 只使用确定性 fixture，货币和外部预算必须为零；`GENERATION_MODE=remote` 只表达后续远程意图，仍受供应商门禁限制。预算、配额、并发、最大提交次数、超时和保留期集中校验。
 
-`GENERATION_PROVIDER_CALLS_ENABLED=true` 当前会被启动配置直接拒绝，直到 14-01 的供应商准入、代表素材 POC、真实 worker 和删除合同完成。未来开启该开关后，供应商 API 可能按其账户和价格产生费用；费用上限只能由 `GENERATION_MAX_BUDGET_MINOR_UNITS` 约束，不能把配置视为免费承诺。当前本地测试与 CI 使用合成 Provider/本地依赖，不调用付费生成服务。163 邮件也只有在完整邮件配置存在且实际调用验证/找回接口时才会发信；本切片不发送邮件，网易账号是否存在套餐或配额费用需按实际账号条款确认。
+`GENERATION_PROVIDER_CALLS_ENABLED=true` 当前会被启动配置直接拒绝，真实供应商适配、代表素材、费用与删除行为均待验证。未来开启该开关后，供应商 API 可能按其账户和价格产生费用；费用上限只能由 `GENERATION_MAX_BUDGET_MINOR_UNITS` 约束，不能把配置视为免费承诺。当前本地测试与 CI 使用合成 Provider/本地依赖，不调用付费生成服务。163 邮件也只有在完整邮件配置存在且实际调用验证/找回接口时才会发信；本切片不发送邮件，网易账号是否存在套餐或配额费用需按实际账号条款确认。
 
 ## 隐私前置 API
 
@@ -172,11 +172,11 @@ backend/
 └── .env.example
 ```
 
-详细职责、依赖方向和完成标准见 [AGENTS.md](AGENTS.md)；产品架构和 SOP 见 [Design 02](../docs/design/02-后端架构.md)。
+详细职责、依赖方向和完成标准见 [AGENTS.md](AGENTS.md)。
 
 ### HTTP 文件归属
 
-[17-29](../docs/plan/17-29-Backend目录与HTTP文件职责规范化.md) 已落实同一 httpapi package 内的文件职责：
+当前采用同一 httpapi package 内的文件职责：
 
 ```text
 internal/adapter/httpapi/
@@ -204,7 +204,7 @@ go test -race -tags=services ./tests/... -count=1 -v
 go test -race -tags=integration ./tests/... -count=1 -v
 ```
 
-`services` 使用已经启动的本机 PostgreSQL/MinIO/Redis/Kafka；`integration` 使用 Testcontainers 创建隔离 PostgreSQL 18、Redis、MinIO 与 Kafka，验证实际二进制从空库迁移、启动、认证限流、依赖断连恢复、合成照片上传/检查/删除和 SIGTERM 退出。镜像验证另见 [17-07](../docs/plan/17-07-后端容器构建与运行验证执行计划.md)。
+`services` 使用已经启动的本机 PostgreSQL/MinIO/Redis/Kafka；`integration` 使用 Testcontainers 创建隔离 PostgreSQL 18、Redis、MinIO 与 Kafka，验证实际二进制从空库迁移、启动、认证限流、依赖断连恢复、合成照片上传/检查/删除和 SIGTERM 退出。镜像验证使用 `tests/container`。
 
 ## Kafka 本地消息合同
 
@@ -214,4 +214,4 @@ franz-go 使用幂等生产和 `acks=all`，Outbox 在确认后标记 published�
 
 消费者关闭自动提交，一次处理一条，业务成功后同步提交 offset；失败最多尝试三次，每次最长 30 秒，间隔 250/500ms，耗尽后退出并保留 offset。非法记录停止消费并保留位置供检查，不静默跳过。消费者处理/提交期间阻止 rebalance，随后释放；worker 取消后等待全部协程退出，再关闭资源。
 
-services 使用 `THEN_TEST_KAFKA_BROKERS` 和每次运行独立 prefix，清理只作用于该次 topic/消费组。端到端业务幂等由 PostgreSQL Inbox/状态约束承担；单机 acks=all 不证明生产高可用。迁移、回退与生产门禁见 [17-26](../docs/plan/17-26-Kafka与工程规范化执行计划.md)。
+services 使用 `THEN_TEST_KAFKA_BROKERS` 和每次运行独立 prefix，清理只作用于该次 topic/消费组。端到端业务幂等由 PostgreSQL Inbox/状态约束承担；单机 acks=all 不证明生产高可用。生产高可用须独立验证。

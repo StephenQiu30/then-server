@@ -1,6 +1,6 @@
 # Go/Gin 后端工程规范
 
-本文件是 `backend/` 的直接工程规范。架构理由见 [`docs/design/02-后端架构.md`](../docs/design/02-后端架构.md)，精确依赖版本见 [`docs/design/01-技术选型.md`](../docs/design/01-技术选型.md)。
+本文件是 `backend/` 的直接工程规范。精确依赖版本以 `go.mod/go.sum` 为准。
 
 前后端共同的产品边界、目录与接口合同见 [PROJECT.md](../PROJECT.md)；本文件维护 Go 侧执行细则，两者必须保持一致。
 
@@ -54,7 +54,7 @@ backend/
 
 只按已经进入实现的业务能力创建语义包，例如 `application/account`、`adapter/postgres`、`adapter/httpapi`。不创建 `common`、`utils`、`manager` 等无明确所有权的收容目录。
 
-package 内继续按真实能力拆语义文件。HTTP 的 contract、route registration、handler 按能力分文件；PostgreSQL 的 records、commands/queries、moderation、notifications 等按事务所有权分文件。只有职责形成可独立导入和测试的依赖边界时才增加子 package，不能为套用 Java MVC 或缩短单个文件机械复制目录树。完整 SOP 见 [Design 24](../docs/design/24-Go后端工程结构研究与规范.md)。
+package 内继续按真实能力拆语义文件。HTTP 的 contract、route registration、handler 按能力分文件；PostgreSQL 的 records、commands/queries、moderation、notifications 等按事务所有权分文件。只有职责形成可独立导入和测试的依赖边界时才增加子 package，不能为套用 Java MVC 或缩短单个文件机械复制目录树。
 
 ## 依赖方向
 
@@ -77,7 +77,7 @@ application/<feature> -> 仅明确批准的更基础业务包
 | `application/eventworker` | Outbox relay、JPEG 有界检查/重编码、删除与清扫编排 | Gin/Huma、GORM、具体 SDK |
 | `platform` | 数据库和 HTTP 等技术资源的连接与生命周期 | 用户权限和业务状态规则 |
 
-根 `architecture_test.go` 检查单 module、唯一根入口与源码位置，阻止核心包反向依赖、跨 adapter 直接导入和生产导入测试包，校验业务白名单及测试 suite 布局。`main.go` 只允许 log/slog、os 和 bootstrap；HTTP routes 不容纳 DTO/receiver 方法，contract 不容纳 Handler、消费方接口或非 schema 函数。新增依赖方向前先更新 Design 与测试，不用全局 service locator 绕过组装。
+根 `architecture_test.go` 检查单 module、唯一根入口与源码位置，阻止核心包反向依赖、跨 adapter 直接导入和生产导入测试包，校验业务白名单及测试 suite 布局。`main.go` 只允许 log/slog、os 和 bootstrap；HTTP routes 不容纳 DTO/receiver 方法，contract 不容纳 Handler、消费方接口或非 schema 函数。新增依赖方向前先核对工程规范并更新测试，不用全局 service locator 绕过组装。
 
 ## Gin 与接口契约
 
@@ -107,8 +107,8 @@ application/<feature> -> 仅明确批准的更基础业务包
 
 ## 完成条件
 
-代码、Design、PRD、单切片 Plan 和 Acceptance 必须表达同一实现；依赖方向、运行时 OpenAPI、GORM schema、真实数据库行为、Redis 原子限流及相关 CI 检查均通过。验证范围要明确区分本地单测、真实服务、容器、远程 CI 和生产验收。
+代码、工程规范与本次验证必须表达同一实现；依赖方向、运行时 OpenAPI、GORM schema、真实数据库行为、Redis 原子限流及相关 CI 检查均通过。验证范围要明确区分本地单测、真实服务、容器、远程 CI 和生产验收。
 
 ## 当前文件职责实施
 
-[17-29](../docs/plan/17-29-Backend目录与HTTP文件职责规范化.md) 将账户、公开资料、隐私、衣橱、计划、实际穿着、日记与媒体统一为 `*_contract.go`、`*_routes.go`、`*_handlers.go`；社区的消费端口也归 handlers。DTO 与 schema 方法归 contract，operation 注册归 routes，消费接口/Handler/构造/映射归 handlers。`router.go` 只做 HTTP 组装；健康探测归 `health.go`，错误与请求关联归 `errors.go`，OpenAPI 规范化/序列化归 `openapi.go`，静态 Swagger 归既有 `docs.go`。不为这些文件新建嵌套 package。
+当前账户、公开资料、隐私、衣橱、计划、实际穿着、日记与媒体统一为 `*_contract.go`、`*_routes.go`、`*_handlers.go`；社区的消费端口也归 handlers。DTO 与 schema 方法归 contract，operation 注册归 routes，消费接口/Handler/构造/映射归 handlers。`router.go` 只做 HTTP 组装；健康探测归 `health.go`，错误与请求关联归 `errors.go`，OpenAPI 规范化/序列化归 `openapi.go`，静态 Swagger 归既有 `docs.go`。不为这些文件新建嵌套 package。

@@ -46,7 +46,7 @@ type OutputLineage struct {
 
 // OutputAsset is an immutable, ready result published by a generation task.
 // Deletion and visibility transitions are separate lifecycle facts owned by
-// the later DELETE-01 repository; this value only records a validated result.
+// the cleanup repository; this value only records a validated result.
 type OutputAsset struct {
 	ID              string
 	Lineage         OutputLineage
@@ -63,16 +63,6 @@ type OutputAsset struct {
 // the task moves through validating and terminal states.
 func (a OutputAsset) ValidateFor(task Task) error {
 	if !task.validTaskFacts() || !validOutputAsset(task, a) {
-		return ErrInvalidGenerationOutput
-	}
-	return nil
-}
-
-// ValidatePersistedFor permits a blank key on records created before private
-// output keys were tracked. Such records remain readable but cannot be newly
-// published or physically cleaned without a verified key.
-func (a OutputAsset) ValidatePersistedFor(task Task) error {
-	if !task.validTaskFacts() || !validPersistedOutputAsset(task, a) {
 		return ErrInvalidGenerationOutput
 	}
 	return nil

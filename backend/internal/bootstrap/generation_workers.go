@@ -79,7 +79,7 @@ func (s *generationWakeSignals) channel(stage string) <-chan struct{} {
 }
 
 func generationAdmissionPolicy(configuration config.GenerationConfig) (generationapp.AdmissionPolicy, generationapp.CostEstimator) {
-	fixtureEnabled := configuration.Enabled && configuration.Mode == config.GenerationModeLocal && configuration.LocalImageEndpoint == ""
+	fixtureEnabled := configuration.Enabled && configuration.Mode == config.GenerationModeLocal
 	policy := generationapp.AdmissionPolicy{
 		Enabled:             fixtureEnabled,
 		ZeroCost:            fixtureEnabled,
@@ -104,7 +104,7 @@ func generationAdmissionPolicy(configuration config.GenerationConfig) (generatio
 }
 
 func newGenerationWorkerRunners(cfg config.Config, database *gorm.DB, objects *objectstore.Store, log *slog.Logger, wake *generationWakeSignals) ([]func(context.Context) error, error) {
-	if cfg.Generation.Mode != config.GenerationModeLocal || cfg.Generation.LocalImageEndpoint != "" {
+	if cfg.Generation.Mode != config.GenerationModeLocal {
 		return nil, nil
 	}
 	if !cfg.Generation.Enabled || database == nil || objects == nil {

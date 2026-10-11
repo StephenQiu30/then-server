@@ -111,7 +111,7 @@ func TestGenerationConfigurationDefaultsClosedWithoutProviderCost(t *testing.T) 
 func TestGenerationConfigurationRequiresExplicitBoundedPolicy(t *testing.T) {
 	base := map[string]string{
 		"DATABASE_URL":                       "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable",
-		"GENERATION_ENABLED":                 "true",
+		"GENERATION_MODE":                    "remote",
 		"GENERATION_CURRENCY":                "USD",
 		"GENERATION_MAX_CONCURRENT_TASKS":    "1",
 		"GENERATION_MAX_QUOTA_UNITS":         "10",
@@ -140,7 +140,7 @@ func TestGenerationConfigurationRequiresExplicitBoundedPolicy(t *testing.T) {
 		{"unbounded timeout", "GENERATION_PROVIDER_TIMEOUT", "11m"},
 		{"missing task timeout", "GENERATION_TASK_TIMEOUT", "0s"},
 		{"unbounded task timeout", "GENERATION_TASK_TIMEOUT", "25h"},
-		{"invalid enable flag", "GENERATION_ENABLED", "yes"},
+		{"invalid mode", "GENERATION_MODE", "yes"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			environment := make(map[string]string, len(base))
@@ -155,7 +155,7 @@ func TestGenerationConfigurationRequiresExplicitBoundedPolicy(t *testing.T) {
 	}
 }
 
-func TestGenerationLocalModeIsZeroCostAndLoopbackOnly(t *testing.T) {
+func TestGenerationLocalModeIsZeroCost(t *testing.T) {
 	base := map[string]string{
 		"DATABASE_URL":                       "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable",
 		"GENERATION_MODE":                    "local",
@@ -173,22 +173,6 @@ func TestGenerationLocalModeIsZeroCostAndLoopbackOnly(t *testing.T) {
 	if local.Generation.Mode != GenerationModeLocal || !local.Generation.Enabled || local.Generation.Currency != "" || local.Generation.MaxBudgetMinorUnits != 0 {
 		t.Fatalf("unexpected local generation policy: %+v", local.Generation)
 	}
-
-	withEndpoint := make(map[string]string, len(base)+1)
-	for key, value := range base {
-		withEndpoint[key] = value
-	}
-	withEndpoint["GENERATION_LOCAL_IMAGE_ENDPOINT"] = "http://127.0.0.1:9100/v1/generate"
-	if _, err := Load(func(key string) (string, bool) { value, exists := withEndpoint[key]; return value, exists }); err != nil {
-		t.Fatalf("loopback image endpoint rejected: %v", err)
-	}
-
-	for _, endpoint := range []string{"https://127.0.0.1:9100/v1/generate", "http://example.test:9100/v1/generate", "http://127.0.0.1/v1/generate"} {
-		withEndpoint["GENERATION_LOCAL_IMAGE_ENDPOINT"] = endpoint
-		if _, err := Load(func(key string) (string, bool) { value, exists := withEndpoint[key]; return value, exists }); err == nil {
-			t.Fatalf("unsafe local image endpoint accepted: %s", endpoint)
-		}
-	}
 }
 
 func TestGenerationModeRejectsInvalidValue(t *testing.T) {
@@ -201,12 +185,12 @@ func TestGenerationModeRejectsInvalidValue(t *testing.T) {
 	}
 }
 
-func TestGenerationProviderCallsRemainClosedUntilGates(t *testing.T) {
+func TestGenerationProviderCallsRemainClosedWithoutAdapter(t *testing.T) {
 	environment := map[string]string{
 		"DATABASE_URL":                      "postgres://fixture:fixture@127.0.0.1:5432/fixture?sslmode=disable",
 		"GENERATION_PROVIDER_CALLS_ENABLED": "true",
 	}
-	if _, err := Load(func(key string) (string, bool) { value, exists := environment[key]; return value, exists }); err == nil || !strings.Contains(err.Error(), "GATE/POC/WORKER") {
+	if _, err := Load(func(key string) (string, bool) { value, exists := environment[key]; return value, exists }); err == nil || !strings.Contains(err.Error(), "validated provider adapter") {
 		t.Fatalf("provider calls were not fail-closed: %v", err)
 	}
 }

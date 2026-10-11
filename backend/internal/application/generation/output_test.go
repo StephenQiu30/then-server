@@ -194,17 +194,14 @@ func TestOutputObjectKeyBindsPurposeAndRejectsUnsafeIDs(t *testing.T) {
 	}
 }
 
-func TestPersistedLegacyOutputWithoutObjectKeyIsReadableButNotPublishable(t *testing.T) {
+func TestOutputRejectsMissingObjectKey(t *testing.T) {
 	task := validatingTask(t, validCreateInput())
-	asset, err := NewOutputAsset("asset-image-1", task, imageOutputFact(), generationTestNow.Add(3*time.Minute))
+	asset, err := NewOutputAsset("asset-1", task, imageOutputFact(), task.UpdatedAt)
 	if err != nil {
 		t.Fatal(err)
 	}
 	asset.ObjectKey = ""
 	if err := asset.ValidateFor(task); !errors.Is(err, ErrInvalidGenerationOutput) {
-		t.Fatalf("legacy output passed the new publication validation: %v", err)
-	}
-	if err := asset.ValidatePersistedFor(task); err != nil {
-		t.Fatalf("legacy persisted output became unreadable: %v", err)
+		t.Fatalf("output without a private object key was accepted: %v", err)
 	}
 }

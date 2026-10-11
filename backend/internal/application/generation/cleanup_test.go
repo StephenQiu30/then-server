@@ -34,7 +34,7 @@ func TestCleanupRequestRetainsTargetsAcrossRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	targets := []CleanupTarget{
-		{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectVersionID: "object-version-1"},
+		{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectKey: "owners/owner-1/generation/job-1/output.jpg", ObjectVersionID: "object-version-1"},
 		{Kind: CleanupTargetProvider, ID: "provider-task-1"},
 	}
 	request, err := NewCleanupRequest("cleanup-1", task, CleanupScopeTask, targets, generationTestNow.Add(time.Minute))
@@ -213,18 +213,18 @@ func TestCleanupRequestKeepsDistinctObjectVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	request, err := NewCleanupRequest("cleanup-object-versions", task, CleanupScopeTask, []CleanupTarget{
-		{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectVersionID: "object-version-1"},
+		{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectKey: "owners/owner-1/generation/job-1/output.jpg", ObjectVersionID: "object-version-1"},
 	}, generationTestNow.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := request.AddTarget(CleanupTarget{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectVersionID: "object-version-2"}, generationTestNow.Add(2*time.Minute)); err != nil {
+	if err := request.AddTarget(CleanupTarget{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectKey: "owners/owner-1/generation/job-1/output.jpg", ObjectVersionID: "object-version-2"}, generationTestNow.Add(2*time.Minute)); err != nil {
 		t.Fatalf("distinct object version was rejected: %v", err)
 	}
 	if len(request.Targets) != 2 {
 		t.Fatalf("distinct object version was dropped: %+v", request.Targets)
 	}
-	if err := request.AddTarget(CleanupTarget{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectVersionID: "object-version-2"}, generationTestNow); err != nil {
+	if err := request.AddTarget(CleanupTarget{Kind: CleanupTargetObject, ID: "asset-image-1", ObjectKey: "owners/owner-1/generation/job-1/output.jpg", ObjectVersionID: "object-version-2"}, generationTestNow); err != nil {
 		t.Fatalf("same object version replay was not idempotent: %v", err)
 	}
 	if len(request.Targets) != 2 {

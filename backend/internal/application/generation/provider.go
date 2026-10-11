@@ -64,7 +64,7 @@ type RemoteTask struct {
 	FailureCode string
 }
 
-// FetchRequest contains only immutable task facts needed by a future result
+// FetchRequest contains only immutable task facts needed by the result
 // adapter. It carries no provider SDK or object-store type.
 type FetchRequest struct {
 	TaskID         string

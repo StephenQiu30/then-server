@@ -180,9 +180,6 @@ func (w *CleanupWorker) deleteTarget(ctx context.Context, ownerID, taskID string
 	}
 	switch target.Kind {
 	case CleanupTargetObject:
-		if target.ObjectKey == "" {
-			return &CleanupTargetError{Code: "object_key_unavailable", Err: ErrGenerationCleanupTarget}
-		}
 		return w.executor.DeleteObject(ctx, target)
 	case CleanupTargetProvider:
 		return w.executor.DeleteProviderTask(ctx, target)

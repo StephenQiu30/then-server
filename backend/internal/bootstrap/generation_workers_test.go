@@ -49,7 +49,6 @@ func TestGenerationAdmissionPolicyEnablesOnlyZeroCostFixtureTasks(t *testing.T) 
 	for _, configuration := range []config.GenerationConfig{
 		{Mode: config.GenerationModeOff},
 		{Mode: config.GenerationModeRemote, Enabled: true},
-		{Mode: config.GenerationModeLocal, Enabled: true, LocalImageEndpoint: "http://127.0.0.1:9100/v1/generate"},
 	} {
 		policy, estimator := generationAdmissionPolicy(configuration)
 		if policy.Enabled || policy.ZeroCost || estimator != nil {
@@ -62,7 +61,6 @@ func TestGenerationWorkerRunnersStayClosedOutsideLocalFixtureMode(t *testing.T) 
 	for _, cfg := range []config.Config{
 		{Generation: config.GenerationConfig{Mode: config.GenerationModeOff}},
 		{Generation: config.GenerationConfig{Mode: config.GenerationModeRemote, Enabled: true}},
-		{Generation: config.GenerationConfig{Mode: config.GenerationModeLocal, Enabled: true, LocalImageEndpoint: "http://127.0.0.1:9100/v1/generate"}},
 	} {
 		runners, err := newGenerationWorkerRunners(cfg, nil, nil, nil, nil)
 		if err != nil || len(runners) != 0 {

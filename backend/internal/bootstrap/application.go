@@ -111,7 +111,7 @@ func Run(log *slog.Logger) error {
 				return err
 			}
 		}
-		if cfg.Generation.Mode == config.GenerationModeLocal && cfg.Generation.LocalImageEndpoint == "" {
+		if cfg.Generation.Mode == config.GenerationModeLocal {
 			timeoutWorker, err = generationapp.NewTaskTimeoutWorker(postgres.NewGenerationRepository(pool.ORM(), cfg.Generation.TaskTimeout), objects, generationfixture.ProviderName, cfg.Generation.TaskTimeout)
 			if err != nil {
 				return err

@@ -20,7 +20,7 @@ type generationCleanupRequestRecord struct {
 	SourceMediaID     *string    `gorm:"column:source_media_id;type:uuid;index:generation_cleanup_source_media_idx"`
 	AccountDeletionID *string    `gorm:"column:account_deletion_id;type:uuid;index:generation_cleanup_account_deletion_idx"`
 	Status            string     `gorm:"column:status;type:text;not null;index:generation_cleanup_owner_status_idx,priority:2;check:generation_cleanup_status_check,status IN ('pending','running','complete','failed')"`
-	AccessRevokedAt   *time.Time `gorm:"column:access_revoked_at;type:timestamptz"`
+	AccessRevokedAt   *time.Time `gorm:"column:access_revoked_at;type:timestamptz;check:generation_cleanup_access_revocation_check,(scope = 'orphan_output' AND access_revoked_at IS NULL) OR (scope <> 'orphan_output' AND access_revoked_at IS NOT NULL)"`
 	CompletedAt       *time.Time `gorm:"column:completed_at;type:timestamptz"`
 	StableError       string     `gorm:"column:stable_error;type:text;not null;default:''"`
 	Attempts          int        `gorm:"column:attempts;not null;default:0;check:generation_cleanup_attempts_check,attempts >= 0 AND attempts <= 100"`
@@ -533,7 +533,7 @@ func (r *GenerationRepository) BeginTaskCleanup(ctx context.Context, requestID s
 		if err != nil {
 			return err
 		}
-		if err := bindGenerationCleanupProviderInTx(tx, &loaded); err != nil {
+		if err := validateGenerationCleanupProviderInTx(tx, &loaded); err != nil {
 			return err
 		}
 		targets, err = loaded.Begin(at)
@@ -585,7 +585,7 @@ func (r *GenerationRepository) ClaimNextCleanup(ctx context.Context, at time.Tim
 		if err != nil {
 			return err
 		}
-		if err := bindGenerationCleanupProviderInTx(tx, &loaded); err != nil {
+		if err := validateGenerationCleanupProviderInTx(tx, &loaded); err != nil {
 			if !errors.Is(err, generationapp.ErrInvalidGenerationCleanup) {
 				return err
 			}
@@ -638,10 +638,8 @@ func (r *GenerationRepository) ClaimNextCleanup(ctx context.Context, at time.Tim
 	return request, targets, found, nil
 }
 
-// Legacy manifests predate provider-qualified targets. Bind them to the
-// immutable task provider before any external side effect and persist the
-// qualified snapshot with the claim.
-func bindGenerationCleanupProviderInTx(tx *gorm.DB, request *generationapp.CleanupRequest) error {
+// Check the complete immutable provider identity before any external side effect.
+func validateGenerationCleanupProviderInTx(tx *gorm.DB, request *generationapp.CleanupRequest) error {
 	needsProvider := false
 	for _, target := range request.Targets {
 		if target.Kind == generationapp.CleanupTargetProvider {
@@ -662,23 +660,15 @@ func bindGenerationCleanupProviderInTx(tx *gorm.DB, request *generationapp.Clean
 	if task.Provider == "" || task.ExternalTaskID == "" {
 		return generationapp.ErrInvalidGenerationCleanup
 	}
-	candidate := *request
-	candidate.Targets = append([]generationapp.CleanupTarget(nil), request.Targets...)
-	for index := range candidate.Targets {
-		target := &candidate.Targets[index]
+	for _, target := range request.Targets {
 		if target.Kind != generationapp.CleanupTargetProvider {
 			continue
 		}
-		if target.ID != task.ExternalTaskID || (target.Provider != "" && target.Provider != task.Provider) {
+		if target.ID != task.ExternalTaskID || target.Provider != task.Provider {
 			return generationapp.ErrInvalidGenerationCleanup
 		}
-		target.Provider = task.Provider
 	}
-	if err := candidate.Validate(); err != nil {
-		return err
-	}
-	request.Targets = candidate.Targets
-	return nil
+	return request.Validate()
 }
 
 // CompleteTaskCleanup records a successful deletion and removes the output

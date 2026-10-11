@@ -2,9 +2,7 @@
 
 “穿见”Web 前端（内部工程名 Then，原展示名“于是”）。项目使用 Next.js App Router、React、TypeScript、shadcn/ui + Radix Primitives、Tailwind CSS、TanStack Query、Axios、ESLint 与 Prettier。不使用 Vite 或 React Router。
 
-前后端工程总规范见 [PROJECT.md](../PROJECT.md)。2026-09-22 已按 [17-27](../docs/plan/17-27-Web设计体系与工程规范同步执行计划.md) 初始化 radix-nova / Lucide / RSC 和统一语义 token。账户页面按 [17-13](../docs/plan/17-13-Web账户管理执行计划.md) 实现；无图衣橱、计划和实际记录核验页分别按 [17-31](../docs/plan/17-31-Web衣橱数据核验执行计划.md)、[17-32](../docs/plan/17-32-Web穿搭计划数据核验执行计划.md)、[17-33](../docs/plan/17-33-Web实际穿着数据核验执行计划.md) 实现。首页、404 与错误重试共用基础页面结构。
-
-目录实施见 [17-28](../docs/plan/17-28-Frontend目录结构规范化.md)。路由入口保持直接，QueryProvider 独立于展示组件；生成 API 与唯一 Axios 入口保留。`npm test` 自动发现架构和单元测试；`npm run typecheck` 分别检查应用与测试。内部 assets 不参与源码扫描。
+前后端工程总规范见 [PROJECT.md](../PROJECT.md)。采用 radix-nova / Lucide / RSC 和统一语义 token；现有账户、衣橱、推荐、计划与实际记录页面消费运行时 OpenAPI 生成客户端。路由入口直接，QueryProvider 独立于展示组件；生成 API 与唯一 Axios 入口保留。测试自动发现架构和单元用例，类型检查覆盖应用与测试。
 
 ## 本地开发
 

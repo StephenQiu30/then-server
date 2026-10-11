@@ -1430,6 +1430,9 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 	if otherAccount.Code != http.StatusNotFound {
 		t.Fatalf("cross-account output access status=%d body=%s", otherAccount.Code, otherAccount.Body.String())
 	}
+	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", published.Task.ID).Update("object_key", "").Error; err == nil {
+		t.Fatal("PostgreSQL accepted an output without a private object key")
+	}
 	for _, overBudget := range []struct {
 		contentType string
 		byteSize    int64
@@ -1444,16 +1447,6 @@ func TestGenerationPersistenceLifecycle(t *testing.T) {
 		if err == nil {
 			t.Fatalf("PostgreSQL accepted over-budget generation output: type=%s size=%d", overBudget.contentType, overBudget.byteSize)
 		}
-	}
-	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", published.Task.ID).Update("object_key", "").Error; err != nil {
-		t.Fatalf("simulate legacy output without object key: %v", err)
-	}
-	legacyOutputView, err := workerRepository.Get(ctx, second.User.ID, published.Task.ID)
-	if err != nil || legacyOutputView.Asset == nil || legacyOutputView.Asset.ObjectKey != "" {
-		t.Fatalf("legacy output could not be read: view=%+v err=%v", legacyOutputView, err)
-	}
-	if err := database.WithContext(ctx).Table("generation_outputs").Where("task_id = ?", published.Task.ID).Update("object_key", outputObjectKey).Error; err != nil {
-		t.Fatalf("restore generation output object key: %v", err)
 	}
 	resultLease := generationapp.Lease{TaskID: published.Task.ID, Owner: "worker-result", FencingToken: published.Task.FencingToken, Attempt: published.Task.LeaseAttempt, ExpiresAt: outputAt.Add(time.Minute)}
 	replayedOutput, err := workerRepository.PublishOutput(ctx, resultLease, *published.Asset, outputAt)
@@ -2548,7 +2541,11 @@ func TestGenerationWorkersCompleteProviderNeutralPostgresMinIOWorkflow(t *testin
 	if _, err := objects.ReadOutputVersion(ctx, published.View.Asset.ObjectKey, published.View.Asset.ObjectVersionID, published.View.Asset.ByteSize); err != nil {
 		t.Fatalf("mismatched external task cleanup deleted the image version: %v", err)
 	}
-	setCleanupIdentity(published.View.Task.ID, "", published.View.Task.ExternalTaskID) // Pre-qualification legacy manifest.
+	setCleanupIdentity(published.View.Task.ID, "", published.View.Task.ExternalTaskID)
+	if found, err := cleanupWorker.RunOnce(ctx); found || err != nil {
+		t.Fatalf("cleanup with missing provider was not refused: found=%v err=%v", found, err)
+	}
+	setCleanupIdentity(published.View.Task.ID, generationfixture.ProviderName, published.View.Task.ExternalTaskID)
 	if found, err := cleanupWorker.RunOnce(ctx); err != nil || !found {
 		t.Fatalf("repaired fixture image cleanup did not converge: found=%v err=%v", found, err)
 	}

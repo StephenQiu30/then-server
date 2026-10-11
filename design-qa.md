@@ -37,11 +37,11 @@
 
 ## 浏览器交互
 
-在本机 Next + Go API + 隔离 PostgreSQL 环境中检查：场景入口、未登录提示、注册合成账号、创建三件真实衣物、生成候选、主动保存计划、实际列表仍为空，以及正式度未知时无解。候选可见截图为同目录 `recommend-result.png`；浏览器控制台 error 日志为空。源码变更的 lint/typecheck/build 与服务测试记录见 `docs/acceptance/13-穿搭推荐验收.md`。
+在本机 Next + Go API + 隔离 PostgreSQL 环境中检查：场景入口、未登录提示、注册合成账号、创建三件真实衣物、生成候选、主动保存计划、实际列表仍为空，以及正式度未知时无解。候选可见截图为同目录 `recommend-result.png`；浏览器控制台 error 日志为空。该记录属于当时版本，当前验证结果以当次交付为准。
 
 ## 品牌方案 3“穿见”复核
 
-- Source visual truth：`docs/design/assets/chuanjian-concept-board.png`，1254×1254 px 品牌概念板。独立透明图形、小尺寸版本与深色主屏幕图标已保存于 `frontend/public/brand/`。
+- Source visual truth：`frontend/public/brand/` 中的当前品牌资源。独立透明图形、小尺寸版本与深色主屏幕图标已保存于 `frontend/public/brand/`。
 - Rendered implementation：本机 `http://127.0.0.1:3017/` 的内置浏览器截图，522×733 px、亮色、首页默认场景；截图随浏览器核对输出内联展示，未另存为文件。概念板与同一时刻的页面截图在同一次图像输出中打开核对。目标是 36×36 px 导航标识与字标，不把整张 1254×1254 概念板当作 522×733 页面稿做像素比较。
 - 字体／文案：导航使用可读“穿见”，宽屏辅以 `CHUANJIAN`；首页、推荐、实际穿着和站点标题使用新名称。概念板的大字标在窄屏导航缩为组件字体，属于空间约束下的有意变化。
 - 布局／颜色：标识与文字在窄屏同列，账户入口仍在右侧，主导航保持下一行；珊瑚色只出现在标识落点，按钮与状态仍使用既有语义 token。

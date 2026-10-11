@@ -91,7 +91,7 @@ type generationOutputRecord struct {
 	ContentType        string     `gorm:"column:content_type;type:text;not null;check:generation_outputs_content_type_check,content_type IN ('image/jpeg','model/gltf-binary')"`
 	ByteSize           int64      `gorm:"column:byte_size;not null;check:generation_outputs_size_limit_check,((content_type = 'image/jpeg' AND byte_size BETWEEN 1 AND 12582912) OR (content_type = 'model/gltf-binary' AND byte_size BETWEEN 1 AND 10485760))"`
 	SHA256             string     `gorm:"column:sha256;type:char(64);not null"`
-	ObjectKey          string     `gorm:"column:object_key;type:text;not null;default:''"`
+	ObjectKey          string     `gorm:"column:object_key;type:text;not null;check:generation_outputs_object_key_check,object_key <> ''"`
 	ObjectVersionID    string     `gorm:"column:object_version_id;type:text;not null"`
 	PublishedAt        time.Time  `gorm:"column:published_at;type:timestamptz;not null"`
 	ConfirmedAt        *time.Time `gorm:"column:confirmed_at;type:timestamptz;check:generation_outputs_confirmation_check,confirmed_at IS NULL OR (purpose = 'image' AND confirmed_at >= published_at)"`
@@ -579,7 +579,7 @@ func generationReservationFromRecord(record generationQuotaReservationRecord) (g
 
 func generationOutputFromRecord(record generationOutputRecord, task generationapp.Task) (generationapp.OutputAsset, error) {
 	asset := generationapp.OutputAsset{ID: record.ID, Lineage: generationapp.OutputLineage{TaskID: record.TaskID, OwnerID: record.OwnerID, LookID: record.LookID, LookRevision: record.LookRevision, Purpose: generationapp.Purpose(record.Purpose), SourceImageAssetID: record.SourceImageAssetID, SourceImageSHA256: strings.TrimSpace(record.SourceImageSHA256)}, ContentType: record.ContentType, ByteSize: record.ByteSize, SHA256: record.SHA256, ObjectKey: record.ObjectKey, ObjectVersionID: record.ObjectVersionID, PublishedAt: record.PublishedAt}
-	if err := asset.ValidatePersistedFor(task); err != nil {
+	if err := asset.ValidateFor(task); err != nil {
 		return generationapp.OutputAsset{}, err
 	}
 	return asset, nil

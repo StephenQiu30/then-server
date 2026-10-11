@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Then Web 工程规范
 
-修改 `frontend/` 前先读取上方要求的已安装 Next.js 对应版本文档，并读取 [`PROJECT.md`](../PROJECT.md) 的组件、目录与状态规则。以根目录 [`DESIGN.md`](../DESIGN.md) 作为唯一视觉与交互标准，遵循 Design → PRD → Plan → Implementation → Acceptance 流程。
+修改 `frontend/` 前先读取上方要求的已安装 Next.js 对应版本文档，并读取 [`PROJECT.md`](../PROJECT.md) 的组件、目录与状态规则。以根目录 [`DESIGN.md`](../DESIGN.md) 作为唯一视觉与交互标准，按当前需求实现并验证可观察行为。
 
 组件体系固定为 shadcn/ui + Radix Primitives + Tailwind CSS v4，shadcn 基础类型为 `radix`。已初始化 radix-nova 配置并接入 Button/Badge，Radix Themes 已移除；只按实际用例增加组件。组件接入前用 npm runner 执行 shadcn `info` 和 `docs --base radix`，读取对应官方文档。
 

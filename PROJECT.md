@@ -1,42 +1,16 @@
 # Then 项目规范
 
-更新：2026-09-22。适用范围：`then-server/frontend`、`then-server/backend` 及两者共享的产品与接口约束。
+更新：2026-10-11。适用范围：`then-server/frontend`、`then-server/backend` 及两者共享的产品与接口约束。
 
-本文固定产品边界、Web 设计实现规则和前后端目录职责，作为后续开发的总入口。规则自本次文档确认生效；目标目录、组件和验收要求不代表代码已经实现。规范确认与功能实施分别记录；Kafka 和入口简化见 17-26，Web 基础组件见 17-27，账户业务页面与本地验收见 17-13。
+本文维护前后端工程边界，视觉与交互遵循根目录 [DESIGN.md](DESIGN.md)。技术版本以锁文件和工具链配置为准；HTTP 以 `backend/internal/adapter/httpapi` 的 Huma operation 和运行时 OpenAPI 为准；数据库以 `backend/internal/adapter/postgres` 的 GORM record 为准。执行细则见 [后端 AGENTS](backend/AGENTS.md) 与 [前端 AGENTS](frontend/AGENTS.md)。
 
-## 1. 文档职责与事实来源
+## 当前产品与实现边界
 
-| 文件或位置 | 唯一职责 |
-| --- | --- |
-| `PROJECT.md` | 跨前后端工程基线、组件体系、目录与交付约束 |
-| [DESIGN.md](DESIGN.md) | App/Web 共享视觉语言、颜色、字体、间距、圆角和响应式；不在本文复制第二套数值 |
-| [技术选型](docs/design/01-技术选型.md) | 技术路线、启用条件；安装版本以 package/lockfile、`go.mod/go.sum` 核实 |
-| [需求索引](docs/prd/README.md) / [设计索引](docs/design/README.md) | 各业务需求、状态、数据与接口设计 |
-| [计划索引](docs/plan/README.md) / [验收索引](docs/acceptance/README.md) | 单切片任务、实际完成状态与验证证据 |
-| [Backlog](BACKLOG.md) / [交接](HANDOVER.md) | 全局执行顺序与待办视图 / 标注日期的接手快照；不替代单切片事实 |
-| [AGENTS.md](AGENTS.md)、[前端细则](frontend/AGENTS.md)、[后端细则](backend/AGENTS.md) | 对应目录的执行规则，与本文保持一致 |
-| `backend/internal/adapter/httpapi` | Huma operation、HTTP DTO 与运行时 OpenAPI 的声明源 |
-| `backend/internal/adapter/postgres` | GORM record、开发 schema 与事务实现 |
+个人首版目标是本人参考/风格 → 完整穿搭图 → 本人确认 → 可选静态 GLB → Three.js 查看、本地保存和日期复用。先验一套满意结果，再扩五套。真实人物效果、供应商、费用与设备尚待验证；当前 iOS 使用 GRDB，SwiftData 与个人 API 接入尚未实施。
 
-用户当前要求优先。工程规则读本文，具体视觉数值读 `DESIGN.md`，业务范围读对应 PRD/Design，完成情况读 Plan/Acceptance。发现冲突应在同一变更中修正所属事实源和入口，不能默默选一份继续实现。变更共享视觉标准时，按既有规则同步 `then-app/DESIGN.md`；Web 专属工程规则不复制到 iOS。
+已有 Go 后端及 Web 账户、衣橱、推荐、计划和实际穿着页面继续维护。账号、社区和同步不是个人首版前置。计划、实际穿着与日记分别保存，未知属性不补成事实，私人媒体不公开。当前生成仅有确定性本地 fixture，不能当作真实 AI 成果。
 
-## 2. 固定产品需求与实施边界
-
-Then（用户可见品牌：穿见；原展示名：于是）是穿搭决策与记录产品。以下是既有需求的约束摘要，详细字段、状态和启用条件沿用 [PRD 10](docs/prd/10-OOTD产品需求.md)、[PRD 19](docs/prd/19-每日记录与穿搭社区需求.md) 和 [产品总体设计](docs/design/03-OOTD产品总体设计.md)。
-
-| 能力 | 必须保留的需求 | 交付边界 |
-| --- | --- | --- |
-| 默认穿搭 | 三套人物预设的完整 Look 图片/静态 GLB、整套切换、保存与日期；默认 App 路径零账号、零上传、离线可用 | Web 不因采用同一设计体系而自动承诺离线/PWA 或完整 App 功能 |
-| 真实衣橱 | 用户自愿建档、编辑、筛选、归档和删除；内置模板与实际拥有衣物分离 | 未知属性不得补成事实 |
-| 推荐与记录 | 基于真实可用衣物的可解释推荐；计划、实际穿着、反馈、Look 分别记录 | 保存搭配或日记不自动产生实际穿着事实 |
-| 私人日记 | 图文记录、原日期/时区、日历回顾，可独立于衣橱与穿着创建 | 私人内容默认不公开 |
-| 图文社区 | 明确发布、审核、发现/关注、赞藏、评论、通知、举报/屏蔽与申诉 | 发布前具备治理闭环；公开 API 不等于社区页面已交付 |
-| 账户与隐私 | 注册/登录、本人资料、会话控制、导出与删除 | 后端授权是最终判定，页面隐藏按钮不能替代鉴权 |
-| AI 与三维 | 完整穿搭图优先，用户按需生成整套静态 GLB，Three.js 查看与版本缓存；视频/模块换装/眼部后移 | 11-05 离线 Look、14-01 图片/模型任务分片验收；图可独立保存，模型失败不阻塞；继续禁止 Blender |
-
-**当前 Web 已实现 `/register`、`/login`、`/account`、`/wardrobe`、`/plans` 和 `/wear`**。账户、无图衣橱、穿搭计划和实际记录分别依据 [Design 16](docs/design/16-Web账户管理设计.md)、[Design 25](docs/design/25-Web衣橱数据核验设计.md)、[Design 26](docs/design/26-Web穿搭计划数据核验设计.md)、[Design 27](docs/design/27-Web实际穿着数据核验设计.md)；均已完成本地真实服务验证。`/plans`、`/wear` 避开同名后端 API 根路径。公开注册门禁仍在 17-13-REL-01；Web 数据页不抵扣 App 离线 Look、推荐或反馈验收。
-
-不新增商城、广告、订阅计费、私信、直播、任意模型上传或通用工作流平台。新业务先更新所属需求，不以组件库示例或脚手架模板扩大范围。
+不新增商城、广告、订阅计费、私信、直播、任意模型上传或通用工作流平台。项目不再维护 docs 目录，当前待办归根目录 BACKLOG，验证范围写入当次交付记录。
 
 ## 3. 固定技术基线
 
@@ -57,7 +31,7 @@ Vercel 插件的 Next.js/React 指南用于框架边界与性能规范。采用�
 
 shadcn/ui 提供项目内可维护的组件源码，Radix Primitives 提供交互与无障碍基础，Tailwind/语义 token 承接 Then 视觉。业务页面统一从 `@/components/ui/*` 导入基础组件；缺少组件时先查官方 registry，再做必要组合，不直接另造 Button、Dialog 或 Select。[官方 Next.js 接入说明](https://ui.shadcn.com/docs/installation/next)
 
-17-27 已通过官方 CLI 初始化 `radix-nova`，配置固定 Radix、Lucide、RSC 与 @/* 别名，实际接入 Button/Badge。旧 `@radix-ui/themes`、Theme Provider 和样式已移除；QueryClient Provider 保留。新增组件继续用 npm runner 显式核对 radix，再按实际使用从官方 registry 添加，不提前安装整套组件库。
+已通过官方 CLI 初始化 `radix-nova`，配置固定 Radix、Lucide、RSC 与 @/* 别名，实际接入 Button/Badge。旧 `@radix-ui/themes`、Theme Provider 和样式已移除；QueryClient Provider 保留。新增组件继续用 npm runner 显式核对 radix，再按实际使用从官方 registry 添加，不提前安装整套组件库。
 
 ## 4. 前端设计规范
 
@@ -148,7 +122,6 @@ frontend/
 │   ├── e2e/                       # 按需：可重复浏览器验收
 │   └── tsconfig.json              # 测试类型检查，继承应用的 strict 规则
 ├── public/                        # 按需：有公开发布权的静态资源
-├── assets/                        # 已有内部素材，不映射公开静态路径
 ├── components.json                # 已初始化，固定 radix 和 aliases
 ├── next.config.ts
 ├── openapi2ts.config.ts
@@ -168,7 +141,7 @@ frontend/
 
 ## 6. 规范化后端目录与服务规则
 
-沿用已实现架构，完整细则见 [backend/AGENTS.md](backend/AGENTS.md) 和 [Go 工程设计](docs/design/24-Go后端工程结构研究与规范.md)。
+沿用已实现架构，完整细则见 [backend/AGENTS.md](backend/AGENTS.md) 和 Go 工程设计。
 
 ```text
 backend/
@@ -228,7 +201,7 @@ backend/
 
 ## 8. 实施与验收
 
-顺序固定为：读取 PROJECT/DESIGN 与相关需求 → 更新功能设计和单切片 Plan → 最小端到端实现 → 验证 → 回写 Acceptance。视觉、API、数据库或状态变化要更新对应事实源，不建立第二套规范副本。
+顺序固定为：读取 PROJECT/DESIGN 与当前需求 → 最小端到端实现 → 验证 → 记录结果。视觉、API、数据库或状态变化要更新对应事实源，不建立第二套规范副本。
 
 ### 前端实现门禁
 
@@ -245,32 +218,3 @@ backend/
 API 需覆盖契约、鉴权/越权、错误响应、幂等/冲突与取消；数据库需真实约束和事务证据；worker 需重投、重试、清理与关闭证据。详细命令和环境以对应 [后端细则](backend/AGENTS.md) 为准。
 
 只改文档时检查交叉链接、规则一致性与 diff，不把未运行的构建、浏览器、远程 CI、生产或设备门禁写成通过。提交/推送按用户明确指令执行。
-
-## 9. 当前差距与下一实施切片
-
-以下更新至 2026-09-23，详细证据归对应 Plan/Acceptance：
-
-| 当前事实 | 目标与下一步 |
-| --- | --- |
-| Next.js + Tailwind v4 + TanStack Query + Axios + Umi 已存在 | 保留基础工程，账户页面消费生成客户端 |
-| 已初始化 radix-nova / Lucide / RSC，按账户页面增加 Field/Input/Card/Alert/AlertDialog 等 | 后续只按真实页面需要增加组件，更新先查看差异 |
-| Themes 已移除，globals 统一 DESIGN token，首页/404/error 使用共享 PageShell | 保持唯一主题、系统字体和最小客户端边界 |
-| DESIGN 已补齐 Web 错误色、对比度映射、焦点和触控基线，并同步 App 根文件 | 具体表单状态按业务页面验收；暗色仍不开放 |
-| Axios 只做请求与正文返回；账户 hook 管理安全错误文案与会话缓存 | 其他业务按各自切片补齐状态；账号生产条件仍待验证 |
-| 账户、无图衣橱、计划和实际记录页面已在真实服务完成本地验证，rewrites 覆盖当前业务路径 | 新增业务域时按切片同步 API 转发与发布条件；页面路径避开同名 API 根路径，公开入口仍须通过账号门禁 |
-| 后端已有 application/adapter 分层和架构测试 | 新增能力遵守现有边界，不进行无目标的目录重构 |
-
-## 10. 官方依据
-
-核对日期：2026-09-22。目录放置、业务边界和迁移策略是 Then 的项目决定；框架 API 以安装版本及以下官方资料为准。
-
-- Vercel 插件 `vercel:nextjs` / `vercel:react-best-practices`；[Vercel Next.js 文档](https://vercel.com/docs/frameworks/full-stack/nextjs)。
-- 已安装 Next.js 的 `frontend/node_modules/next/dist/docs/`：Project Structure、Server and Client Components；[Next.js 官方文档](https://nextjs.org/docs/app)。
-- 用户指定的 shadcn 技能；[shadcn Next.js](https://ui.shadcn.com/docs/installation/next)、[主题](https://ui.shadcn.com/docs/theming)、[Radix Button](https://ui.shadcn.com/docs/components/radix/button)、[Radix Dialog](https://ui.shadcn.com/docs/components/radix/dialog)、[Radix Field](https://ui.shadcn.com/docs/components/radix/field)。
-- [Radix Composition](https://www.radix-ui.com/primitives/docs/guides/composition) 与 [Accessibility](https://www.radix-ui.com/primitives/docs/overview/accessibility)。
-
-2026-09-22 后续用户变更：Kafka 替换 RabbitMQ，入口直接放在 `backend/main.go`，对应执行与验证见 [17-26](docs/plan/17-26-Kafka与工程规范化执行计划.md)。当前本地开发使用四个独立 topic、每 topic 一个稳定消费组、acks=all 和手动 offset 提交；业务提交后才推进消费位置，失败有界重试后停止并保留位置，重启可继续。生成任务唤醒由 [14-01](docs/plan/14-01-完整穿搭图与按需三维生成执行计划.md) 增加，生产集群与真实数据迁移仍按各自门禁处理。
-
-2026-09-22 前端基础规范实施归 [17-27](docs/plan/17-27-Web设计体系与工程规范同步执行计划.md)，验证证据归 Acceptance 17。
-
-2026-09-22 后端目录与 HTTP 文件职责实施见 [17-29](docs/plan/17-29-Backend目录与HTTP文件职责规范化.md)。单 module、唯一根入口、跨 adapter 隔离和 HTTP 文件职责由既有架构测试执行；跨层协作继续通过 bootstrap 与消费端口，不改变事务、API 或 Kafka 合同。

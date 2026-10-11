@@ -47,7 +47,7 @@ const CleanupIdentityMismatchCode = "cleanup_identity_mismatch"
 
 // CleanupTarget snapshots the private object identity or provider task that
 // still needs removal. The manifest is internal and is never returned by the
-// public task API. Empty object keys are retained only for legacy records.
+// public task API. Object targets require a complete versioned object identity.
 type CleanupTarget struct {
 	Kind            CleanupTargetKind `json:"kind"`
 	ID              string            `json:"id"`
@@ -77,7 +77,7 @@ func (target CleanupTarget) Validate() error {
 	}
 	switch target.Kind {
 	case CleanupTargetObject:
-		if target.Provider != "" || !validToken(target.ObjectVersionID, 160) || (target.ObjectKey != "" && !validGenerationOutputObjectKey(target.ObjectKey)) {
+		if target.Provider != "" || !validToken(target.ObjectVersionID, 160) || !validGenerationOutputObjectKey(target.ObjectKey) {
 			return ErrInvalidGenerationCleanup
 		}
 	case CleanupTargetProvider:
@@ -94,7 +94,7 @@ func (target CleanupTarget) validateForTask(ownerID, taskID string) error {
 	if err := target.Validate(); err != nil {
 		return err
 	}
-	if target.Kind == CleanupTargetObject && target.ObjectKey != "" && !validGenerationOutputObjectKeyForTask(ownerID, taskID, target.ObjectKey) {
+	if target.Kind == CleanupTargetObject && !validGenerationOutputObjectKeyForTask(ownerID, taskID, target.ObjectKey) {
 		return ErrInvalidGenerationCleanup
 	}
 	return nil

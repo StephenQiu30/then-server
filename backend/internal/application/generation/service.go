@@ -165,7 +165,7 @@ func (s *Service) GetOutput(ctx context.Context, token, taskID string) (OutputAs
 	if OutputExpired(view.Asset.PublishedAt, s.policy.OutputRetention, s.now().UTC()) {
 		return OutputAsset{}, ErrGenerationNotFound
 	}
-	if err := view.Asset.ValidatePersistedFor(view.Task); err != nil {
+	if err := view.Asset.ValidateFor(view.Task); err != nil {
 		return OutputAsset{}, ErrGenerationUnavailable
 	}
 	return *view.Asset, nil

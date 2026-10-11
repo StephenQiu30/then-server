@@ -4,7 +4,7 @@
 
 ## 优先级与仓库边界
 
-执行顺序为：用户当前要求 → 当前目录的 `AGENTS.md` → 根目录 `PROJECT.md`（跨前后端工程基线）与 `DESIGN.md`（视觉与交互）→ 已批准功能 Design/PRD/Plan → 代码和测试事实 → README。工程和目录规则与 [PROJECT.md](PROJECT.md) 保持一致。
+执行顺序为：用户当前要求 → 当前目录的 `AGENTS.md` → 根目录 `PROJECT.md`（跨前后端工程基线）与 `DESIGN.md`（视觉与交互）→ 当前已批准需求 → 代码和测试事实 → README。工程和目录规则与 [PROJECT.md](PROJECT.md) 保持一致。
 
 `then-server` 保存服务端代码、Web 前端和产品文档；iOS 位于同级独立仓库 `../then-app`。未明确需要跨端变更时不修改另一个仓库。
 
@@ -22,7 +22,7 @@ then-server/
 ├── .github/workflows/
 ├── backend/
 ├── frontend/                       # Next.js Web 应用；内部结构见 frontend/AGENTS.md
-└── docs/
+
 ```
 
 不为模板创建空目录，不新增第二个 Go module、重复的 `src/server` 包装层或独立 Swagger 服务。测试、验收和共享基础设施不得散落在仓库根目录或框架路由目录。
@@ -31,31 +31,22 @@ then-server/
 
 - 前后端工程基线与目标目录：[PROJECT.md](PROJECT.md)；目标规范与当前实现差距在其中明确区分。
 - 产品视觉与交互标准：根目录 [`DESIGN.md`](DESIGN.md)；同级 `then-app/DESIGN.md` 必须保持字节一致。
-- 技术版本和启用阶段：[`docs/design/01-技术选型.md`](docs/design/01-技术选型.md)。
-- Go/Gin 结构和 SOP：[`backend/AGENTS.md`](backend/AGENTS.md) 与 [`docs/design/02-后端架构.md`](docs/design/02-后端架构.md)。
+- 技术版本：`backend/go.mod/go.sum`、`frontend/package.json/package-lock.json`；iOS 以 Xcode 工程和 Package.resolved 为准。
+- Go/Gin 结构和 SOP：[`backend/AGENTS.md`](backend/AGENTS.md)。
 - HTTP 接口：`backend/internal/adapter/httpapi` 的 Huma operation 与 Go 类型 tag；运行中的 `/openapi.json` 是 Swagger/Umi 消费入口。
 - 数据库结构：`backend/internal/adapter/postgres` 的 GORM record 与集中 `AutoMigrate`。
-- 执行状态和证据：对应的 `docs/plan/` 与 `docs/acceptance/`。
-- 全局任务顺序与接手入口：根目录 [`BACKLOG.md`](BACKLOG.md) 与 [`HANDOVER.md`](HANDOVER.md)；实时完成状态仍以单切片 Plan/Acceptance 为准。
+- 全局任务顺序与接手入口：根目录 [`BACKLOG.md`](BACKLOG.md) 与 [`HANDOVER.md`](HANDOVER.md)。
 
-UI 开发前读取 `DESIGN.md` 并按其中颜色、字体、间距、组件和响应式定义实现。该文件只作为设计标准使用，其中的过程性文字不替代本 `AGENTS.md`、功能 Design/PRD/Plan、代码规范或测试要求；修改设计标准时必须原文同步两个仓库根目录文件。
+UI 开发前读取 `DESIGN.md` 并按其中颜色、字体、间距、组件和响应式定义实现。该文件只作为设计标准使用，其中的过程性文字不替代本 `AGENTS.md`、当前需求、代码规范或测试要求；修改设计标准时必须原文同步两个仓库根目录文件。
 
-## SOP
+## 工作流程
 
-1. 先读相关代码、Design、PRD、Plan/checklist、Acceptance 和 Git 状态。
-2. 用户可见行为、API、数据或架构变化时，先把决定同步到 Design/PRD 和单切片 Plan。
-3. 实现最小端到端路径，不预建未来包、表、接口、兼容层或脚本。人物技术遵循 Design 01 的 `AVATAR-BASELINE-01`（2026-09-30 修订）：个人自用的本人 Woo 式虚拟人偶，以身份/风格参考生成完整穿搭图，确认后按需整套静态 GLB、Three.js 展示、本地复用与预算控制。具体候选、本人样本和真机仍待验证；Blender 等固定资产工具仅为条件对照，首版不建完整衣柜。后续调研未经新的用户要求不能自行改写基线。
-4. 用可观察行为验证修复；数据库变化必须在真实 PostgreSQL 上验证。
-5. 回写 checklist 与 Acceptance，准确说明未运行的远程 CI、生产和设备验收。
+1. 先读相关代码、PROJECT、DESIGN 与 Git 状态，保留无关未提交改动。
+2. 当前个人目标为本人参考/风格 → 完整穿搭图 → 本人确认 → 按需整套静态 GLB → Three.js 查看与本地复用。先验一套满意结果，再扩五套；真实效果、费用、供应商和设备尚未通过验证。
+3. 实现最小端到端路径，不预建未来包、表、接口、兼容层或脚本。账号、社区与公共后端不是个人首版前置；现有功能按实际代码合同维护。
+4. 用可观察行为验证；数据库变化必须在真实 PostgreSQL 上验证。结果准确区分本地测试、远程 CI、真实供应商和设备验收。
+5. 根目录 CHANGELOG 按日期记录简短改动；BACKLOG 只维护尚未完成的工作。项目不再维护 docs 目录、历史实施账本或重复方案。
 
-每次推送后必须等待该提交 SHA 对应的完整 CI 工作流成功，核对全部 job 结论后才能报告交付通过。失败需修复并验证修复提交的 CI；本地测试通过不能替代远端 CI。
+每次推送后等待该 SHA 对应的完整 CI 成功后才能报告通过；本地测试不能替代远端 CI。提交和推送只在用户要求时执行，只暂存当前任务文件。
 
-文件和包使用简短的语义化名称。不得提交 `.env`、凭据、本地数据、日志、缓存、DerivedData 或临时生成物。提交与推送只在用户要求时执行，并只暂存当前任务文件。
-
-## 文档维护
-
-原地更新有效 Design/PRD/Plan/Acceptance；删除已被替代的方案、旧业务迁移和重复实验日志，同步所有索引与交叉链接。保留尚未完成的需求、阻断及必要可复核证据。README 只给入口与当前边界，具体状态归单切片 checklist，测试结果归 Acceptance；不得把开发完成等同于发布完成。
-
-完成切片后在根目录 `CHANGELOG.md` 按日期倒序补充简短改动，每项一句话。Plan/Backlog 原地更新状态，Acceptance 保留验证范围、结果及证据入口；相同验证统一记录一次，删除重复完成说明、逐轮耗时和已解决故障的过程日志。
-
-编号是稳定追踪身份，不为删除后的空号全量重排。PRD/Acceptance 同领域对应，Plan 使用 FF-SS；新切片继续递增、不复用退役编号，阅读次序维护在索引。完整规则见 [执行计划编号规范](docs/plan/README.md#编号与阅读顺序)。
+文件和包使用简短语义名称。不得提交 .env、凭据、本地数据、日志、缓存、DerivedData 或临时生成物。删除历史实现时同步移除无用测试、依赖、配置、资源与入口，不保留兼容包装层。
