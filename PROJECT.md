@@ -8,15 +8,15 @@
 
 正式品牌为衣序 / WEARLOG。本地父目录为 `Wearlog`，两个仓库为 `wearlog-server` 和 `wearlog-app`；Web 包为 `wearlog-frontend`，Go module 为 `github.com/StephenQiu30/wearlog-server/backend`，iOS 工程为 `WearlogApp`。不使用中文拼音命名。当前设计以 [WEARLOG Figma](https://www.figma.com/design/fYWIHuNucsMQBNYzXBPuEq/?node-id=5-4) 为准；工程名称与数据身份的边界见 [命名迁移](docs/validation/WEARLOG命名迁移.md)。
 
-当前工作先明确需求与验证方案；产品目标为人物展示、选衣试穿、前后对比、真实衣橱与实穿记录。现有二维能力与固定示例是实现基础，不代表真实试穿已交付。建议 P0、独立环绕门槛及待决策项见需求文档；Web 页面按最新版 Figma 与已授权任务维护；真实生成仍按需求门槛验证。需求见 [入口](docs/requirement/README.md)、[功能与交互](docs/requirement/03-功能需求与交互.md)、[验收条件](docs/requirement/06-交付阶段与验收.md)；技术结论见 [人物展示可行性](docs/research/人物展示可行性.md)。
+当前工作先明确需求与验证方案；产品目标为人物展示、选衣试穿、前后对比、真实衣橱与实穿记录。现有二维能力与固定示例是实现基础，不代表真实试穿已交付。建议 P0、独立环绕门槛及待决策项见需求文档；Web 页面按最新版 Figma 与已授权任务维护；真实生成仍按需求门槛验证。需求见 [入口](docs/requirement/README.md)、[功能与交互](docs/requirement/03-功能需求与交互.md)、[验收条件](docs/requirement/06-交付阶段与验收.md)；技术证据见 [人物展示可行性](docs/research/人物展示可行性.md)，落地模块、接口改造及顺序见 [首版技术实现方案](docs/research/首版技术实现方案.md)。
 
 文档职责固定：`docs/requirement` 保存产品目标、范围、业务规则和验收；`docs/research` 保存来源、竞品源码和技术候选；`docs/validation` 保存实现、截图、耗时、费用与测试证据。需求改变才更新需求正文，不为每轮操作新增需求分析文件。工程待办与接手状态仍归 BACKLOG/HANDOVER。
 
 已有二维衣橱、照片上传/补换图、平铺搭配、日期计划和实穿统计的本地实现状态见 [二维验证](docs/validation/25-二维衣橱与搭配最小交付.md)、[照片上传](docs/validation/26-真实衣物照片上传最小交付.md)、[抠图与裁剪](docs/validation/27-本地抠图与简单裁剪最小交付.md)。这些是已做工作的记录，不是本轮新验收通过或扩展全部模块的指令；完整统计、设备与环境限制按原记录保留。
 
-2026-10-13 按当前用户授权，Web 首页已实现新版 Figma 的人物展示、选衣与前后对比核心交互，含本地照片预览和示例草稿。它复用成对设计素材；未接入供应商推理，也不代表完整 31 个画面、真实照片试穿或连续环绕已经交付。原二维业务功能继续保留。
+2026-10-13 按当前用户授权，Web 首页已实现新版 Figma 的人物展示、选衣与前后对比核心交互，含本地照片预览和示例草稿。它复用成对设计素材；未接入供应商推理，也不代表最新 27 个画板的全部业务、真实照片试穿或连续环绕已经交付。原二维业务功能继续保留。
 
-现有 Go/Web 工程继续保留，账号、社区和同步不是个人首版前置；本次不修改 iOS 或重建既有服务。计划、实穿与可选照片分别表达，未知属性不补成事实，私人媒体不公开。历史人物与生成实验已移出需求目录，仅保留研究/验证证据。
+现有 Go/Web 工程继续保留，私人账户和访问隔离属于真实内测必需；社区与跨端同步后置；iOS 已同步项目与品牌命名，真实试穿能力尚未移植；不重建既有服务。计划、实穿与可选照片分别表达，未知属性不补成事实，私人媒体不公开。历史人物与生成实验已移出需求目录，仅保留研究/验证证据。
 
 不新增商城、广告、订阅计费、私信、直播、任意模型上传或通用工作流平台。技术选型依据后续受控样本的实际结果决定；img2threejs 已因实际质感失败停止；新人物方案只做研究，实施需另行确定。
 
@@ -45,22 +45,22 @@ shadcn/ui 提供项目内可维护的组件源码，Radix Primitives 提供交�
 
 ### 4.1 视觉与 token
 
-1. 遵循 `DESIGN.md` 的黑白画布、真实内容优先、Geist 排版、细边界和轻量层级。页面结构按 WEARLOG 的功能设计组织，不能照搬参考站点的品牌、营销导航或开发者术语。
+1. 遵循 `DESIGN.md` 的黑白画布、真实内容优先、Geist 排版、无静态边框和紧凑层级。页面结构按 WEARLOG 的功能设计组织，不能照搬参考站点的品牌、营销导航或开发者术语。
 2. 颜色、字体、间距、圆角和焦点样式在 `src/app/globals.css` 集中映射；Tailwind v4 使用 `@theme inline`。组件消费 `bg-background`、`text-foreground`、`text-muted-foreground` 等语义类，不在页面写十六进制、原始色阶或逐组件 `dark:` 色彩覆盖。[shadcn 主题规范](https://ui.shadcn.com/docs/theming)
 3. 默认浅色。暗色目前缺少完整设计验收，不因 shadcn 默认模板而自动增加切换入口；启用前在同一 token 体系补齐状态并验收。
-4. 先使用组件已有 `variant`/`size`；新增视觉变体归组件定义，调用方 `className` 用于布局。业务表面以间距、排版、细边界和轻阴影区分；大面积氛围渐变只用于首页。
+4. 先使用组件已有 `variant`/`size`；新增视觉变体归组件定义，调用方 `className` 用于布局。业务表面以间距、排版和中性背景区分；遵循最新无边框设计，不增加装饰阴影或氛围渐变。
 5. Web 加载 OFL 授权 Geist Sans/Mono，中文使用系统字体回退；不只在 CSS 声明未加载的字体。iOS 保留动态字号与平台语义。
 6. 使用 `flex/grid` 与 `gap-*`，不使用 `space-x-*`/`space-y-*`；等宽高用 `size-*`，省略文本用 `truncate`，条件类使用统一 `cn()`。
 
 基础语义映射固定如下，具体值从 `DESIGN.md` 取得：
 
 | shadcn token                        | WEARLOG 语义                                                 |
-| ----------------------------------- | --------------------------------------------------------- |
-| `background` / `foreground`         | 页面画布 / 主正文                                         |
-| `card`、`popover` 与对应 foreground | 内容与浮层表面 / 其上正文                                 |
-| `primary` / `primary-foreground`    | 主要行动色 / 行动色上的文字                               |
-| `secondary`、`muted`、`accent`      | 次级表面、弱化区域、选中或强调表面                        |
-| `border`、`input`、`ring`           | 分隔线、输入边界、键盘焦点                                |
+| ----------------------------------- | ------------------------------------------------------------ |
+| `background` / `foreground`         | 页面画布 / 主正文                                            |
+| `card`、`popover` 与对应 foreground | 内容与浮层表面 / 其上正文                                    |
+| `primary` / `primary-foreground`    | 主要行动色 / 行动色上的文字                                  |
+| `secondary`、`muted`、`accent`      | 次级表面、弱化区域、选中或强调表面                           |
+| `border`、`input`、`ring`           | 分隔线、输入边界、键盘焦点                                   |
 | `destructive`                       | 删除及不可逆操作，已在 DESIGN 的 WEARLOG Web foundation 补齐 |
 
 `accent` 不另起第二个品牌色；destructive/错误 token 已补齐；新增成功等状态色须先补齐 `DESIGN.md` 后统一映射，不在页面各自选色。弱化正文仍需可读，不能直接把 disabled 颜色用于重要说明。
@@ -89,17 +89,17 @@ Radix 自定义触发器使用 `asChild`，承接的叶子组件必须传递 pro
 
 以设计中的职责命名，不以实现先后、颜色、页面位置或笼统的 Panel/Shell/Experience 命名。文件用 kebab-case，主组件导出对应的 PascalCase；Next 路由文件保留框架命名，shadcn 复合组件保留官方命名。
 
-| 层级 / 设计对象 | 当前组件与归属 | 职责 |
-| --- | --- | --- |
-| 基础控件 | `components/ui/Button`、`ToggleGroup`、`Badge`、`Dialog` | 通用交互和视觉变体，不知道衣物、搭配、账户或示例数据 |
-| 全站布局 | `layout/SiteLayout`、`AuthLayout`、`AccountLayout` | 布局结构；SiteLayout/AuthLayout 持有各自唯一 main |
-| 页面内容与标题 | `layout/PageContainer`、`PageHeader` | 共享宽度、标题、说明、操作插槽，不读取业务数据 |
-| 品牌入口 | `layout/BrandLink` | Logo、字标和首页链接；不能把带导航行为的组件只命名为 Logo |
-| 路由对应业务界面 | `FittingRoomView`、`WardrobeView`、`LookCollectionView`、`LookDetailView`、`OutfitPlanView`、`WearEventView`、`AccountView`、`RecommendationView` | 编排数据、页面状态与下层组件；收藏与详情是独立 View，不用 detail 布尔值切换两个页面 |
-| 表单 | `WardrobeItemForm`、`OutfitPlanForm`、`WearEventForm`、`AuthForm` | 表单值、校验展示、提交/取消；数据契约沿用 hooks/lib/生成 API |
-| 编辑与选择 | `OutfitFlatlayEditor`、`WardrobePhotoEditor`、`GarmentPicker` | Editor 用于平铺/图片编辑；Picker 接收可选衣物与当前选择，通过行动插槽组合页面操作；试穿服务状态不归 Picker，不从示例数组导出组件类型 |
-| 内容展示 | `PersonPreview`、`WardrobeItemImage`、`LookCard`、`LookComparison`、`WearStatistics` | 名称表达展示对象；可复用的搭配卡片和对比接收视图模型，不内置固定人物图片、存储或请求 |
-| 模态操作 | `PersonPhotoDialog`、`SaveLookDialog` | 动作/对象 + Dialog；避免无法判断保存什么的 SaveDialog |
+| 层级 / 设计对象  | 当前组件与归属                                                                                                                                    | 职责                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 基础控件         | `components/ui/Button`、`ToggleGroup`、`Badge`、`Dialog`                                                                                          | 通用交互和视觉变体，不知道衣物、搭配、账户或示例数据                                                                                 |
+| 全站布局         | `layout/SiteLayout`、`AuthLayout`、`AccountLayout`                                                                                                | 布局结构；SiteLayout/AuthLayout 持有各自唯一 main                                                                                    |
+| 页面内容与标题   | `layout/PageContainer`、`PageHeader`                                                                                                              | 共享宽度、标题、说明、操作插槽，不读取业务数据                                                                                       |
+| 品牌入口         | `layout/BrandLink`                                                                                                                                | Logo、字标和首页链接；不能把带导航行为的组件只命名为 Logo                                                                            |
+| 路由对应业务界面 | `FittingRoomView`、`WardrobeView`、`LookCollectionView`、`LookDetailView`、`OutfitPlanView`、`WearEventView`、`AccountView`、`RecommendationView` | 编排数据、页面状态与下层组件；收藏与详情是独立 View，不用 detail 布尔值切换两个页面                                                  |
+| 表单             | `WardrobeItemForm`、`OutfitPlanForm`、`WearEventForm`、`AuthForm`                                                                                 | 表单值、校验展示、提交/取消；数据契约沿用 hooks/lib/生成 API                                                                         |
+| 编辑与选择       | `OutfitFlatlayEditor`、`WardrobePhotoEditor`、`GarmentPicker`                                                                                     | Editor 用于平铺/图片编辑；Picker 接收可选衣物与当前选择，通过行动插槽组合页面操作；试穿服务状态不归 Picker，不从示例数组导出组件类型 |
+| 内容展示         | `PersonPreview`、`WardrobeItemImage`、`LookCard`、`LookComparison`、`WearStatistics`                                                              | 名称表达展示对象；可复用的搭配卡片和对比接收视图模型，不内置固定人物图片、存储或请求                                                 |
+| 模态操作         | `PersonPhotoDialog`、`SaveLookDialog`                                                                                                             | 动作/对象 + Dialog；避免无法判断保存什么的 SaveDialog                                                                                |
 
 通用视觉变体描述外观，不承载业务名：Toggle 使用 `solid/subtle/card/tile`，Badge/Alert 使用 `muted`，Button 使用 `outline-subtle/surface`。`garment/look/comparison/stage/scene` 不作为基础控件变体；无调用的旧变体直接删除，不留兼容别名。相同色值继续引用中性 token，品牌蓝仅出现在品牌资源中。
 
@@ -119,7 +119,7 @@ Radix 自定义触发器使用 `asChild`，承接的叶子组件必须传递 pro
 - 按 `DESIGN.md` 的响应式规则实现，在 320/390、768/834、1024/1440px 及关键断点两侧检查。小屏单列，内容不横向溢出；不使用 `overflow-x: hidden` 掩盖布局问题。表格确需横向滚动时限定在表格容器内。
 - 移动操作命中区至少 44 × 44px；键盘可完成表单、菜单和确认，关闭浮层回到触发点。按钮有可访问名称，图片按用途提供 alt，状态不只依赖颜色，支持减少动态效果与文字放大。[Radix 无障碍说明](https://www.radix-ui.com/primitives/docs/overview/accessibility)
 
-### 4.4 Next.js 与状态管理
+### 4.5 Next.js 与状态管理
 
 - Page/Layout 默认 Server Component；事件、状态、浏览器 API 放到最小必要 Client Component。共享 Client Provider 位于 `src/providers`，不能将整个根 layout 标记为客户端来规避边界。
 - 独立请求并行发起；合理使用路由 loading/Suspense，避免组件层层串行等待。三维等重组件在实际进入时动态加载，不进入账户页首屏包。

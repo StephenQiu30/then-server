@@ -4,6 +4,10 @@
 
 ## 2026-10-13
 
+- 修复 PostgreSQL 写入首次响应与幂等重放的时间精度差异，新增固定纳秒输入的 pgx 往返回归，保留真实服务断言。
+
+- 将 WEARLOG 代码与 iOS 品牌迁移提交推送 main；使用 pm-toolkit 修正需求、设计入口和交付状态冲突，补齐首版模块、数据、生成适配与环绕落地方案，未新增生成或采购。
+
 - 按 Vercel React Best Practices 核对试衣间职责：页面改名 FittingRoomView，选衣组件收敛为 GarmentPicker/GarmentOptions，预览状态回归页面，对比按需加载并复用重复素材；保留现有浏览器草稿键与未提交改动。
 
 - 按无边框紧凑版 Figma 实现 Web 人物展台、直接选衣与搜索、手机选衣 Sheet、并排/滑动对比，复用 shadcn 与 Lucide，保留本地草稿与能力边界；15 项生产浏览器测试通过，未新增生成或后端业务。
