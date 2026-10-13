@@ -113,11 +113,11 @@ func emptySelfAdultDeclaration(version string) privacyapp.SelfAdultDeclaration {
 }
 
 func selfAdultDeclarationFromRecord(record selfAdultDeclarationRecord) privacyapp.SelfAdultDeclaration {
-	confirmedAt := record.ConfirmedAt
+	confirmedAt := persistedTimestamp(record.ConfirmedAt)
 	return privacyapp.SelfAdultDeclaration{
 		PolicyVersion: record.PolicyVersion,
 		Confirmed:     record.WithdrawnAt == nil,
 		ConfirmedAt:   &confirmedAt,
-		WithdrawnAt:   record.WithdrawnAt,
+		WithdrawnAt:   timePointerCopy(record.WithdrawnAt),
 	}
 }

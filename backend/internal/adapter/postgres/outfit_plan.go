@@ -423,7 +423,7 @@ func readOutfitItemsForPlans(tx *gorm.DB, ownerID string, plans []outfitPlanReco
 }
 
 func outfitFromRecord(record outfitPlanRecord, items []outfitPlanItemRecord) outfitplanapp.OutfitPlan {
-	result := outfitplanapp.OutfitPlan{OwnerID: record.OwnerID, ID: record.ID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, ContextSummary: copyString(record.ContextSummary), Status: outfitplanapp.OutfitPlanStatus(record.Status), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Items: make([]outfitplanapp.OutfitPlanItemSnapshot, 0, len(items))}
+	result := outfitplanapp.OutfitPlan{OwnerID: record.OwnerID, ID: record.ID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, ContextSummary: copyString(record.ContextSummary), Status: outfitplanapp.OutfitPlanStatus(record.Status), Revision: record.Revision, CreatedAt: persistedTimestamp(record.CreatedAt), UpdatedAt: persistedTimestamp(record.UpdatedAt), Items: make([]outfitplanapp.OutfitPlanItemSnapshot, 0, len(items))}
 	for _, item := range items {
 		snapshot := outfitplanapp.OutfitPlanItemSnapshot{Ordinal: item.Ordinal}
 		if !item.Redacted && item.WardrobeItemID != nil && item.ItemRevision != nil && item.Name != nil && item.Category != nil && item.Availability != nil {

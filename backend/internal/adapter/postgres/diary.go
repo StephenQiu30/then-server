@@ -363,7 +363,7 @@ func diaryMediaRecords(ownerID, entryID string, mediaIDs []string) []diaryEntryM
 }
 
 func diaryFromRecord(record diaryEntryRecord, mediaIDs []string) diaryapp.DiaryEntry {
-	return diaryapp.DiaryEntry{ID: record.ID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, Title: record.Title, Body: record.Body, Mood: record.Mood, Occasion: record.Occasion, PlanID: record.PlanID, WearEventID: record.WearEventID, MediaIDs: append([]string(nil), mediaIDs...), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+	return diaryapp.DiaryEntry{ID: record.ID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, Title: record.Title, Body: record.Body, Mood: record.Mood, Occasion: record.Occasion, PlanID: record.PlanID, WearEventID: record.WearEventID, MediaIDs: append([]string(nil), mediaIDs...), Revision: record.Revision, CreatedAt: persistedTimestamp(record.CreatedAt), UpdatedAt: persistedTimestamp(record.UpdatedAt)}
 }
 
 func diaryFingerprint(input diaryapp.DiaryEntryInput) string {

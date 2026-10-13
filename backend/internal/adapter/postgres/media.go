@@ -668,7 +668,7 @@ func consentFromRecord(record consentRecord) mediaapp.ConsentRecord {
 	if record.WithdrawnAt != nil {
 		status = mediaapp.ConsentWithdrawn
 	}
-	return mediaapp.ConsentRecord{ID: record.ID, OwnerID: record.OwnerID, Purpose: record.Purpose, Category: record.Category, Processor: record.Processor, Region: record.Region, PolicyVersion: record.PolicyVersion, MaxRetentionHours: record.MaxRetentionHours, TrainingAllowed: record.TrainingAllowed, Status: status, AgreedAt: record.AgreedAt, WithdrawnAt: record.WithdrawnAt}
+	return mediaapp.ConsentRecord{ID: record.ID, OwnerID: record.OwnerID, Purpose: record.Purpose, Category: record.Category, Processor: record.Processor, Region: record.Region, PolicyVersion: record.PolicyVersion, MaxRetentionHours: record.MaxRetentionHours, TrainingAllowed: record.TrainingAllowed, Status: status, AgreedAt: persistedTimestamp(record.AgreedAt), WithdrawnAt: timePointerCopy(record.WithdrawnAt)}
 }
 
 func mediaFromRecord(record mediaAssetRecord) mediaapp.MediaAsset {

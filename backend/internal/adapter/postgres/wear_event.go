@@ -460,7 +460,7 @@ func readWearItemsForEvents(tx *gorm.DB, ownerID string, events []wearEventRecor
 }
 
 func wearEventFromRecord(record wearEventRecord, items []wearEventItemRecord) weareventapp.WearEvent {
-	result := weareventapp.WearEvent{ID: record.ID, OwnerID: record.OwnerID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, Completeness: weareventapp.WearEventCompleteness(record.Completeness), ContextSummary: copyString(record.ContextSummary), SourcePlanID: copyString(record.SourcePlanID), SourcePlanRevision: copyInt(record.SourcePlanRevision), SourceKind: weareventapp.WearEventSourceKind(record.SourceKind), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Items: make([]outfitplanapp.OutfitPlanItemSnapshot, 0, len(items))}
+	result := weareventapp.WearEvent{ID: record.ID, OwnerID: record.OwnerID, LocalDate: record.LocalDate.Format("2006-01-02"), TimeZone: record.TimeZone, Completeness: weareventapp.WearEventCompleteness(record.Completeness), ContextSummary: copyString(record.ContextSummary), SourcePlanID: copyString(record.SourcePlanID), SourcePlanRevision: copyInt(record.SourcePlanRevision), SourceKind: weareventapp.WearEventSourceKind(record.SourceKind), Revision: record.Revision, CreatedAt: persistedTimestamp(record.CreatedAt), UpdatedAt: persistedTimestamp(record.UpdatedAt), Items: make([]outfitplanapp.OutfitPlanItemSnapshot, 0, len(items))}
 	for _, item := range items {
 		snapshot := outfitplanapp.OutfitPlanItemSnapshot{Ordinal: item.Ordinal}
 		if !item.Redacted && item.WardrobeItemID != nil && item.ItemRevision != nil && item.Name != nil && item.Category != nil && item.Availability != nil {

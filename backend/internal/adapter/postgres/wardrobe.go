@@ -417,7 +417,7 @@ func wardrobeRecord(item wardrobeapp.WardrobeItem) wardrobeItemRecord {
 }
 
 func wardrobeFromRecord(record wardrobeItemRecord) wardrobeapp.WardrobeItem {
-	return wardrobeapp.WardrobeItem{OwnerID: record.OwnerID, ID: record.ID, Name: record.Name, OriginalPhotoMediaID: record.OriginalPhotoMediaID, PhotoMediaID: record.PhotoMediaID, SampleImage: record.SampleImage, Category: wardrobeapp.WardrobeCategory(record.Category), Availability: wardrobeapp.WardrobeAvailability(record.Availability), Source: wardrobeapp.WardrobeSource(record.Source), Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: typedPointer[wardrobeapp.WardrobeFormalityBand](record.FormalityBand), WarmthBand: typedPointer[wardrobeapp.WardrobeWarmthBand](record.WarmthBand), RainUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.RainUse), WalkingUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.WalkingUse)}, ArchivedAt: timePointerCopy(record.ArchivedAt), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+	return wardrobeapp.WardrobeItem{OwnerID: record.OwnerID, ID: record.ID, Name: record.Name, OriginalPhotoMediaID: record.OriginalPhotoMediaID, PhotoMediaID: record.PhotoMediaID, SampleImage: record.SampleImage, Category: wardrobeapp.WardrobeCategory(record.Category), Availability: wardrobeapp.WardrobeAvailability(record.Availability), Source: wardrobeapp.WardrobeSource(record.Source), Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: typedPointer[wardrobeapp.WardrobeFormalityBand](record.FormalityBand), WarmthBand: typedPointer[wardrobeapp.WardrobeWarmthBand](record.WarmthBand), RainUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.RainUse), WalkingUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.WalkingUse)}, ArchivedAt: timePointerCopy(record.ArchivedAt), Revision: record.Revision, CreatedAt: persistedTimestamp(record.CreatedAt), UpdatedAt: persistedTimestamp(record.UpdatedAt)}
 }
 
 func wardrobeListQuery(query *gorm.DB, filter wardrobeapp.WardrobeListFilter) *gorm.DB {
@@ -443,7 +443,7 @@ func timePointerCopy(value *time.Time) *time.Time {
 	if value == nil {
 		return nil
 	}
-	copy := *value
+	copy := persistedTimestamp(*value)
 	return &copy
 }
 
