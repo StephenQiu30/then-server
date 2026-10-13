@@ -39,6 +39,10 @@
 
 失败定位：Linux 纳秒时钟的首次写入响应仍带纳秒，pgx/PostgreSQL 保存及重读为微秒；涉及声明、同意撤回、衣物、日记、计划及实穿。固定 `.123456789` 输入，经真实 pgx codec 往返后为 `.123456`，新增回归在修复前六个子场景均失败，修复后通过。修复只在 PostgreSQL 记录到领域结果的时间映射统一精度，不放宽原有幂等断言，也不修改计数规则。修复提交为 `b954f494332458725b06e2806be8c6c7d7b28166`。修复后本地固定纳秒回归、vet、全量 race 和真实服务全量检查通过，services 用时 175.413 秒；没有修改原有六项服务断言。该修复与随后文档提交一起推送，远程验收必须匹配最终 main SHA 的全部 job，不能将首次失败标为通过。
 
+第二轮提交 `deeb403083be1757f369b755dcb1ee98bbe6acfd` 的 [运行 38357446501](https://github.com/StephenQiu30/wearlog-server/actions/runs/38357446501) 中，前端与 OCI 通过；集成发现旧夹具用纳秒 `withdrawnAt` 要求返回值逐纳秒相等。固定纳秒输入已在本机真实 PostgreSQL 容器复现。夹具改为明确的微秒输入，并新增持久化重读与首次响应一致检查，后续任务撤销/配额释放/越权断言保持。该场景修复后在本机真实 PostgreSQL 容器通过，用时 8.737 秒；最终全量集成仍以新提交 CI 为准。
+
+该轮还出现 MinIO/后端两次 setup-go 恢复同目录缓存的 `File exists` 警告；已将 MinIO 模块与构建缓存独立到 runner.temp，并将 action 配置纳入缓存 hash，避免复用旧目录布局。依据为 [固定 setup-go 源码](https://github.com/actions/setup-go/blob/924ae3a1cded613372ab5595356fb5720e22ba16/src/cache-utils.ts) 与实际 job 日志，不关闭原有检查。
+
 文档整理随后单独提交，实际提交 SHA 和该次完整 CI 以 Git 历史及 Actions 为准，不把本文的代码基线写成文档提交 SHA。即使工程检查通过，真实生成、账户 Look、连续环绕、真机和 G1/G2 接受结果仍未完成。
 
 ## 4. pm-toolkit 复核与修正

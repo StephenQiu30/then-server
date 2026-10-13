@@ -796,10 +796,15 @@ func TestWithdrawGenerationInputConsentRevokesDependentJobs(t *testing.T) {
 		t.Fatalf("read generation garment consent: id=%q err=%v", consentID, err)
 	}
 	media := store.NewMediaRepository(database)
-	withdrawnAt := time.Now().UTC()
+	// The persistence contract uses PostgreSQL/pgx microsecond precision.
+	withdrawnAt := time.Now().UTC().Truncate(time.Microsecond)
 	consent, err := media.WithdrawConsent(ctx, owner.User.ID, consentID, withdrawnAt)
 	if err != nil || consent.WithdrawnAt == nil || !consent.WithdrawnAt.Equal(withdrawnAt) {
 		t.Fatalf("withdraw generation input consent: consent=%+v err=%v", consent, err)
+	}
+	replayed, err := media.GetConsent(ctx, owner.User.ID, consentID)
+	if err != nil || replayed.WithdrawnAt == nil || !replayed.WithdrawnAt.Equal(*consent.WithdrawnAt) {
+		t.Fatalf("persisted consent withdrawal differs from first response: consent=%+v err=%v", replayed, err)
 	}
 
 	firstView, err := generations.Get(ctx, owner.Token, first.Task.ID)
