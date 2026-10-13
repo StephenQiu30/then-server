@@ -6,8 +6,8 @@ import (
 	"io"
 	"net/http"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	communityapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/community"
 )
 
 type CommunityHTTPService interface {

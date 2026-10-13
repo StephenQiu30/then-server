@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/platform/ratelimit"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/platform/ratelimit"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"

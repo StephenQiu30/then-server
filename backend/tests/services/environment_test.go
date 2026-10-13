@@ -42,30 +42,30 @@ func parseServiceEnvironment(lookup func(string) (string, bool)) (serviceEnviron
 		return fallback
 	}
 	environment := serviceEnvironment{
-		databaseURL:    setting("THEN_TEST_DATABASE_URL", "postgres://127.0.0.1/postgres?sslmode=disable"),
-		minioEndpoint:  setting("THEN_TEST_MINIO_ENDPOINT", "127.0.0.1:9000"),
-		minioAccessKey: setting("THEN_TEST_MINIO_ACCESS_KEY", "minioadmin"),
-		minioSecretKey: setting("THEN_TEST_MINIO_SECRET_KEY", "minioadmin"),
-		redisAddr:      setting("THEN_TEST_REDIS_ADDR", "127.0.0.1:6379"),
-		redisPassword:  setting("THEN_TEST_REDIS_PASSWORD", ""),
-		kafkaBrokers:   strings.Split(setting("THEN_TEST_KAFKA_BROKERS", "127.0.0.1:9092"), ","),
+		databaseURL:    setting("WEARLOG_TEST_DATABASE_URL", "postgres://127.0.0.1/postgres?sslmode=disable"),
+		minioEndpoint:  setting("WEARLOG_TEST_MINIO_ENDPOINT", "127.0.0.1:9000"),
+		minioAccessKey: setting("WEARLOG_TEST_MINIO_ACCESS_KEY", "minioadmin"),
+		minioSecretKey: setting("WEARLOG_TEST_MINIO_SECRET_KEY", "minioadmin"),
+		redisAddr:      setting("WEARLOG_TEST_REDIS_ADDR", "127.0.0.1:6379"),
+		redisPassword:  setting("WEARLOG_TEST_REDIS_PASSWORD", ""),
+		kafkaBrokers:   strings.Split(setting("WEARLOG_TEST_KAFKA_BROKERS", "127.0.0.1:9092"), ","),
 	}
-	redisDB, err := strconv.Atoi(setting("THEN_TEST_REDIS_DB", "15"))
+	redisDB, err := strconv.Atoi(setting("WEARLOG_TEST_REDIS_DB", "15"))
 	if err != nil || redisDB < 0 || redisDB > 15 {
-		return serviceEnvironment{}, fmt.Errorf("THEN_TEST_REDIS_DB: expected an integer from 0 through 15")
+		return serviceEnvironment{}, fmt.Errorf("WEARLOG_TEST_REDIS_DB: expected an integer from 0 through 15")
 	}
 	environment.redisDB = redisDB
-	if err := requireLoopbackURL("THEN_TEST_DATABASE_URL", environment.databaseURL, "postgres", "postgresql"); err != nil {
+	if err := requireLoopbackURL("WEARLOG_TEST_DATABASE_URL", environment.databaseURL, "postgres", "postgresql"); err != nil {
 		return serviceEnvironment{}, err
 	}
-	if err := requireLoopbackEndpoint("THEN_TEST_MINIO_ENDPOINT", environment.minioEndpoint); err != nil {
+	if err := requireLoopbackEndpoint("WEARLOG_TEST_MINIO_ENDPOINT", environment.minioEndpoint); err != nil {
 		return serviceEnvironment{}, err
 	}
-	if err := requireLoopbackEndpoint("THEN_TEST_REDIS_ADDR", environment.redisAddr); err != nil {
+	if err := requireLoopbackEndpoint("WEARLOG_TEST_REDIS_ADDR", environment.redisAddr); err != nil {
 		return serviceEnvironment{}, err
 	}
 	for _, address := range environment.kafkaBrokers {
-		if err := requireLoopbackEndpoint("THEN_TEST_KAFKA_BROKERS", address); err != nil {
+		if err := requireLoopbackEndpoint("WEARLOG_TEST_KAFKA_BROKERS", address); err != nil {
 			return serviceEnvironment{}, err
 		}
 	}
@@ -131,13 +131,13 @@ func TestServiceEnvironmentDefaultsStayLocal(t *testing.T) {
 }
 
 func TestServiceEnvironmentRejectsRemoteDependencies(t *testing.T) {
-	for _, variable := range []string{"THEN_TEST_DATABASE_URL", "THEN_TEST_MINIO_ENDPOINT", "THEN_TEST_REDIS_ADDR", "THEN_TEST_KAFKA_BROKERS"} {
+	for _, variable := range []string{"WEARLOG_TEST_DATABASE_URL", "WEARLOG_TEST_MINIO_ENDPOINT", "WEARLOG_TEST_REDIS_ADDR", "WEARLOG_TEST_KAFKA_BROKERS"} {
 		t.Run(variable, func(t *testing.T) {
 			values := map[string]string{
-				"THEN_TEST_DATABASE_URL":   "postgres://test@example.com/test?sslmode=verify-full",
-				"THEN_TEST_MINIO_ENDPOINT": "example.com:9000",
-				"THEN_TEST_REDIS_ADDR":     "example.com:6379",
-				"THEN_TEST_KAFKA_BROKERS":  "example.com:9092",
+				"WEARLOG_TEST_DATABASE_URL":   "postgres://test@example.com/test?sslmode=verify-full",
+				"WEARLOG_TEST_MINIO_ENDPOINT": "example.com:9000",
+				"WEARLOG_TEST_REDIS_ADDR":     "example.com:6379",
+				"WEARLOG_TEST_KAFKA_BROKERS":  "example.com:9092",
 			}
 			_, err := parseServiceEnvironment(func(name string) (string, bool) {
 				if name == variable {

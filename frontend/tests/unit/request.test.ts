@@ -32,3 +32,26 @@ describe('request', () => {
     assert.equal(observedCredentials, true)
   })
 })
+
+it('omits cookies on signed storage PUT and exposes the immutable object version', async () => {
+  let version: unknown
+  await request('http://127.0.0.1:9000/raw-private/fixture', {
+    method: 'PUT',
+    withCredentials: false,
+    onResponseHeaders: (headers) => {
+      version = headers['x-amz-version-id']
+    },
+    adapter: async (config) => {
+      assert.equal(config.withCredentials, false)
+      assert.equal('onResponseHeaders' in config, false)
+      return {
+        config,
+        data: '',
+        headers: new AxiosHeaders({ 'x-amz-version-id': 'fixture-version' }),
+        status: 200,
+        statusText: 'OK',
+      }
+    },
+  })
+  assert.equal(version, 'fixture-version')
+})

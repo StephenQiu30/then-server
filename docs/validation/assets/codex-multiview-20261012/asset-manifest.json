@@ -1,0 +1,92 @@
+[
+  {
+    "file": "coat-180.png",
+    "bytes": 1664144,
+    "sha256": "4c8877da99a39dc0276bee1722302650b3f6c3261697290e35a7fe852253e253",
+    "copied": true
+  },
+  {
+    "file": "coat-270.png",
+    "bytes": 1638948,
+    "sha256": "2ff56470910d8b04c0173d30bff4f87d87ebfa2a747980292878e2260cfacd7e",
+    "copied": false
+  },
+  {
+    "file": "coat-90.png",
+    "bytes": 1607468,
+    "sha256": "0518d64819e42fc6b073f4bed0dac49ad969adc373989462902cfa44d37d2216",
+    "copied": false
+  },
+  {
+    "file": "coat-front.png",
+    "bytes": 1706565,
+    "sha256": "cd728df857f708d9fc54e0e0ef8fe08339318a2b0adb36fd86f5de3c4a11e195",
+    "copied": false
+  },
+  {
+    "file": "knit-180-rejected.png",
+    "bytes": 1789309,
+    "sha256": "1a395f5751358b29977c1c1a687496cd819db21049792a31eb9b7215c88ff1f4",
+    "copied": false
+  },
+  {
+    "file": "knit-180.png",
+    "bytes": 1747358,
+    "sha256": "adfcc6342696f365ef74ad796b6994eea48380daff842500d08f504de0fa660a",
+    "copied": false
+  },
+  {
+    "file": "knit-270-rejected.png",
+    "bytes": 1660532,
+    "sha256": "11c0dfd4da38ca3c81879ddcd10569ecd129d477475b245571c398489129b20d",
+    "copied": false
+  },
+  {
+    "file": "knit-270.png",
+    "bytes": 1667893,
+    "sha256": "ad4d89c8baea84b24c2f1622f1e655060702dc919e53da70c4e98d62e6093d4d",
+    "copied": false
+  },
+  {
+    "file": "knit-90-rejected.png",
+    "bytes": 1670838,
+    "sha256": "2ccba2ab2fbb1170972fa038b30aa4ba50f7803088208b24107cb6b97bcbd050",
+    "copied": true
+  },
+  {
+    "file": "knit-90.png",
+    "bytes": 1620193,
+    "sha256": "55f11bc269acba06e228194b879d52efa7012285aa5101affe7efd9c8d860aa8",
+    "copied": true
+  },
+  {
+    "file": "knit-front.png",
+    "bytes": 1774935,
+    "sha256": "ea60014553d4204524ce7f1e61a54ea50ac67836f1f068ba07efc25c5b1e203a",
+    "copied": false
+  },
+  {
+    "file": "shirt-180.png",
+    "bytes": 1692980,
+    "sha256": "2a7a1a7cdec9e74e08be488269f715c31a02f00706c8e5d88d0f260cbb21d261",
+    "copied": false
+  },
+  {
+    "file": "shirt-270.png",
+    "bytes": 1631339,
+    "sha256": "c07b4b0a43acb168ccde7cd46b4acb52dcc9d0f82f4c0e80913903fe25de791f",
+    "copied": false
+  },
+  {
+    "file": "shirt-90.png",
+    "bytes": 1632882,
+    "sha256": "94942a18c5510231d47a0036e53d258d3f7b97cd9c6b530dca2fc61ffa9778c4",
+    "copied": false
+  },
+  {
+    "file": "shirt-front.png",
+    "bytes": 1758635,
+    "sha256": "aef25fbc9d330b2d8911e8406f1e3193f4de45c1daf9ced21c021bc5c78e6992",
+    "copied": false
+  }
+]

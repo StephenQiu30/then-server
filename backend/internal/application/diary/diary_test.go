@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
 )
 
 const testEntryID = "11111111-1111-4111-8111-111111111111"

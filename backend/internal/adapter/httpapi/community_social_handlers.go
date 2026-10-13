@@ -3,7 +3,7 @@ package httpapi
 import (
 	"context"
 
-	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
+	communityapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/community"
 )
 
 func (h *CommunityHandler) listFeed(ctx context.Context, in *feedInput) (*publicPostPageOutput, error) {

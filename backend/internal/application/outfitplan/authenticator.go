@@ -3,7 +3,7 @@ package outfitplan
 import (
 	"context"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
 )
 
 type PrivacyAuthenticator interface {

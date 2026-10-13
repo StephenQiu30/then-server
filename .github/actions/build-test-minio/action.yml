@@ -24,7 +24,7 @@ runs:
     - name: Build the MinIO test image
       shell: bash
       env:
-        THEN_TEST_IMAGE: ${{ inputs.image }}
+        WEARLOG_TEST_IMAGE: ${{ inputs.image }}
       run: |
         set -euo pipefail
         source_dir="$GITHUB_WORKSPACE/.ci/minio-source"
@@ -50,6 +50,6 @@ runs:
         COPY minio /usr/local/bin/minio
         ENTRYPOINT ["/usr/local/bin/minio"]
         EOF
-        docker build --tag "$THEN_TEST_IMAGE" "$image_context"
-        echo "THEN_TEST_MINIO_IMAGE=$THEN_TEST_IMAGE" >> "$GITHUB_ENV"
+        docker build --tag "$WEARLOG_TEST_IMAGE" "$image_context"
+        echo "WEARLOG_TEST_MINIO_IMAGE=$WEARLOG_TEST_IMAGE" >> "$GITHUB_ENV"
         rm -rf "$source_dir"

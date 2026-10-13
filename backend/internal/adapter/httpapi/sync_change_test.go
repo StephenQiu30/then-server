@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	syncapp "github.com/StephenQiu30/then-server/backend/internal/application/syncchange"
+	syncapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/syncchange"
 )
 
 type syncHTTPStub struct {

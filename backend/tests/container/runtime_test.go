@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/tests/internal/testcontainer"
+	"github.com/StephenQiu30/wearlog-server/backend/tests/internal/testcontainer"
 	"github.com/containerd/errdefs"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerclient "github.com/moby/moby/client"
@@ -24,9 +24,9 @@ import (
 func TestContainerRuntime(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	image := os.Getenv("THEN_BACKEND_TEST_IMAGE")
+	image := os.Getenv("WEARLOG_BACKEND_TEST_IMAGE")
 	if image == "" {
-		t.Fatal("THEN_BACKEND_TEST_IMAGE must name an explicitly built local image")
+		t.Fatal("WEARLOG_BACKEND_TEST_IMAGE must name an explicitly built local image")
 	}
 	docker, err := testcontainers.NewDockerClient()
 	if err != nil {

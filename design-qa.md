@@ -39,15 +39,39 @@
 
 在本机 Next + Go API + 隔离 PostgreSQL 环境中检查：场景入口、未登录提示、注册合成账号、创建三件真实衣物、生成候选、主动保存计划、实际列表仍为空，以及正式度未知时无解。候选可见截图为同目录 `recommend-result.png`；浏览器控制台 error 日志为空。该记录属于当时版本，当前验证结果以当次交付为准。
 
-## 品牌方案 3“穿见”复核
+## 品牌方案 3“衣序”复核
 
 - Source visual truth：`frontend/public/brand/` 中的当前品牌资源。独立透明图形、小尺寸版本与深色主屏幕图标已保存于 `frontend/public/brand/`。
-- Rendered implementation：本机 `http://127.0.0.1:3017/` 的内置浏览器截图，522×733 px、亮色、首页默认场景；截图随浏览器核对输出内联展示，未另存为文件。概念板与同一时刻的页面截图在同一次图像输出中打开核对。目标是 36×36 px 导航标识与字标，不把整张 1254×1254 概念板当作 522×733 页面稿做像素比较。
-- 字体／文案：导航使用可读“穿见”，宽屏辅以 `CHUANJIAN`；首页、推荐、实际穿着和站点标题使用新名称。概念板的大字标在窄屏导航缩为组件字体，属于空间约束下的有意变化。
-- 布局／颜色：标识与文字在窄屏同列，账户入口仍在右侧，主导航保持下一行；珊瑚色只出现在标识落点，按钮与状态仍使用既有语义 token。
+- Rendered implementation：本机 `http://127.0.0.1:3017/` 的内置浏览器截图，522×733 px、亮色、首页默认场景；截图随浏览器核对输出内联展示，未另存为文件。概念板与同一时刻的页面截图在同一次图像输出中打开核对。当前 Header 使用 32×32 px 导航标识与字标，不把整张 1254×1254 概念板当作 522×733 页面稿做像素比较。
+- 字体／文案：导航使用可读“衣序”；首页、推荐、实际穿着和站点标题使用新名称。概念板的大字标在窄屏导航缩为组件字体，属于空间约束下的有意变化。
+- 布局／颜色：标识与文字在窄屏同列，右侧为菜单按钮；账户入口在菜单内。珊瑚色只出现在标识落点，按钮与状态仍使用既有语义 token。
 - 图像质量：真实 Image Gen 图形资产保留开口线框、越过门槛的弧线和单点，透明底小尺寸版本在首页截图中完整可辨；深色方形应用图标与概念板反白方向一致，`apple-touch-icon` 路径在实际 HTML 中指向该资产且资源返回 PNG。未以 CSS 或手绘 SVG 代替标识。
-- 交互：从首页进入推荐页，标题显示“真实衣橱推荐 · 穿见”，再点击品牌链接返回首页；页面可达且导航语义清楚。品牌资产没有改变推荐数据或示例标注。
+- 交互：从首页进入推荐页，标题显示“真实衣橱推荐 · 衣序”，再点击品牌链接返回首页；页面可达且导航语义清楚。品牌资产没有改变推荐数据或示例标注。
 - Findings：无待修复 P0/P1/P2。P3：概念板字标有定制字形，当前 Web 用系统中文字体组合，正式跨端字标资产可在 iOS 品牌实施时进一步统一。商标、iOS 应用图标和公开发布不在本次 Web QA 范围。
+
+## 全站 BasicLayout 复核
+
+- 原始检查时根布局一次渲染共享 Header、唯一 `main-content` 与 Footer；登录、注册的共享结构现已由下方「独立认证页复核」更新。当前业务路由组复用 BasicLayout，认证路由组独立渲染 AuthLayout。
+- 320、390、1440px 视口下无横向溢出；320px 时 Header、内容与 Footer 左边界均为 16px，1440px 时均为 128px。320px 的 404 页显示页脚且主内容将其推至视口底部；首页保留独立的纵向节奏。
+- 根据用户提供的 shadcn 文档页参考，Header/Footer 改用无边框表面和文字层级；桌面导航由官方 NavigationMenu 组合，窄屏由官方 Sheet 组合。当前页以字重和下划线标识。1440px 首页与页脚、390px 首页与打开的菜单均已截图目视核对；Sheet 有标题和关闭按钮，点击“我的衣橱”后菜单关闭并按未登录状态进入登录页。320px 首页 `scrollWidth` 与视口同为 320px。
+- 浏览器页面错误为空；前端 lint、15 项测试、typecheck、格式检查和生产构建通过。远端 CI 与发布验收未在本次本地布局改动中运行。
+
+## 精简 Footer 与组件规范复核
+
+- 按用户提供的 FrameFetch 页脚截图，仅参考单行排版和轻量文字层级：衣序 Footer 保留品牌、简短说明与四个实际路由；没有引入不属于产品的 MIT、GitHub、搜索或文档入口。桌面 1440px 实际截图 `/Users/stephenqiu/.codex/visualizations/2026/09/26/01a0db4b-02b7-7910-969c-d07fd28f72c1/footer-desktop-compact.png` 显示 Footer 为单行；390px 实际截图同目录 `footer-mobile-compact.png` 显示自然换行，320px 页面 `scrollWidth=320px`。
+- 对照 Vercel Next.js 与 shadcn 规则核对源码：Header 静态品牌为 Server Component，导航交互及账户链接单独为 Client Component；表单的衣物多选和关联删除策略使用官方 Checkbox/RadioGroup，三个列表和两处编辑器空态使用官方 Empty。源码业务组件扫描不再有原生 `button/input/select/textarea/img/hr/fieldset/legend` 标签（基础组件源码与根跳转链接除外）。
+- 本地 lint、15 项测试、typecheck、format:check、production build 通过；浏览器桌面/窄屏导航可见、Sheet 开关正常且错误日志为空。原 Playwright 注册用例引用旧首页文案和入口，已更新为当前首页 → 账户 → 登录 → 注册流程。另用模拟会话及衣物在浏览器验证计划中选择待洗衣物、确认后取消，以及删除影响弹窗的两项历史处理策略；4 项 Playwright 用例全部通过。本轮没有重新跑真实后端的衣物选择与删除旅程。
+
+## 精简 Header 复核
+
+- 桌面 1440px 首页截图 `/Users/stephenqiu/.codex/visualizations/2026/09/26/01a0db4b-02b7-7910-969c-d07fd28f72c1/header-desktop-compact.png`：Header 为无边框单行，左侧品牌、右侧五个文字导航；当前页以字重和下划线强调。390px 首页截图同目录 `header-mobile-compact.png`：仅显示品牌和菜单按钮；`header-mobile-menu.png`：Sheet 内含五个路由，账户可见。
+- 390px 菜单点击“账户”后关闭，并按未登录状态进入登录页；320px 首页 `scrollWidth=viewport=320px`，浏览器页面错误日志为空。移动菜单保留可访问的标题、描述和关闭按钮，描述不占视觉空间。
+
+## 独立认证页复核
+
+- 参考 shadcn 官方 `login-03` / `signup-03`：柔和的全屏背景上，衣序标识居中置于白色表单卡上方，卡内用官方 Card、Field、Input、Button 与 Alert；返回首页在卡外。登录、注册使用不同 URL，并提供互跳链接。真实产品只支持邮箱密码，故不展示未接入的社交登录、找回密码或协议入口。
+- 1280×800 登录截图：`/Users/stephenqiu/.codex/visualizations/2026/09/26/01a0db4b-02b7-7910-969c-d07fd28f72c1/then-auth-login-desktop.png`。390×844 登录和注册截图：同目录 `then-auth-login-mobile.png`、`then-auth-register-mobile.png`。已目视检查品牌与表单层级、注册字段在窄屏可见、无横向溢出。内置浏览器的生产构建还验证了登录→注册页面互跳和字段可访问名称。
+- Playwright 使用模拟未登录会话核对认证页不包含业务 Header/Footer、路由互跳和 404 唯一主区域；已有注册流程和确认密码错误用例继续覆盖表单行为。浏览器自动化并不代表真实邮件投递、生产认证或辅助技术验收。
 
 ## Implementation checklist
 

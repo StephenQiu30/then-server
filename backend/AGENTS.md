@@ -74,7 +74,7 @@ application/<feature> -> 仅明确批准的更基础业务包
 | `adapter/httpapi` | 路由、输入校验、会话 Cookie、错误与状态映射 | GORM、业务 SQL、业务事务 |
 | `adapter/objectstore` | MinIO 私有桶、versioning、签名 PUT、固定版本读写与全版本删除 | HTTP DTO、业务状态事务 |
 | `adapter/messagequeue` | Kafka topic、acks=all、成功后同步提交 offset | 业务数据库、媒体正文 |
-| `application/eventworker` | Outbox relay、JPEG 有界检查/重编码、删除与清扫编排 | Gin/Huma、GORM、具体 SDK |
+| `application/eventworker` | Outbox relay、JPEG 有界检查/重编码、衣橱 PNG/WebP 与透明展示图、删除与清扫编排 | Gin/Huma、GORM、具体 SDK |
 | `platform` | 数据库和 HTTP 等技术资源的连接与生命周期 | 用户权限和业务状态规则 |
 
 根 `architecture_test.go` 检查单 module、唯一根入口与源码位置，阻止核心包反向依赖、跨 adapter 直接导入和生产导入测试包，校验业务白名单及测试 suite 布局。`main.go` 只允许 log/slog、os 和 bootstrap；HTTP routes 不容纳 DTO/receiver 方法，contract 不容纳 Handler、消费方接口或非 schema 函数。新增依赖方向前先核对工程规范并更新测试，不用全局 service locator 绕过组装。

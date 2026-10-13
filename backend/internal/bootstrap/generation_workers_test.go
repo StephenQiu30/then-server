@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
-	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
+	generationapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/generation"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/platform/config"
 )
 
 func TestGenerationAdmissionPolicyEnablesOnlyZeroCostFixtureTasks(t *testing.T) {

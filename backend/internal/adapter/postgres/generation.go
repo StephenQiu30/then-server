@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
-	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
+	generationapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/generation"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
+	privacyapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/privacy"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

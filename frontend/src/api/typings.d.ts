@@ -198,6 +198,10 @@ declare namespace API {
     version_id: string
   }
 
+  type confirmGenerationImageParams = {
+    job_id: string
+  }
+
   type ConfirmMailChallengeInputBody = {
     token: string
   }
@@ -305,10 +309,12 @@ declare namespace API {
     byte_size: number
     category?: 'person_photo' | 'ordinary_image'
     consent_id?: string
-    content_type: 'image/jpeg'
+    /** PNG/WebP 仅用于 wardrobe_image；其他用途仍限 JPEG */
+    content_type: 'image/jpeg' | 'image/png' | 'image/webp'
     purpose:
       | 'avatar_source_preparation'
       | 'generation_input'
+      | 'wardrobe_image'
       | 'diary_image'
       | 'community_publish'
       | 'profile_avatar'
@@ -371,6 +377,17 @@ declare namespace API {
     id: string
     /** 用户确认的衣物名称 */
     name: string
+    /** 本人原始照片；补换图与处理图分别保存，省略时保留 */
+    original_photo_media_id?: string
+    /** 本人已就绪 wardrobe_image 照片；更新省略时保留原图 */
+    photo_media_id?: string
+    /** 可选的内置虚构单品示例图标识，不代表用户实物照片 */
+    sample_image?:
+      | 'cream-knit'
+      | 'navy-shirt'
+      | 'charcoal-trousers'
+      | 'blue-jeans'
+      | 'white-sneakers'
     source: 'wardrobe' | 'quick_add'
   }
 
@@ -632,6 +649,7 @@ declare namespace API {
 
   type GenerationOutputResponse = {
     byte_size: number
+    confirmed_at?: string
     content_type: 'image/jpeg' | 'model/gltf-binary'
     id: string
     object_version_id: string
@@ -732,8 +750,16 @@ declare namespace API {
     item_id: string
   }
 
+  type getWardrobeImageParams = {
+    media_id: string
+  }
+
   type getWardrobeItemParams = {
     item_id: string
+  }
+
+  type getWardrobeOriginalParams = {
+    media_id: string
   }
 
   type getWearEventParams = {
@@ -917,7 +943,7 @@ declare namespace API {
     byte_size: number
     category: 'person_photo' | 'ordinary_image'
     consent_id?: string
-    content_type: 'image/jpeg'
+    content_type: 'image/jpeg' | 'image/png' | 'image/webp'
     created_at: string
     id: string
     pixel_height?: number
@@ -925,6 +951,7 @@ declare namespace API {
     purpose:
       | 'avatar_source_preparation'
       | 'generation_input'
+      | 'wardrobe_image'
       | 'diary_image'
       | 'community_publish'
       | 'profile_avatar'
@@ -1421,6 +1448,17 @@ declare namespace API {
       | 'accessory'
     expected_revision: number
     name: string
+    /** 本人原始照片；补换图与处理图分别保存，省略时保留 */
+    original_photo_media_id?: string
+    /** 本人已就绪 wardrobe_image 照片；更新省略时保留原图 */
+    photo_media_id?: string
+    /** 可选的内置虚构单品示例图标识，不代表用户实物照片 */
+    sample_image?:
+      | 'cream-knit'
+      | 'navy-shirt'
+      | 'charcoal-trousers'
+      | 'blue-jeans'
+      | 'white-sneakers'
   }
 
   type updateWearEventParams = {
@@ -1505,7 +1543,18 @@ declare namespace API {
     id: string
     lifecycle: 'active' | 'archived'
     name: string
+    /** 本人原始照片；补换图与处理图分别保存，省略时保留 */
+    original_photo_media_id?: string
+    /** 本人已就绪 wardrobe_image 照片；更新省略时保留原图 */
+    photo_media_id?: string
     revision: number
+    /** 可选的内置虚构单品示例图标识，不代表用户实物照片 */
+    sample_image?:
+      | 'cream-knit'
+      | 'navy-shirt'
+      | 'charcoal-trousers'
+      | 'blue-jeans'
+      | 'white-sneakers'
     source: 'wardrobe' | 'quick_add'
     updated_at: string
   }

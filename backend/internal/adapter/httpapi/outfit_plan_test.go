@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
-	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	outfitplanapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/outfitplan"
+	wardrobeapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/wardrobe"
 )
 
 type outfitPlanTransportStub struct {

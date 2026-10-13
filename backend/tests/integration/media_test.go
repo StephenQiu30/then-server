@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/tests/internal/testcontainer"
+	"github.com/StephenQiu30/wearlog-server/backend/tests/internal/testcontainer"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"gorm.io/driver/postgres"
@@ -48,7 +48,7 @@ func TestActualBinarySyntheticMediaLifecycle(t *testing.T) {
 	postgresAddress := mappedAddress(t, ctx, postgresContainer, "5432/tcp")
 	redisAddress := mappedAddress(t, ctx, redisContainer, "6379/tcp")
 	minioAddress := mappedAddress(t, ctx, minioContainer, "9000/tcp")
-	binary := filepath.Join(t.TempDir(), "then-backend")
+	binary := filepath.Join(t.TempDir(), "wearlog-backend")
 	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../..")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build actual binary: %v %s", err, output)

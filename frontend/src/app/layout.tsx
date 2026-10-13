@@ -7,12 +7,15 @@ import { QueryProvider } from '@/providers/query-provider'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: '穿见',
+  title: '衣序',
   description: '基于真实衣橱的穿搭决策助手',
-  applicationName: '穿见',
+  applicationName: '衣序',
   icons: {
-    icon: '/brand/chuanjian-icon.png',
-    apple: '/brand/chuanjian-app-icon.png',
+    icon: [
+      { url: '/brand/wearlog-symbol.svg', type: 'image/svg+xml' },
+      { url: '/brand/wearlog-symbol-blue.png', type: 'image/png' },
+    ],
+    apple: '/brand/wearlog-app-icon-blue.png',
   },
 }
 

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
+	communityapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/community"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

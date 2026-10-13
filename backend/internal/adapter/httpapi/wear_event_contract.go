@@ -3,7 +3,7 @@ package httpapi
 import (
 	"time"
 
-	weareventapp "github.com/StephenQiu30/then-server/backend/internal/application/wearevent"
+	weareventapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/wearevent"
 )
 
 type WearEventCandidateResponse struct {

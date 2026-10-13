@@ -1,6 +1,8 @@
+import { WardrobePhotoError } from '@/lib/wardrobe/photo'
 import { accountStatus } from '@/lib/account/errors'
 
 export function wardrobeErrorMessage(error: unknown): string {
+  if (error instanceof WardrobePhotoError) return error.message
   switch (accountStatus(error)) {
     case 400:
     case 422:

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
+	privacyapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/privacy"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

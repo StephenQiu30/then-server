@@ -9,9 +9,9 @@ import (
 	"sort"
 	"time"
 
-	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
-	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
-	weareventapp "github.com/StephenQiu30/then-server/backend/internal/application/wearevent"
+	outfitplanapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/outfitplan"
+	wardrobeapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/wardrobe"
+	weareventapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/wearevent"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

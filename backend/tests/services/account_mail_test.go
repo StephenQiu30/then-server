@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	store "github.com/StephenQiu30/wearlog-server/backend/internal/adapter/postgres"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
-	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
+	privacyapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/privacy"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -39,10 +39,10 @@ func (consentRecord) TableName() string { return "consent_records" }
 type mediaAssetRecord struct {
 	ID              string                  `gorm:"column:id;type:uuid;primaryKey"`
 	OwnerID         string                  `gorm:"column:owner_id;type:uuid;not null;index:media_assets_owner_idx"`
-	ConsentID       *string                 `gorm:"column:consent_id;type:uuid;index:media_assets_consent_idx;check:media_assets_purpose_category_check,(purpose = 'avatar_source_preparation' AND category = 'person_photo' AND consent_id IS NOT NULL) OR (purpose = 'generation_input' AND category IN ('person_photo','ordinary_image') AND consent_id IS NOT NULL) OR (purpose IN ('diary_image','community_publish','profile_avatar') AND category = 'ordinary_image' AND consent_id IS NULL)"`
-	Purpose         string                  `gorm:"column:purpose;type:text;not null;check:media_assets_purpose_check,purpose IN ('avatar_source_preparation','generation_input','diary_image','community_publish','profile_avatar')"`
+	ConsentID       *string                 `gorm:"column:consent_id;type:uuid;index:media_assets_consent_idx;check:media_assets_purpose_category_check,(purpose = 'avatar_source_preparation' AND category = 'person_photo' AND consent_id IS NOT NULL) OR (purpose = 'generation_input' AND category IN ('person_photo','ordinary_image') AND consent_id IS NOT NULL) OR (purpose IN ('wardrobe_image','diary_image','community_publish','profile_avatar') AND category = 'ordinary_image' AND consent_id IS NULL)"`
+	Purpose         string                  `gorm:"column:purpose;type:text;not null;check:media_assets_purpose_check,purpose IN ('avatar_source_preparation','generation_input','wardrobe_image','diary_image','community_publish','profile_avatar')"`
 	Category        string                  `gorm:"column:category;type:text;not null;check:media_assets_category_check,category IN ('person_photo','ordinary_image')"`
-	ContentType     string                  `gorm:"column:content_type;type:text;not null;check:media_assets_content_type_check,content_type = 'image/jpeg'"`
+	ContentType     string                  `gorm:"column:content_type;type:text;not null;check:media_assets_content_type_check,content_type = 'image/jpeg' OR (purpose = 'wardrobe_image' AND content_type IN ('image/png','image/webp'))"`
 	ByteSize        int64                   `gorm:"column:byte_size;not null;check:media_assets_byte_size_check,byte_size BETWEEN 1 AND 12582912"`
 	SHA256          string                  `gorm:"column:sha256;type:char(64);not null;check:media_assets_sha256_check,char_length(sha256) = 64 AND sha256 = lower(sha256)"`
 	RawObjectKey    string                  `gorm:"column:raw_object_key;type:text;not null;uniqueIndex:media_assets_raw_key_unique"`
@@ -625,7 +625,7 @@ func (r *MediaRepository) SourceCleanupCandidates(ctx context.Context, at time.T
 	}
 	var records []mediaAssetRecord
 	err := r.database.WithContext(ctx).
-		Where("source_deleted_at IS NULL AND ((status = ? AND created_at <= ?) OR status IN ? OR (status = ? AND updated_at <= ?))", string(mediaapp.MediaPendingUpload), at.Add(-mediaapp.UnfinishedUploadLifetime), []string{string(mediaapp.MediaReady), string(mediaapp.MediaRejected)}, string(mediaapp.MediaDeleted), at.Add(-time.Minute)).
+		Where("(purpose <> ? OR status <> ?) AND source_deleted_at IS NULL AND ((status = ? AND created_at <= ?) OR status IN ? OR (status = ? AND updated_at <= ?))", mediaapp.MediaPurposeWardrobeImage, string(mediaapp.MediaReady), string(mediaapp.MediaPendingUpload), at.Add(-mediaapp.UnfinishedUploadLifetime), []string{string(mediaapp.MediaReady), string(mediaapp.MediaRejected)}, string(mediaapp.MediaDeleted), at.Add(-time.Minute)).
 		Order("updated_at ASC").Limit(limit).Find(&records).Error
 	if err != nil {
 		return nil, mediaapp.ErrMediaUnavailable
@@ -681,4 +681,27 @@ func mediaFromRecord(record mediaAssetRecord) mediaapp.MediaAsset {
 
 func deletionFromRecord(record deletionRequestRecord) mediaapp.DeletionRequest {
 	return mediaapp.DeletionRequest{ID: record.ID, OwnerID: record.OwnerID, MediaID: record.MediaID, Status: mediaapp.DeletionStatus(record.Status), ReadRevokedAt: record.ReadRevokedAt, CompletedAt: record.CompletedAt, BackupExpiresAt: record.BackupExpiresAt, StableError: record.StableError, Attempts: record.Attempts, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+}
+
+func (r *MediaRepository) GetWardrobeImage(ctx context.Context, ownerID, id string) (mediaapp.MediaDerivation, error) {
+	var image mediaDerivationRecord
+	err := r.database.WithContext(ctx).Table("media_derivations d").Select("d.*").
+		Joins("JOIN media_assets m ON m.id = d.media_id").
+		Where("m.id = ? AND m.owner_id = ? AND m.purpose = ? AND m.status = ?", id, ownerID, mediaapp.MediaPurposeWardrobeImage, string(mediaapp.MediaReady)).
+		Where("EXISTS (SELECT 1 FROM wardrobe_items w WHERE w.owner_id = m.owner_id AND (w.photo_media_id = m.id OR w.original_photo_media_id = m.id))").
+		Order("d.created_at DESC").First(&image).Error
+	if err != nil {
+		return mediaapp.MediaDerivation{}, mediaLookupError(err)
+	}
+	return mediaapp.MediaDerivation{ObjectKey: image.ObjectKey, ObjectVersionID: image.ObjectVersionID}, nil
+}
+
+func (r *MediaRepository) GetWardrobeOriginal(ctx context.Context, ownerID, id string) (mediaapp.MediaAsset, error) {
+	var asset mediaAssetRecord
+	err := r.database.WithContext(ctx).Where("id = ? AND owner_id = ? AND purpose = ? AND status = ?", id, ownerID, mediaapp.MediaPurposeWardrobeImage, string(mediaapp.MediaReady)).
+		Where("EXISTS (SELECT 1 FROM wardrobe_items w WHERE w.owner_id = media_assets.owner_id AND (w.original_photo_media_id = media_assets.id OR w.photo_media_id = media_assets.id))").First(&asset).Error
+	if err != nil {
+		return mediaapp.MediaAsset{}, mediaLookupError(err)
+	}
+	return mediaFromRecord(asset), nil
 }

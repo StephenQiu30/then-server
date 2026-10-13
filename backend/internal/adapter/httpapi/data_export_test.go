@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	exportapp "github.com/StephenQiu30/then-server/backend/internal/application/dataexport"
+	exportapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/dataexport"
 )
 
 type dataExportStub struct {

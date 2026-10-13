@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	feedbackapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitfeedback"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	feedbackapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/outfitfeedback"
 )
 
 type FeedbackHTTPService interface {

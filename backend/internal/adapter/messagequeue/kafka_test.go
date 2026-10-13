@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 

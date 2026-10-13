@@ -2,6 +2,8 @@
 package objectstore
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -11,8 +13,8 @@ import (
 	"strconv"
 	"time"
 
-	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	generationapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/generation"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -66,7 +68,7 @@ func (s *Store) Probe(ctx context.Context) error {
 }
 
 func (s *Store) SignUpload(ctx context.Context, asset mediaapp.MediaAsset) (mediaapp.SignedUpload, error) {
-	if s == nil || s.client == nil || asset.RawObjectKey == "" || asset.ContentType != mediaapp.MediaContentTypeJPEG || asset.ByteSize <= 0 || asset.SHA256 == "" {
+	if s == nil || s.client == nil || asset.RawObjectKey == "" || (asset.ContentType != mediaapp.MediaContentTypeJPEG && !(asset.Purpose == mediaapp.MediaPurposeWardrobeImage && (asset.ContentType == mediaapp.MediaContentTypePNG || asset.ContentType == mediaapp.MediaContentTypeWebP))) || asset.ByteSize <= 0 || asset.SHA256 == "" {
 		return mediaapp.SignedUpload{}, errors.New("invalid upload intent")
 	}
 	headers := http.Header{}
@@ -169,7 +171,13 @@ func (s *Store) PutDerived(ctx context.Context, objectKey string, reader io.Read
 	if s == nil || s.client == nil || objectKey == "" || reader == nil || size <= 0 {
 		return "", errors.New("derived object invalid")
 	}
-	result, err := s.client.PutObject(ctx, DerivedBucket, objectKey, reader, size, minio.PutObjectOptions{ContentType: mediaapp.MediaContentTypeJPEG})
+	buffered := bufio.NewReader(reader)
+	header, _ := buffered.Peek(8)
+	contentType := mediaapp.MediaContentTypeJPEG
+	if bytes.Equal(header, []byte{137, 80, 78, 71, 13, 10, 26, 10}) {
+		contentType = mediaapp.MediaContentTypePNG
+	}
+	result, err := s.client.PutObject(ctx, DerivedBucket, objectKey, buffered, size, minio.PutObjectOptions{ContentType: contentType})
 	if err != nil || result.VersionID == "" {
 		return "", errors.New("derived object write failed")
 	}

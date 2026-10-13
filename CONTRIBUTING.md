@@ -1,11 +1,11 @@
 # 贡献指南
 
-感谢参与“于是”项目。提交代码或文档前，必须先阅读根目录的 [`AGENTS.md`](AGENTS.md)。
+感谢参与“衣序”项目。提交代码或文档前，必须先阅读根目录的 [`AGENTS.md`](AGENTS.md)。
 
 ## 工作流程
 
 1. 先阅读当前需求、PROJECT、DESIGN 与相关代码。
-2. 使用 `go version`，以及任务实际涉及的 `node --version` 与 `npm --version`，确认本机工具链和 锁文件与工程配置一致；iOS 工具链在独立 `then-app` 核对。
+2. 使用 `go version`，以及任务实际涉及的 `node --version` 与 `npm --version`，确认本机工具链和 锁文件与工程配置一致；iOS 工具链在独立 `wearlog-app` 核对。
 3. 从 `main` 创建短周期分支，推荐使用 `<type>/<short-name>`，例如 `feat/wardrobe-import`、`fix/tryon-retry` 或 `docs/commit-convention`。
 4. 使用小而聚焦的提交，提交标题和 Pull Request 标题必须遵循下方 Git 提交规范。
 5. 提交 Pull Request 前运行与风险匹配的测试和生成检查。
@@ -99,7 +99,7 @@ fix(ios,backend): 修复同步         # 包含多个 scope
 
 ## 文档和契约
 
-- 用户可见项目名使用“于是”；本仓库名使用 `then-server`；iOS 仓库名使用 `then-app`，技术标识使用 `ThenApp`；本地统一放在 `Then/` 父目录。
+- 用户可见项目名使用“衣序”；本仓库名使用 `wearlog-server`；iOS 仓库名使用 `wearlog-app`，技术标识使用 `WearlogApp`；本地统一放在 `WEARLOG/` 父目录。
 - 工具链、依赖、供应商或最低系统版本变更必须更新对应锁文件与工程配置并说明迁移与回滚。
 - 接口变更必须先修改 Huma operation、请求/响应类型与 tag，并验证运行时 `/openapi.json`；不得提交第二份 OpenAPI 契约。
 - Web 接口调用必须由同一 OpenAPI 生成到 `frontend/src/api/`，不得手写第二份请求模型。

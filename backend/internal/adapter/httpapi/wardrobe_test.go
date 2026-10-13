@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	wardrobeapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/wardrobe"
 )
 
 type wardrobeTransportStub struct {

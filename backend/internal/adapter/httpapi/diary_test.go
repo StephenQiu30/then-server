@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
+	diaryapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/diary"
 )
 
 type diaryTransportStub struct {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
+	generationapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/generation"
 )
 
 // GenerationCleanupExecutor deletes private generation object versions. The

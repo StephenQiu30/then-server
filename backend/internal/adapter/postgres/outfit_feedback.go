@@ -8,7 +8,7 @@ import (
 	"errors"
 	"time"
 
-	feedbackapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitfeedback"
+	feedbackapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/outfitfeedback"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

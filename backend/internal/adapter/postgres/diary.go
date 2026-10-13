@@ -8,8 +8,8 @@ import (
 	"errors"
 	"time"
 
-	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	diaryapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/diary"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

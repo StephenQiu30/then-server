@@ -6,14 +6,19 @@ import { cn } from '@/lib/utils'
 import { Toggle as TogglePrimitive } from 'radix-ui'
 
 const toggleVariants = cva(
-  "group/toggle inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg text-sm font-medium whitespace-nowrap transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-pressed:bg-muted data-[state=on]:bg-muted [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/toggle inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg text-sm font-medium whitespace-nowrap transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: 'bg-transparent',
-        outline: 'border border-input bg-transparent hover:bg-muted',
-        scene:
-          'rounded-full border border-transparent bg-muted px-4 hover:bg-secondary data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground',
+        default: 'bg-transparent data-[state=on]:bg-muted',
+        solid:
+          'rounded-sm border-y-0 border-transparent bg-selection bg-clip-padding min-[700px]:border-y-4 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground',
+        subtle:
+          'rounded-sm bg-selection data-[state=on]:bg-primary data-[state=on]:text-primary-foreground',
+        card: 'justify-start gap-3 rounded-sm bg-card p-2 text-left whitespace-normal data-[state=on]:bg-selection',
+        tile: 'flex-col items-start gap-1 rounded-sm bg-transparent p-2 text-left text-xs font-normal whitespace-normal data-[state=on]:bg-selection',
+        outline: 'bg-transparent hover:bg-muted',
+        line: 'rounded-none bg-transparent text-muted-foreground hover:bg-transparent data-[state=on]:bg-transparent data-[state=on]:text-foreground data-[state=on]:underline data-[state=on]:underline-offset-4',
       },
       size: {
         default:

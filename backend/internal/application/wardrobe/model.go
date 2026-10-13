@@ -83,17 +83,20 @@ type WardrobeAttributes struct {
 }
 
 type WardrobeItem struct {
-	ID           string
-	OwnerID      string
-	Name         string
-	Category     WardrobeCategory
-	Availability WardrobeAvailability
-	Source       WardrobeSource
-	Attributes   WardrobeAttributes
-	ArchivedAt   *time.Time
-	Revision     int
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID                   string
+	OwnerID              string
+	Name                 string
+	OriginalPhotoMediaID *string
+	PhotoMediaID         *string
+	SampleImage          string
+	Category             WardrobeCategory
+	Availability         WardrobeAvailability
+	Source               WardrobeSource
+	Attributes           WardrobeAttributes
+	ArchivedAt           *time.Time
+	Revision             int
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 type WardrobeListFilter struct {
@@ -102,19 +105,25 @@ type WardrobeListFilter struct {
 }
 
 type CreateWardrobeItemInput struct {
-	ID           string
-	Name         string
-	Category     WardrobeCategory
-	Availability WardrobeAvailability
-	Source       WardrobeSource
-	Attributes   WardrobeAttributes
+	ID                   string
+	Name                 string
+	OriginalPhotoMediaID *string
+	PhotoMediaID         *string
+	SampleImage          string
+	Category             WardrobeCategory
+	Availability         WardrobeAvailability
+	Source               WardrobeSource
+	Attributes           WardrobeAttributes
 }
 
 type UpdateWardrobeItemInput struct {
-	Name         string
-	Category     WardrobeCategory
-	Availability WardrobeAvailability
-	Attributes   WardrobeAttributes
+	Name                 string
+	OriginalPhotoMediaID *string
+	PhotoMediaID         *string
+	SampleImage          string
+	Category             WardrobeCategory
+	Availability         WardrobeAvailability
+	Attributes           WardrobeAttributes
 }
 
 type WardrobePage struct {

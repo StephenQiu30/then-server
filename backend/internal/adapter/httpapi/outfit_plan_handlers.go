@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	outfitplanapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/outfitplan"
 )
 
 type OutfitPlanHTTPService interface {

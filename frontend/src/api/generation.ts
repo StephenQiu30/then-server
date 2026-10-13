@@ -118,6 +118,23 @@ export async function cancelGenerationJob(
   })
 }
 
+/** 确认本人已完成的完整穿搭图 POST /generation-jobs/${param0}/confirm-image */
+export async function confirmGenerationImage(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.confirmGenerationImageParams,
+  options?: RequestOptions,
+) {
+  const { job_id: param0, ...queryParams } = params
+  return request<API.GenerationJobResponse>(
+    `/generation-jobs/${param0}/confirm-image`,
+    {
+      method: 'POST',
+      params: { ...queryParams },
+      ...(options || {}),
+    },
+  )
+}
+
 /** 获取本人已完成产物的短时读取凭据 GET /generation-jobs/${param0}/output-access */
 export async function getGenerationOutputAccess(
   // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)

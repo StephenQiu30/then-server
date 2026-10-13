@@ -8,7 +8,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-# Then Web 工程规范
+# WEARLOG Web 工程规范
 
 修改 `frontend/` 前先读取上方要求的已安装 Next.js 对应版本文档，并读取 [`PROJECT.md`](../PROJECT.md) 的组件、目录与状态规则。以根目录 [`DESIGN.md`](../DESIGN.md) 作为唯一视觉与交互标准，按当前需求实现并验证可观察行为。
 
@@ -21,9 +21,9 @@ frontend/
 ├── src/
 │   ├── app/                       # App Router 路由、layout/page 与路由自有样式
 │   ├── api/                       # Umi OpenAPI 生成客户端
+│   ├── layout/                    # SiteLayout、Header、Footer、PageContainer 与共享容器
 │   ├── components/
 │   │   ├── ui/                    # 按需接入 shadcn 基础组件
-│   │   ├── layout/                # 共享页面结构（PageShell）
 │   │   └── <business>/            # 按需：业务组件
 │   ├── providers/                 # 应用上下文，当前 query-provider.tsx
 │   ├── hooks/<business>/          # 按需：业务请求与交互 hooks
@@ -46,15 +46,17 @@ frontend/
 - `src/app` 只负责路由组织，不放通用 HTTP 客户端、共享 Provider 或业务杂项。
 - `src/lib/api/request.ts` 是唯一 Axios 实例入口；`src/api/` 直属 `src/`，只由 Umi OpenAPI 覆盖生成，不手工修改。
 - 页面样式优先使用 Tailwind CSS utility；只有 Tailwind 不适合表达的路由私有样式才保留 CSS Module。
-- 业务组件放到 `src/components/<business>/`，跨页面布局放 `components/layout`，基础组件放 `components/ui`；Server Component 保持默认，交互边界才使用 `use client`。
+- 业务组件放到 `src/components/<business>/`，跨页面布局放 `src/layout/`，基础组件放 `components/ui`；Server Component 保持默认，交互边界才使用 `use client`。
 - 业务按 `components/<business>`、`hooks/<business>`、`lib/<business>` 归属，不再创建并行的 `features`/`modules` 目录。只有业务切片实际实现时才创建所需目录，不建空 `public`、`assets` 或占位路由。
+- 组件命名遵循 PROJECT 4.3：页面用 `*View`，表单用 `*Form`，模态操作用对象/动作 + `Dialog`，布局放 `layout`；文件主导出与文件名一致。基础控件不使用衣物/搭配等业务变体，纯函数与常量放 lib。拆分按职责和真实复用，不以笼统 Panel/Shell/Experience 兜底。
 - 视觉值集中映射到现有 `src/app/globals.css` 的语义 token；组件优先使用 variant/size，页面不覆盖组件颜色和字体。Radix 的触发器组合采用 `asChild`。
 - 配置文件保留在 `frontend/` 根目录，测试按类型放在 `tests/`，不得混入生成目录。
 
 ## 当前实现与自动检查
 
-- `src/app/globals.css` 映射根 DESIGN 的双端中性视觉标准；默认浅色，Web 使用 Geist 与中文系统字体回退。Button/Badge 的 Then 变体归 `components/ui`，不在页面覆盖颜色或字体。
-- `components/layout/page-shell.tsx` 是首页、404 和路由错误页共用的内容结构；各页面必须保持唯一 `main-content`，供根 layout 的跳转链接使用。
+- `src/app/globals.css` 映射根 DESIGN 的双端中性视觉标准；默认浅色，Web 使用 Geist 与中文系统字体回退。Button/Badge 的 WEARLOG 变体归 `components/ui`，不在页面覆盖颜色或字体。
+- 根 layout 持有字体、QueryProvider、Toaster 与跳转链接；`(site)` 路由组通过 `src/layout/site-layout.tsx` 统一渲染 Header、唯一 `main-content` 和 Footer，`(auth)` 路由组通过 `src/layout/auth-layout.tsx` 给登录/注册提供独立的唯一 main。`src/layout/page-container.tsx` 只处理业务页面内容间距，根跳转链接在两组路由都指向唯一 main。
+- Header/Footer 采用 DESIGN 定义的无边框表面；Footer 是紧凑文字栏。Header 的静态品牌保留为 Server Component，`src/layout/site-navigation.tsx` 的导航交互和账户入口使用 Client Component。桌面导航使用 shadcn `NavigationMenu`，窄屏使用 shadcn `Sheet` 与现有 `Button`；共享链接和当前页规则放在 `src/layout/site-links.ts`，不要在不同视口重写路由清单。
 - Next.js 16.3 错误边界使用 `retry()` 重新获取并渲染；不输出内部错误正文，不建立测试专用生产路由。业务加载/空态在实际数据页实现后接入。
 - ESLint 禁止回引 Themes、其他 primitive 体系及页面直用 Axios；目录与依赖边界由 tests/architecture 检查，涵盖别名、相对路径、re-export 和字面量动态 import。UI 不反向依赖业务，生产代码不导入 tests/assets/根工具配置；具体允许方向见 PROJECT。
 - `npm run typecheck` 先执行 `next typegen`，再分别检查应用和 tests/tsconfig.json；`npm test` 自动发现 tests 下的测试，保证新测试不会漏跑；CI 使用 Node/npm 固定版本与 `npm ci`，执行 lint/test/typecheck/format/build/生产依赖审计。

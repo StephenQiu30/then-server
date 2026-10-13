@@ -8,6 +8,7 @@ import (
 const (
 	MediaPurposeAvatarSourcePreparation       = "avatar_source_preparation"
 	MediaPurposeGenerationInput               = "generation_input"
+	MediaPurposeWardrobeImage                 = "wardrobe_image"
 	MediaPurposeDiaryImage                    = "diary_image"
 	MediaPurposeCommunityPublish              = "community_publish"
 	MediaPurposeProfileAvatar                 = "profile_avatar"
@@ -15,6 +16,8 @@ const (
 	MediaCategoryOrdinaryImage                = "ordinary_image"
 	MediaProcessorThen                        = "then"
 	MediaRegionLocalDevelopment               = "local-development"
+	MediaContentTypePNG                       = "image/png"
+	MediaContentTypeWebP                      = "image/webp"
 	MediaContentTypeJPEG                      = "image/jpeg"
 	CurrentMediaPolicyVersion                 = "person-photo-v1"
 	CurrentGenerationInputPolicyVersion       = "generation-input-v1"

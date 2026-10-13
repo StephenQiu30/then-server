@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/adapter/generationfixture"
-	"github.com/StephenQiu30/then-server/backend/internal/adapter/objectstore"
-	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/adapter/generationfixture"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/adapter/objectstore"
+	store "github.com/StephenQiu30/wearlog-server/backend/internal/adapter/postgres"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	generationapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/generation"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )

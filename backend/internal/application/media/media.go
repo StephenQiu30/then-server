@@ -9,6 +9,8 @@ import (
 var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type MediaRepository interface {
+	GetWardrobeImage(context.Context, string, string) (MediaDerivation, error)
+	GetWardrobeOriginal(context.Context, string, string) (MediaAsset, error)
 	CreateConsent(context.Context, string, CreateConsentInput, time.Time) (ConsentRecord, error)
 	GetConsent(context.Context, string, string) (ConsentRecord, error)
 	WithdrawConsent(context.Context, string, string, time.Time) (ConsentRecord, error)
@@ -173,7 +175,7 @@ func validConsentInput(input CreateConsentInput) bool {
 }
 
 func validUploadInput(input CreateMediaUploadInput) bool {
-	if input.ContentType != MediaContentTypeJPEG || input.ByteSize <= 0 || input.ByteSize > MaxPersonPhotoBytes || !sha256Pattern.MatchString(input.SHA256) {
+	if (input.ContentType != MediaContentTypeJPEG && !(input.Purpose == MediaPurposeWardrobeImage && (input.ContentType == MediaContentTypePNG || input.ContentType == MediaContentTypeWebP))) || input.ByteSize <= 0 || input.ByteSize > MaxPersonPhotoBytes || !sha256Pattern.MatchString(input.SHA256) {
 		return false
 	}
 	switch input.Purpose {
@@ -181,9 +183,26 @@ func validUploadInput(input CreateMediaUploadInput) bool {
 		return input.ConsentID != "" && (input.Category == "" || input.Category == MediaCategoryPersonPhoto)
 	case MediaPurposeGenerationInput:
 		return input.ConsentID != "" && (input.Category == MediaCategoryPersonPhoto || input.Category == MediaCategoryOrdinaryImage)
-	case MediaPurposeDiaryImage, MediaPurposeCommunityPublish, MediaPurposeProfileAvatar:
+	case MediaPurposeWardrobeImage, MediaPurposeDiaryImage, MediaPurposeCommunityPublish, MediaPurposeProfileAvatar:
 		return input.ConsentID == "" && input.Category == ""
 	default:
 		return false
 	}
+}
+
+// GetWardrobeImage only exposes a checked image still attached to this owner's wardrobe.
+func (s *MediaService) GetWardrobeImage(ctx context.Context, token, id string) (MediaDerivation, error) {
+	user, err := s.authenticator.CurrentUser(ctx, token)
+	if err != nil {
+		return MediaDerivation{}, err
+	}
+	return s.repository.GetWardrobeImage(ctx, user.ID, id)
+}
+
+func (s *MediaService) GetWardrobeOriginal(ctx context.Context, token, id string) (MediaAsset, error) {
+	user, err := s.authenticator.CurrentUser(ctx, token)
+	if err != nil {
+		return MediaAsset{}, err
+	}
+	return s.repository.GetWardrobeOriginal(ctx, user.ID, id)
 }

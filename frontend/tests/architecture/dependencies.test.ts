@@ -26,10 +26,92 @@ function layer(file: string): string {
   return relative.split('/')[0]
 }
 
+test('component modules expose a matching responsibility name', () => {
+  const violations: string[] = []
+  const files = [
+    ...sourceFiles(path.join(sourceRoot, 'components')),
+    ...sourceFiles(path.join(sourceRoot, 'layout')),
+  ]
+  for (const file of files) {
+    // Registry modules retain shadcn's canonical compound exports.
+    if (layer(file) === 'ui' || !file.endsWith('.tsx')) continue
+    const name = path.basename(file, '.tsx')
+    const expected = name
+      .split('-')
+      .map((word) => word[0].toUpperCase() + word.slice(1))
+      .join('')
+    const ast = ts.createSourceFile(
+      file,
+      readFileSync(file, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+    )
+    const hasPrimaryExport = ast.statements.some(
+      (node) =>
+        ts.isFunctionDeclaration(node) &&
+        node.name?.text === expected &&
+        node.modifiers?.some(
+          (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+        ),
+    )
+    // Navigation deliberately composes desktop and mobile counterparts.
+    if (!hasPrimaryExport && name !== 'site-navigation') {
+      violations.push(
+        `${path.relative(sourceRoot, file)} must export ${expected}`,
+      )
+    }
+    if (/(?:-panel|-shell|-experience)$/.test(name)) {
+      violations.push(
+        `${name}: use the actual View, Layout, Form or display responsibility`,
+      )
+    }
+  }
+  assert.deepEqual(violations, [])
+})
+
+test('reusable look and person presentation accepts data instead of owning fixtures or storage', () => {
+  for (const name of [
+    'look/look-card',
+    'look/look-comparison',
+    'person/person-preview',
+  ]) {
+    const file = path.join(sourceRoot, 'components', `${name}.tsx`)
+    const source = readFileSync(file, 'utf8')
+    const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
+    for (const node of ast.statements) {
+      if (
+        !ts.isImportDeclaration(node) ||
+        !ts.isStringLiteral(node.moduleSpecifier)
+      )
+        continue
+      assert.doesNotMatch(
+        node.moduleSpecifier.text,
+        /(?:\/samples$|@\/hooks\/|@\/api\/)/,
+        name,
+      )
+    }
+    assert.doesNotMatch(
+      source,
+      /localStorage|\/look-samples\/(?:original|result)\.png/,
+      name,
+    )
+  }
+})
+
 test('source directories and imports follow PROJECT boundaries', () => {
   const allowed: Record<string, string[]> = {
-    app: ['app', 'components', 'ui', 'providers', 'hooks', 'lib', 'api'],
-    components: ['components', 'ui', 'hooks', 'lib'],
+    app: [
+      'app',
+      'components',
+      'layout',
+      'ui',
+      'providers',
+      'hooks',
+      'lib',
+      'api',
+    ],
+    components: ['components', 'layout', 'ui', 'hooks', 'lib'],
+    layout: ['layout', 'ui', 'lib'],
     ui: ['ui'],
     providers: ['providers', 'lib'],
     hooks: ['hooks', 'lib', 'api'],

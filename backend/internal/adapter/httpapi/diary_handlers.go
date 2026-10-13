@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	diaryapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/diary"
 )
 
 type DiaryHTTPService interface {

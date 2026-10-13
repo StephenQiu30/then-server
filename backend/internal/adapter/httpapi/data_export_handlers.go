@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	exportapp "github.com/StephenQiu30/then-server/backend/internal/application/dataexport"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	exportapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/dataexport"
 	"github.com/danielgtaylor/huma/v2"
 )
 

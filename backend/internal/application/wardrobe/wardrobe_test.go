@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
 )
 
 type wardrobeAuthenticatorStub struct {
@@ -94,6 +94,7 @@ func TestWardrobeCreateNormalizesAndUsesAuthenticatedOwner(t *testing.T) {
 
 func TestWardrobeRejectsInvalidInputBeforeRepository(t *testing.T) {
 	invalid := []CreateWardrobeItemInput{
+		{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Name: "Coat", Category: WardrobeTop, Availability: WardrobeWearable, Source: WardrobeSourceWardrobe, SampleImage: "https://example.com/private.png"},
 		{ID: "not-a-uuid", Name: "Coat", Category: WardrobeOuterwear, Availability: WardrobeWearable, Source: WardrobeSourceWardrobe},
 		{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Name: "\u0000", Category: WardrobeTop, Availability: WardrobeWearable, Source: WardrobeSourceWardrobe},
 		{ID: "018f1f74-a2d0-7c6d-9c17-4a0ea2400a12", Name: "Coat", Category: "unknown", Availability: WardrobeWearable, Source: WardrobeSourceWardrobe},

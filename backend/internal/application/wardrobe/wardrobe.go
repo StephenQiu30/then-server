@@ -41,12 +41,12 @@ func (s *WardrobeService) CreateWardrobeItem(ctx context.Context, token string, 
 		return WardrobeItem{}, err
 	}
 	name, ok := validWardrobeFields(input.ID, input.Name, input.Category, input.Availability)
-	if !ok || !validWardrobeSource(input.Source) || !validWardrobeAttributes(input.Attributes) {
+	if !ok || !validWardrobeSource(input.Source) || !validWardrobeAttributes(input.Attributes) || !validSampleImage(input.SampleImage) || (input.PhotoMediaID != nil && !validUUID(*input.PhotoMediaID)) || (input.OriginalPhotoMediaID != nil && !validUUID(*input.OriginalPhotoMediaID)) {
 		return WardrobeItem{}, ErrInvalidWardrobeInput
 	}
 	now := s.now().UTC()
 	return s.repository.CreateWardrobeItem(ctx, WardrobeItem{
-		ID: input.ID, OwnerID: user.ID, Name: name, Category: input.Category,
+		ID: input.ID, OwnerID: user.ID, Name: name, OriginalPhotoMediaID: input.OriginalPhotoMediaID, PhotoMediaID: input.PhotoMediaID, SampleImage: input.SampleImage, Category: input.Category,
 		Availability: input.Availability, Source: input.Source, Attributes: input.Attributes, Revision: 1, CreatedAt: now, UpdatedAt: now,
 	})
 }
@@ -79,7 +79,7 @@ func (s *WardrobeService) UpdateWardrobeItem(ctx context.Context, token, itemID 
 		return WardrobeItem{}, err
 	}
 	name, ok := validWardrobeFields(itemID, input.Name, input.Category, input.Availability)
-	if !ok || expectedRevision < 1 || !validWardrobeAttributes(input.Attributes) {
+	if !ok || expectedRevision < 1 || !validWardrobeAttributes(input.Attributes) || !validSampleImage(input.SampleImage) || (input.PhotoMediaID != nil && !validUUID(*input.PhotoMediaID)) || (input.OriginalPhotoMediaID != nil && !validUUID(*input.OriginalPhotoMediaID)) {
 		return WardrobeItem{}, ErrInvalidWardrobeInput
 	}
 	input.Name = name
@@ -206,4 +206,14 @@ func validWardrobeAttributes(value WardrobeAttributes) bool {
 		}
 	}
 	return true
+}
+
+// Sample images are fictional, bundled garment cutouts, never arbitrary media URLs.
+func validSampleImage(value string) bool {
+	switch value {
+	case "", "cream-knit", "navy-shirt", "charcoal-trousers", "blue-jeans", "white-sneakers":
+		return true
+	default:
+		return false
+	}
 }

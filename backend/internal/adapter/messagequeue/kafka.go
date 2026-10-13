@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"

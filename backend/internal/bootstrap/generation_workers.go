@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/adapter/generationfixture"
-	"github.com/StephenQiu30/then-server/backend/internal/adapter/objectstore"
-	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
-	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
-	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/adapter/generationfixture"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/adapter/objectstore"
+	store "github.com/StephenQiu30/wearlog-server/backend/internal/adapter/postgres"
+	generationapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/generation"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/platform/config"
 	"gorm.io/gorm"
 )
 

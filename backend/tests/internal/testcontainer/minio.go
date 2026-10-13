@@ -10,7 +10,7 @@ const defaultMinIOImage = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha2
 // MinIOImage returns the pinned upstream image by default. CI can supply the
 // same pinned release built from source when the upstream registry is unavailable.
 func MinIOImage() string {
-	if image := strings.TrimSpace(os.Getenv("THEN_TEST_MINIO_IMAGE")); image != "" {
+	if image := strings.TrimSpace(os.Getenv("WEARLOG_TEST_MINIO_IMAGE")); image != "" {
 		return image
 	}
 	return defaultMinIOImage

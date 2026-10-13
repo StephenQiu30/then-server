@@ -3,7 +3,7 @@ package httpapi
 import (
 	"time"
 
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 )
 
 type CreateConsentRequest struct {
@@ -33,9 +33,9 @@ type ConsentResponse struct {
 
 type CreateMediaUploadRequest struct {
 	ConsentID   *string `json:"consent_id,omitempty" format:"uuid"`
-	Purpose     string  `json:"purpose" enum:"avatar_source_preparation,generation_input,diary_image,community_publish,profile_avatar"`
+	Purpose     string  `json:"purpose" enum:"avatar_source_preparation,generation_input,wardrobe_image,diary_image,community_publish,profile_avatar"`
 	Category    string  `json:"category,omitempty" enum:"person_photo,ordinary_image"`
-	ContentType string  `json:"content_type" enum:"image/jpeg"`
+	ContentType string  `json:"content_type" enum:"image/jpeg,image/png,image/webp" doc:"PNG/WebP 仅用于 wardrobe_image；其他用途仍限 JPEG"`
 	ByteSize    int64   `json:"byte_size" minimum:"1"`
 	SHA256      string  `json:"sha256" pattern:"^[a-f0-9]{64}$"`
 }
@@ -43,9 +43,9 @@ type CreateMediaUploadRequest struct {
 type MediaResponse struct {
 	ID          string               `json:"id" format:"uuid"`
 	ConsentID   *string              `json:"consent_id,omitempty" format:"uuid"`
-	Purpose     string               `json:"purpose" enum:"avatar_source_preparation,generation_input,diary_image,community_publish,profile_avatar"`
+	Purpose     string               `json:"purpose" enum:"avatar_source_preparation,generation_input,wardrobe_image,diary_image,community_publish,profile_avatar"`
 	Category    string               `json:"category" enum:"person_photo,ordinary_image"`
-	ContentType string               `json:"content_type" enum:"image/jpeg"`
+	ContentType string               `json:"content_type" enum:"image/jpeg,image/png,image/webp"`
 	ByteSize    int64                `json:"byte_size" minimum:"1"`
 	Status      mediaapp.MediaStatus `json:"status" enum:"pending_upload,uploaded,checking,ready,rejected,deleting,deleted"`
 	Reason      string               `json:"reason,omitempty" maxLength:"80"`
@@ -129,4 +129,11 @@ type mediaUploadOutput struct {
 type deletionOutput struct {
 	RequestID string                  `header:"X-Request-ID"`
 	Body      DeletionRequestResponse `json:"body"`
+}
+
+type wardrobeOriginalOutput struct {
+	RequestID      string `header:"X-Request-ID"`
+	ContentType    string `header:"Content-Type"`
+	OriginalSource string `header:"X-Original-Source" enum:"raw,normalized-legacy" doc:"raw 为原始上传字节；normalized-legacy 为历史源图已清理后的净化图"`
+	Body           []byte
 }

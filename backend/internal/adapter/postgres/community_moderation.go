@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"time"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	communityapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/community"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"

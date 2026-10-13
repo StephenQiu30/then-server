@@ -32,6 +32,7 @@ export function useWearEventActions() {
       const result = await operation()
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: wearKey }),
+        queryClient.invalidateQueries({ queryKey: ['wear-statistics'] }),
         queryClient.invalidateQueries({ queryKey: ['outfit-plans'] }),
         queryClient.invalidateQueries({ queryKey: ['wardrobe', 'items'] }),
       ])

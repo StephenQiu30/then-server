@@ -17,7 +17,7 @@ jobs:
   frontend:
     name: Frontend quality
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -38,28 +38,105 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Run frontend unit and contract tests
+        run: npm test
+
+      - name: Typecheck application and tests
+        run: npm run typecheck
+
+      - name: Build production frontend
+        run: npm run build
+
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify production registration journey
+        run: npm run test:e2e
+
       - name: Lint
         run: npm run lint
-
-      - name: Test request contracts
-        run: npm run test
-
-      - name: Typecheck
-        run: npm run typecheck
 
       - name: Check formatting
         run: npm run format:check
 
-      - name: Build
-        run: npm run build
-
       - name: Audit production dependencies
         run: npm audit --omit=dev
+
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-browser-failure-${{ github.run_id }}
+          path: |
+            frontend/test-results/
+            frontend/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+          compression-level: 0
 
   go:
     name: Go quality
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 35
+    env:
+      WEARLOG_TEST_MINIO_IMAGE: then-ci/minio:release-2025-09-07
+      WEARLOG_TEST_DATABASE_URL: postgres://then_test:ci_test_password@127.0.0.1:5432/then_test?sslmode=disable
+      WEARLOG_TEST_MINIO_ENDPOINT: 127.0.0.1:9000
+      WEARLOG_TEST_MINIO_ACCESS_KEY: then_test
+      WEARLOG_TEST_MINIO_SECRET_KEY: ci-minio-test-password
+      WEARLOG_TEST_REDIS_ADDR: 127.0.0.1:6379
+      WEARLOG_TEST_REDIS_DB: "15"
+      WEARLOG_TEST_KAFKA_BROKERS: 127.0.0.1:9092
+    services:
+      postgres:
+        image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+        env:
+          POSTGRES_DB: then_test
+          POSTGRES_USER: then_test
+          POSTGRES_PASSWORD: ci_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U then_test -d then_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8.10.0@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      kafka:
+        image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+        env:
+          CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+          KAFKA_NODE_ID: "1"
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://127.0.0.1:9093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@127.0.0.1:9093
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+          KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "1"
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+          KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "bash -c '/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092'"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-start-period 30s
+          --health-retries 12
     defaults:
       run:
         working-directory: backend
@@ -67,11 +144,33 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
+      - name: Build pinned MinIO test image
+        uses: ./.github/actions/build-test-minio
+        with:
+          image: then-ci/minio:release-2025-09-07
+
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: 1.26.5
           cache-dependency-path: backend/go.sum
+
+      - name: Start isolated MinIO service
+        run: |
+          docker run --detach --rm --name then-ci-minio \
+            --publish 127.0.0.1:9000:9000 \
+            --env MINIO_ROOT_USER="$WEARLOG_TEST_MINIO_ACCESS_KEY" \
+            --env MINIO_ROOT_PASSWORD="$WEARLOG_TEST_MINIO_SECRET_KEY" \
+            "$WEARLOG_TEST_MINIO_IMAGE" server /data
+          for attempt in $(seq 1 60); do
+            if curl --output /dev/null --silent --fail http://127.0.0.1:9000/minio/health/live; then
+              echo "MinIO is ready for service tests"
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs then-ci-minio
+          exit 1
 
       - name: Check formatting
         run: |
@@ -87,16 +186,21 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Run race tests
+      - name: Run unit and architecture regressions
         run: go test -race ./... -count=1
 
-      - name: Build
-        run: go build -trimpath -o /tmp/then-server .
+      - name: Run real PostgreSQL, Redis, MinIO, and Kafka service tests
+        run: go test -race -tags=services ./tests/... -count=1
+
+      - name: Build production backend binary
+        run: go build -trimpath -o /tmp/wearlog-server .
 
   integration:
     name: PostgreSQL integration
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
+    env:
+      WEARLOG_TEST_MINIO_IMAGE: then-ci/minio:release-2025-09-07
     defaults:
       run:
         working-directory: backend
@@ -115,13 +219,15 @@ jobs:
           go-version: 1.26.5
           cache-dependency-path: backend/go.sum
 
-      - name: Run integration tests
+      - name: Run real-process integration tests
         run: go test -race -tags=integration ./tests/... -count=1
 
   container:
     name: OCI container
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
+    env:
+      WEARLOG_TEST_MINIO_IMAGE: then-ci/minio:release-2025-09-07
     defaults:
       run:
         working-directory: backend
@@ -140,10 +246,10 @@ jobs:
           go-version: 1.26.5
           cache-dependency-path: backend/go.sum
 
-      - name: Build image
-        run: docker build --tag then-server:ci .
+      - name: Build backend image
+        run: docker build --tag wearlog-server:ci .
 
-      - name: Test restricted container
+      - name: Test restricted production container
         env:
-          THEN_BACKEND_TEST_IMAGE: then-server:ci
+          WEARLOG_BACKEND_TEST_IMAGE: wearlog-server:ci
         run: go test -race -tags=container ./tests/... -count=1

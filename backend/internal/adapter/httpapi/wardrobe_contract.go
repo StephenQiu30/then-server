@@ -3,24 +3,30 @@ package httpapi
 import (
 	"time"
 
-	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+	wardrobeapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/wardrobe"
 )
 
 type CreateWardrobeItemRequest struct {
-	ID           string                           `json:"id" format:"uuid" doc:"客户端生成的稳定衣物 ID"`
-	Name         string                           `json:"name" minLength:"1" maxLength:"80" doc:"用户确认的衣物名称"`
-	Category     wardrobeapp.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
-	Availability wardrobeapp.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
-	Source       wardrobeapp.WardrobeSource       `json:"source" enum:"wardrobe,quick_add"`
-	Attributes   WardrobeAttributesRequest        `json:"attributes" doc:"用户明确确认的可选衣物属性；空对象表示全部未知"`
+	ID                   string                           `json:"id" format:"uuid" doc:"客户端生成的稳定衣物 ID"`
+	Name                 string                           `json:"name" minLength:"1" maxLength:"80" doc:"用户确认的衣物名称"`
+	OriginalPhotoMediaID *string                          `json:"original_photo_media_id,omitempty" format:"uuid" doc:"本人原始照片；补换图与处理图分别保存，省略时保留"`
+	PhotoMediaID         *string                          `json:"photo_media_id,omitempty" format:"uuid" doc:"本人已就绪 wardrobe_image 照片；更新省略时保留原图"`
+	SampleImage          string                           `json:"sample_image,omitempty" enum:"cream-knit,navy-shirt,charcoal-trousers,blue-jeans,white-sneakers" doc:"可选的内置虚构单品示例图标识，不代表用户实物照片"`
+	Category             wardrobeapp.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
+	Availability         wardrobeapp.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
+	Source               wardrobeapp.WardrobeSource       `json:"source" enum:"wardrobe,quick_add"`
+	Attributes           WardrobeAttributesRequest        `json:"attributes" doc:"用户明确确认的可选衣物属性；空对象表示全部未知"`
 }
 
 type UpdateWardrobeItemRequest struct {
-	ExpectedRevision int                              `json:"expected_revision" minimum:"1"`
-	Name             string                           `json:"name" minLength:"1" maxLength:"80"`
-	Category         wardrobeapp.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
-	Availability     wardrobeapp.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
-	Attributes       WardrobeAttributesRequest        `json:"attributes" doc:"完整替换的用户确认属性；NULL 表示清除为未知"`
+	ExpectedRevision     int                              `json:"expected_revision" minimum:"1"`
+	Name                 string                           `json:"name" minLength:"1" maxLength:"80"`
+	OriginalPhotoMediaID *string                          `json:"original_photo_media_id,omitempty" format:"uuid" doc:"本人原始照片；补换图与处理图分别保存，省略时保留"`
+	PhotoMediaID         *string                          `json:"photo_media_id,omitempty" format:"uuid" doc:"本人已就绪 wardrobe_image 照片；更新省略时保留原图"`
+	SampleImage          string                           `json:"sample_image,omitempty" enum:"cream-knit,navy-shirt,charcoal-trousers,blue-jeans,white-sneakers" doc:"可选的内置虚构单品示例图标识，不代表用户实物照片"`
+	Category             wardrobeapp.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
+	Availability         wardrobeapp.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
+	Attributes           WardrobeAttributesRequest        `json:"attributes" doc:"完整替换的用户确认属性；NULL 表示清除为未知"`
 }
 
 type WardrobeAttributesRequest struct {
@@ -53,17 +59,20 @@ type WardrobeAttributesResponse struct {
 }
 
 type WardrobeItemResponse struct {
-	ID           string                           `json:"id" format:"uuid"`
-	Name         string                           `json:"name" minLength:"1" maxLength:"80"`
-	Category     wardrobeapp.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
-	Availability wardrobeapp.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
-	Source       wardrobeapp.WardrobeSource       `json:"source" enum:"wardrobe,quick_add"`
-	Attributes   WardrobeAttributesResponse       `json:"attributes"`
-	Lifecycle    wardrobeapp.WardrobeLifecycle    `json:"lifecycle" enum:"active,archived"`
-	ArchivedAt   *time.Time                       `json:"archived_at,omitempty" format:"date-time"`
-	Revision     int                              `json:"revision" minimum:"1"`
-	CreatedAt    time.Time                        `json:"created_at" format:"date-time"`
-	UpdatedAt    time.Time                        `json:"updated_at" format:"date-time"`
+	ID                   string                           `json:"id" format:"uuid"`
+	Name                 string                           `json:"name" minLength:"1" maxLength:"80"`
+	OriginalPhotoMediaID *string                          `json:"original_photo_media_id,omitempty" format:"uuid" doc:"本人原始照片；补换图与处理图分别保存，省略时保留"`
+	PhotoMediaID         *string                          `json:"photo_media_id,omitempty" format:"uuid" doc:"本人已就绪 wardrobe_image 照片；更新省略时保留原图"`
+	SampleImage          string                           `json:"sample_image,omitempty" enum:"cream-knit,navy-shirt,charcoal-trousers,blue-jeans,white-sneakers" doc:"可选的内置虚构单品示例图标识，不代表用户实物照片"`
+	Category             wardrobeapp.WardrobeCategory     `json:"category" enum:"top,bottom,one_piece,outerwear,shoes,bag,accessory"`
+	Availability         wardrobeapp.WardrobeAvailability `json:"availability" enum:"wearable,laundry,lent_out,packed"`
+	Source               wardrobeapp.WardrobeSource       `json:"source" enum:"wardrobe,quick_add"`
+	Attributes           WardrobeAttributesResponse       `json:"attributes"`
+	Lifecycle            wardrobeapp.WardrobeLifecycle    `json:"lifecycle" enum:"active,archived"`
+	ArchivedAt           *time.Time                       `json:"archived_at,omitempty" format:"date-time"`
+	Revision             int                              `json:"revision" minimum:"1"`
+	CreatedAt            time.Time                        `json:"created_at" format:"date-time"`
+	UpdatedAt            time.Time                        `json:"updated_at" format:"date-time"`
 }
 
 type WardrobePageResponse struct {

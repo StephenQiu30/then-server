@@ -1,11 +1,11 @@
-// Command then-server starts the OOTD API, worker, or combined development role.
+// Command wearlog-server starts the OOTD API, worker, or combined development role.
 package main
 
 import (
 	"log/slog"
 	"os"
 
-	"github.com/StephenQiu30/then-server/backend/internal/bootstrap"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/bootstrap"
 )
 
 func main() {

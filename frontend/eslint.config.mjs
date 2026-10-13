@@ -64,5 +64,6 @@ export default defineConfig([
     'next-env.d.ts',
     'src/api/**',
     'assets/**',
+    'public/wardrobe-processing/ort-*.mjs',
   ]),
 ])

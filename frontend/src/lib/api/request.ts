@@ -1,10 +1,8 @@
 import axios, { type AxiosRequestConfig } from 'axios'
 
-export type RequestOptions = Omit<
-  AxiosRequestConfig,
-  'baseURL' | 'url' | 'withCredentials'
-> & {
+export type RequestOptions = Omit<AxiosRequestConfig, 'baseURL' | 'url'> & {
   requestType?: 'form'
+  onResponseHeaders?: (headers: Record<string, unknown>) => void
 }
 
 const client = axios.create({
@@ -20,10 +18,12 @@ export default async function request<T>(
 ): Promise<T> {
   const config = { ...options }
   delete config.requestType
+  delete config.onResponseHeaders
   const response = await client.request<T>({
     ...config,
     url,
   })
 
+  options.onResponseHeaders?.(response.headers as Record<string, unknown>)
   return response.data
 }

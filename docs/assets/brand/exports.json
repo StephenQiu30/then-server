@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-13",
+  "status": "runtime-brand-migrated",
+  "brand": "衣序 / WEARLOG",
+  "engineeringName": "WEARLOG",
+  "fileKey": "fYWIHuNucsMQBNYzXBPuEq",
+  "nodes": {
+    "symbol": "4:2",
+    "wordmark": "4:5",
+    "appIcon": "9:941",
+    "guidelines": "9:944"
+  },
+  "colors": {
+    "brand": "#2563EB",
+    "brandBackdrop": "#EFF6FF",
+    "componentPrimary": "#171717",
+    "componentSelection": "#F0F0F0",
+    "surface": "#FFFFFF"
+  },
+  "usage": "Brand blue only; neutral Vercel/shadcn controls. Web and iOS brand assets migrated."
+}

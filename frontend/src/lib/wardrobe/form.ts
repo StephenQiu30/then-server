@@ -1,5 +1,12 @@
 export type WardrobeForm = {
+  originalPhotoMediaID?: string
+  photoOriginalFile?: File
+  originalPhotoPreview?: string
+  photoMediaID?: string
+  photoFile?: File
+  photoPreview?: string
   name: string
+  sampleImage?: API.CreateWardrobeItemRequest['sample_image']
   category: API.CreateWardrobeItemRequest['category']
   availability: API.CreateWardrobeItemRequest['availability']
   attributes: API.WardrobeAttributesRequest
@@ -30,11 +37,20 @@ export function emptyWardrobeForm(): WardrobeForm {
 export function wardrobeFormFromItem(
   item: Pick<
     API.WardrobeItemResponse,
-    'name' | 'category' | 'availability' | 'attributes'
+    | 'name'
+    | 'category'
+    | 'availability'
+    | 'attributes'
+    | 'sample_image'
+    | 'photo_media_id'
+    | 'original_photo_media_id'
   >,
 ): WardrobeForm {
   return {
     name: item.name,
+    photoMediaID: item.photo_media_id,
+    originalPhotoMediaID: item.original_photo_media_id ?? item.photo_media_id,
+    sampleImage: item.sample_image,
     category: item.category,
     availability: item.availability,
     attributes: {

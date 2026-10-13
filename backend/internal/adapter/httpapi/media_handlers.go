@@ -3,14 +3,17 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 	"github.com/danielgtaylor/huma/v2"
 )
 
 type MediaService interface {
+	GetWardrobeImage(context.Context, string, string) (mediaapp.MediaDerivation, error)
+	GetWardrobeOriginal(context.Context, string, string) (mediaapp.MediaAsset, error)
 	CreateConsent(context.Context, string, mediaapp.CreateConsentInput) (mediaapp.ConsentRecord, error)
 	GetConsent(context.Context, string, string) (mediaapp.ConsentRecord, error)
 	WithdrawConsent(context.Context, string, string) (mediaapp.ConsentRecord, error)
@@ -22,6 +25,10 @@ type MediaService interface {
 }
 
 type MediaHandler struct {
+	objects interface {
+		OpenDerivedVersion(context.Context, string, string) (io.ReadCloser, error)
+		OpenVersion(context.Context, string, string) (io.ReadCloser, error)
+	}
 	service      MediaService
 	secureCookie bool
 }
@@ -171,4 +178,77 @@ func mediaResponse(m mediaapp.MediaAsset) MediaResponse {
 
 func deletionResponse(d mediaapp.DeletionRequest) DeletionRequestResponse {
 	return DeletionRequestResponse{ID: d.ID, MediaID: d.MediaID, Status: d.Status, ReadRevokedAt: d.ReadRevokedAt, CompletedAt: d.CompletedAt, BackupExpiresAt: d.BackupExpiresAt, Error: d.StableError, Attempts: d.Attempts, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt}
+}
+
+func (h *MediaHandler) WithImageObjects(objects interface {
+	OpenDerivedVersion(context.Context, string, string) (io.ReadCloser, error)
+	OpenVersion(context.Context, string, string) (io.ReadCloser, error)
+}) *MediaHandler {
+	h.objects = objects
+	return h
+}
+
+func (h *MediaHandler) wardrobeImage(ctx context.Context, input *mediaResourceInput) (*imageOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	if h.objects == nil {
+		return nil, newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
+	}
+	ref, err := h.service.GetWardrobeImage(ctx, input.Session, input.ID)
+	if err != nil {
+		return nil, h.mediaError(ctx, err)
+	}
+	reader, err := h.objects.OpenDerivedVersion(ctx, ref.ObjectKey, ref.ObjectVersionID)
+	if err != nil {
+		return nil, newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(io.LimitReader(reader, mediaapp.MaxPersonPhotoBytes+1))
+	if err != nil || len(data) == 0 || int64(len(data)) > mediaapp.MaxPersonPhotoBytes {
+		return nil, newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
+	}
+	current, err := h.service.GetWardrobeImage(ctx, input.Session, input.ID)
+	if err != nil || current != ref {
+		return nil, newErrorResponse(http.StatusNotFound, requestID(ctx))
+	}
+	return &imageOutput{RequestID: requestID(ctx), ContentType: http.DetectContentType(data), Body: data}, nil
+}
+
+func (h *MediaHandler) wardrobeOriginal(ctx context.Context, input *mediaResourceInput) (*wardrobeOriginalOutput, error) {
+	if err := h.available(ctx, input.Session); err != nil {
+		return nil, err
+	}
+	if h.objects == nil {
+		return nil, newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
+	}
+	asset, err := h.service.GetWardrobeOriginal(ctx, input.Session, input.ID)
+	if err != nil {
+		return nil, h.mediaError(ctx, err)
+	}
+	var reader io.ReadCloser
+	source := "raw"
+	if asset.SourceDeletedAt == nil {
+		reader, err = h.objects.OpenVersion(ctx, asset.RawObjectKey, asset.ObjectVersionID)
+	} else {
+		source = "normalized-legacy"
+		ref, readErr := h.service.GetWardrobeImage(ctx, input.Session, input.ID)
+		if readErr != nil {
+			return nil, h.mediaError(ctx, readErr)
+		}
+		reader, err = h.objects.OpenDerivedVersion(ctx, ref.ObjectKey, ref.ObjectVersionID)
+	}
+	if err != nil {
+		return nil, newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(io.LimitReader(reader, mediaapp.MaxPersonPhotoBytes+1))
+	if err != nil || len(data) == 0 || int64(len(data)) > mediaapp.MaxPersonPhotoBytes || (source == "raw" && int64(len(data)) != asset.ByteSize) {
+		return nil, newErrorResponse(http.StatusServiceUnavailable, requestID(ctx))
+	}
+	current, err := h.service.GetWardrobeOriginal(ctx, input.Session, input.ID)
+	if err != nil || current.ObjectVersionID != asset.ObjectVersionID {
+		return nil, newErrorResponse(http.StatusNotFound, requestID(ctx))
+	}
+	return &wardrobeOriginalOutput{RequestID: requestID(ctx), ContentType: http.DetectContentType(data), OriginalSource: source, Body: data}, nil
 }

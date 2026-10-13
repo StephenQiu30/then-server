@@ -6,9 +6,9 @@ import (
 	"errors"
 	"time"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	generationapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/generation"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"

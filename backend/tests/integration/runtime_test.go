@@ -20,10 +20,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/adapter/httpapi"
-	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
-	"github.com/StephenQiu30/then-server/backend/internal/platform/database"
-	"github.com/StephenQiu30/then-server/backend/tests/internal/testcontainer"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/adapter/httpapi"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/platform/config"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/platform/database"
+	"github.com/StephenQiu30/wearlog-server/backend/tests/internal/testcontainer"
 	dockerclient "github.com/moby/moby/client"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -96,7 +96,7 @@ func TestPostgresDisconnectRecovery(t *testing.T) {
 	if err := admin.ORM().WithContext(ctx).Exec("ALTER ROLE " + migrationGuardRole + " SET search_path TO " + migrationGuardSchema).Error; err != nil {
 		t.Fatal(err)
 	}
-	binary := filepath.Join(t.TempDir(), "then-backend")
+	binary := filepath.Join(t.TempDir(), "wearlog-backend")
 	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../..")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v %s", err, output)

@@ -1,0 +1,226 @@
+{
+  "fileKey": "fYWIHuNucsMQBNYzXBPuEq",
+  "date": "2026-10-13",
+  "revision": "Borderless compact",
+  "screens": {
+    "studio": "5:4",
+    "compare": "7:38",
+    "wardrobe": "7:89",
+    "looks": "7:146",
+    "lookDetail": "7:186",
+    "wear": "7:219",
+    "addGarment": "7:254",
+    "account": "7:299",
+    "mobileStudio": "8:133",
+    "mobilePicker": "8:161",
+    "mobileCompare": "8:205",
+    "mobileWardrobe": "8:231",
+    "mobileLooks": "8:270",
+    "mobileWear": "8:301",
+    "login": "9:627",
+    "register": "9:647",
+    "save": "9:670",
+    "record": "9:731",
+    "generating": "9:795",
+    "failed": "9:850",
+    "states": "9:905",
+    "appIcon": "9:941",
+    "brand": "9:944",
+    "recorded": "12:395",
+    "mobileRecorded": "12:437",
+    "mobileBefore": "12:463",
+    "mobileMenu": "14:784",
+    "mobileRecord": "17:636"
+  },
+  "manifest": [
+    {
+      "key": "studio",
+      "id": "5:4",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/studio.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "compare",
+      "id": "7:38",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/compare.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "wardrobe",
+      "id": "7:89",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/wardrobe.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "looks",
+      "id": "7:146",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/looks.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "lookDetail",
+      "id": "7:186",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/lookDetail.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "wear",
+      "id": "7:219",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/wear.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "addGarment",
+      "id": "7:254",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/addGarment.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "account",
+      "id": "7:299",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/account.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "mobileStudio",
+      "id": "8:133",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/mobileStudio.png",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "key": "mobilePicker",
+      "id": "8:161",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/mobilePicker.png",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "key": "mobileCompare",
+      "id": "8:205",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/mobileCompare.png",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "key": "mobileWardrobe",
+      "id": "8:231",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/mobileWardrobe.png",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "key": "mobileLooks",
+      "id": "8:270",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/mobileLooks.png",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "key": "mobileWear",
+      "id": "8:301",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/mobileWear.png",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "key": "login",
+      "id": "9:627",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/login.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "register",
+      "id": "9:647",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/register.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "save",
+      "id": "9:670",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/save.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "record",
+      "id": "9:731",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/record.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "generating",
+      "id": "9:795",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/generating.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "failed",
+      "id": "9:850",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/failed.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "states",
+      "id": "9:905",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/states.png",
+      "width": 1440,
+      "height": 1240
+    },
+    {
+      "key": "brand",
+      "id": "9:944",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/brand.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "recorded",
+      "id": "12:395",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/recorded.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "key": "mobileRecorded",
+      "id": "12:437",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/mobileRecorded.png",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "key": "mobileBefore",
+      "id": "12:463",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/mobileBefore.png",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "key": "mobileMenu",
+      "id": "14:784",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/mobileMenu.png",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "key": "mobileRecord",
+      "id": "17:636",
+      "path": "/Users/stephenqiu/Desktop/StephenQiu/Wearlog/wearlog-server/docs/validation/assets/wearlog-redesign-20261013/mobileRecord.png",
+      "width": 390,
+      "height": 844
+    }
+  ]
+}

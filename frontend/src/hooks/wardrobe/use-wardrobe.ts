@@ -32,12 +32,18 @@ export function useWardrobeActions() {
     () => ({
       async create(body: API.CreateWardrobeItemRequest) {
         const item = await createWardrobeItem(body)
-        await queryClient.invalidateQueries({ queryKey: wardrobeKey })
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: wardrobeKey }),
+          queryClient.invalidateQueries({ queryKey: ['wear-statistics'] }),
+        ])
         return item
       },
       async update(id: string, body: API.UpdateWardrobeItemRequest) {
         const item = await updateWardrobeItem({ item_id: id }, body)
-        await queryClient.invalidateQueries({ queryKey: wardrobeKey })
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: wardrobeKey }),
+          queryClient.invalidateQueries({ queryKey: ['wear-statistics'] }),
+        ])
         return item
       },
       get: (id: string) => getWardrobeItem({ item_id: id }),
@@ -54,7 +60,10 @@ export function useWardrobeActions() {
           expected_impact: impact,
           history_policy: policy,
         })
-        await queryClient.invalidateQueries({ queryKey: wardrobeKey })
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: wardrobeKey }),
+          queryClient.invalidateQueries({ queryKey: ['wear-statistics'] }),
+        ])
       },
     }),
     [queryClient],

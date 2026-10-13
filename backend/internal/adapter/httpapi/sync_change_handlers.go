@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	syncapp "github.com/StephenQiu30/then-server/backend/internal/application/syncchange"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	syncapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/syncchange"
 )
 
 type SyncHTTPService interface {

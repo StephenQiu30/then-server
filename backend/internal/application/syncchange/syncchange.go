@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
 )
 
 var ErrInvalidCursor = errors.New("invalid sync cursor")

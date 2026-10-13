@@ -7,11 +7,15 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	imagedraw "golang.org/x/image/draw"
+	_ "golang.org/x/image/webp"
+	"image"
 	"image/jpeg"
+	"image/png"
 	"io"
 	"time"
 
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 )
 
 type Repository interface {
@@ -120,8 +124,10 @@ func (r *Runner) cleanupSources(ctx context.Context) error {
 				return err
 			}
 			if asset.Status == mediaapp.MediaDeleted {
-				if err := r.objects.DeleteAllVersions(ctx, "derived-private", "media/"+asset.ID+"/normalized.jpg"); err != nil {
-					return err
+				for _, name := range []string{"normalized.jpg", "normalized.png"} {
+					if err := r.objects.DeleteAllVersions(ctx, "derived-private", "media/"+asset.ID+"/"+name); err != nil {
+						return err
+					}
 				}
 			}
 			if err := r.repository.MarkSourceDeleted(ctx, asset.ID, r.now().UTC()); err != nil {
@@ -185,6 +191,9 @@ func (r *Runner) checkMedia(ctx context.Context, event mediaapp.OutboxEvent) err
 		return nil
 	}
 	key := "media/" + asset.ID + "/normalized.jpg"
+	if len(data) > 8 && bytes.Equal(data[:8], []byte{137, 80, 78, 71, 13, 10, 26, 10}) {
+		key = "media/" + asset.ID + "/normalized.png"
+	}
 	versionID, err := r.objects.PutDerived(workContext, key, bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return err
@@ -213,7 +222,25 @@ func (r *Runner) normalizedJPEG(ctx context.Context, asset mediaapp.MediaAsset) 
 	if digest != asset.SHA256 {
 		return nil, 0, 0, "digest_mismatch", errors.New("source digest mismatch")
 	}
-	if len(data) < 4 || data[0] != 0xff || data[1] != 0xd8 || bytes.Count(data, []byte{0xff, 0xd8}) != 1 {
+	if asset.Purpose == mediaapp.MediaPurposeWardrobeImage && (asset.ContentType == mediaapp.MediaContentTypePNG || asset.ContentType == mediaapp.MediaContentTypeWebP) {
+		config, format, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil || "image/"+format != asset.ContentType || config.Width < 1 || config.Height < 1 || int64(config.Width)*int64(config.Height) > mediaapp.MaxPersonPhotoPixels {
+			return nil, 0, 0, "invalid_image", errors.New("wardrobe image invalid")
+		}
+		decoded, _, err := image.Decode(bytes.NewReader(data))
+		if err != nil {
+			return nil, 0, 0, "invalid_image", errors.New("wardrobe decode failed")
+		}
+		var normalized bytes.Buffer
+		if err := png.Encode(&normalized, wardrobeDisplayImage(decoded)); err != nil {
+			return nil, 0, 0, "normalization_failed", err
+		}
+		if normalized.Len() > int(mediaapp.MaxPersonPhotoBytes) {
+			return nil, 0, 0, "size_mismatch", errors.New("normalized image too large")
+		}
+		return normalized.Bytes(), config.Width, config.Height, "", nil
+	}
+	if len(data) < 4 || data[0] != 0xff || data[1] != 0xd8 || (asset.Purpose != mediaapp.MediaPurposeWardrobeImage && bytes.Count(data, []byte{0xff, 0xd8}) != 1) {
 		return nil, 0, 0, "invalid_jpeg", errors.New("invalid JPEG framing")
 	}
 	configuration, err := jpeg.DecodeConfig(bytes.NewReader(data))
@@ -223,6 +250,9 @@ func (r *Runner) normalizedJPEG(ctx context.Context, asset mediaapp.MediaAsset) 
 	image, err := jpeg.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, configuration.Width, configuration.Height, "invalid_jpeg", errors.New("JPEG decode failed")
+	}
+	if asset.Purpose == mediaapp.MediaPurposeWardrobeImage {
+		image = wardrobeDisplayImage(image)
 	}
 	var normalized bytes.Buffer
 	if err := jpeg.Encode(&normalized, image, &jpeg.Options{Quality: 90}); err != nil {
@@ -253,4 +283,23 @@ func (r *Runner) deleteMedia(ctx context.Context, event mediaapp.OutboxEvent) er
 		return err
 	}
 	return r.repository.CompleteDeletion(ctx, event.ID, asset.ID, r.now().UTC())
+}
+
+// Display derivatives stay bounded while original object bytes remain untouched.
+func wardrobeDisplayImage(source image.Image) image.Image {
+	bounds := source.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	if max(width, height) <= 2048 {
+		return source
+	}
+	if width >= height {
+		height = max(1, height*2048/width)
+		width = 2048
+	} else {
+		width = max(1, width*2048/height)
+		height = 2048
+	}
+	target := image.NewNRGBA(image.Rect(0, 0, width, height))
+	imagedraw.ApproxBiLinear.Scale(target, target.Bounds(), source, bounds, imagedraw.Src, nil)
+	return target
 }

@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
+	wardrobeapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/wardrobe"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -23,20 +24,25 @@ func NewWardrobeRepository(database *gorm.DB) *WardrobeRepository {
 }
 
 type wardrobeItemRecord struct {
-	OwnerID       string     `gorm:"column:owner_id;type:uuid;primaryKey;index:wardrobe_items_owner_order_idx,priority:1"`
-	ID            string     `gorm:"column:id;type:uuid;primaryKey"`
-	Name          string     `gorm:"column:name;type:text;not null;check:wardrobe_items_name_check,name = btrim(name) AND char_length(name) BETWEEN 1 AND 80"`
-	Category      string     `gorm:"column:category;type:text;not null;check:wardrobe_items_category_check,category IN ('top','bottom','one_piece','outerwear','shoes','bag','accessory')"`
-	Availability  string     `gorm:"column:availability;type:text;not null;check:wardrobe_items_availability_check,availability IN ('wearable','laundry','lent_out','packed')"`
-	Source        string     `gorm:"column:source;type:text;not null;check:wardrobe_items_source_check,source IN ('wardrobe','quick_add')"`
-	FormalityBand *string    `gorm:"column:formality_band;type:text;check:wardrobe_items_formality_band_check,formality_band IN ('casual','smart_casual','formal')"`
-	WarmthBand    *string    `gorm:"column:warmth_band;type:text;check:wardrobe_items_warmth_band_check,warmth_band IN ('light','medium','warm')"`
-	RainUse       *string    `gorm:"column:rain_use;type:text;check:wardrobe_items_rain_use_check,rain_use IN ('suitable','unsuitable')"`
-	WalkingUse    *string    `gorm:"column:walking_use;type:text;check:wardrobe_items_walking_use_check,walking_use IN ('suitable','unsuitable')"`
-	ArchivedAt    *time.Time `gorm:"column:archived_at;type:timestamptz"`
-	Revision      int        `gorm:"column:revision;not null;check:wardrobe_items_revision_check,revision >= 1"`
-	CreatedAt     time.Time  `gorm:"column:created_at;type:timestamptz;not null;index:wardrobe_items_owner_order_idx,priority:2,sort:desc"`
-	UpdatedAt     time.Time  `gorm:"column:updated_at;type:timestamptz;not null;check:wardrobe_items_timestamps_check,updated_at >= created_at"`
+	OriginalPhotoMediaID *string           `gorm:"column:original_photo_media_id;type:uuid;index:wardrobe_items_original_photo_idx"`
+	OriginalPhotoMedia   *mediaAssetRecord `gorm:"foreignKey:OriginalPhotoMediaID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:RESTRICT"`
+	PhotoMediaID         *string           `gorm:"column:photo_media_id;type:uuid;index:wardrobe_items_photo_idx"`
+	PhotoMedia           *mediaAssetRecord `gorm:"foreignKey:PhotoMediaID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:RESTRICT"`
+	SampleImage          string            `gorm:"column:sample_image;type:text;not null;default:'';check:wardrobe_items_sample_image_check,sample_image IN ('','cream-knit','navy-shirt','charcoal-trousers','blue-jeans','white-sneakers')"`
+	OwnerID              string            `gorm:"column:owner_id;type:uuid;primaryKey;index:wardrobe_items_owner_order_idx,priority:1"`
+	ID                   string            `gorm:"column:id;type:uuid;primaryKey"`
+	Name                 string            `gorm:"column:name;type:text;not null;check:wardrobe_items_name_check,name = btrim(name) AND char_length(name) BETWEEN 1 AND 80"`
+	Category             string            `gorm:"column:category;type:text;not null;check:wardrobe_items_category_check,category IN ('top','bottom','one_piece','outerwear','shoes','bag','accessory')"`
+	Availability         string            `gorm:"column:availability;type:text;not null;check:wardrobe_items_availability_check,availability IN ('wearable','laundry','lent_out','packed')"`
+	Source               string            `gorm:"column:source;type:text;not null;check:wardrobe_items_source_check,source IN ('wardrobe','quick_add')"`
+	FormalityBand        *string           `gorm:"column:formality_band;type:text;check:wardrobe_items_formality_band_check,formality_band IN ('casual','smart_casual','formal')"`
+	WarmthBand           *string           `gorm:"column:warmth_band;type:text;check:wardrobe_items_warmth_band_check,warmth_band IN ('light','medium','warm')"`
+	RainUse              *string           `gorm:"column:rain_use;type:text;check:wardrobe_items_rain_use_check,rain_use IN ('suitable','unsuitable')"`
+	WalkingUse           *string           `gorm:"column:walking_use;type:text;check:wardrobe_items_walking_use_check,walking_use IN ('suitable','unsuitable')"`
+	ArchivedAt           *time.Time        `gorm:"column:archived_at;type:timestamptz"`
+	Revision             int               `gorm:"column:revision;not null;check:wardrobe_items_revision_check,revision >= 1"`
+	CreatedAt            time.Time         `gorm:"column:created_at;type:timestamptz;not null;index:wardrobe_items_owner_order_idx,priority:2,sort:desc"`
+	UpdatedAt            time.Time         `gorm:"column:updated_at;type:timestamptz;not null;check:wardrobe_items_timestamps_check,updated_at >= created_at"`
 }
 
 func (wardrobeItemRecord) TableName() string { return "wardrobe_items" }
@@ -52,6 +58,12 @@ func (wardrobeItemDeletionRecord) TableName() string { return "wardrobe_item_del
 func (r *WardrobeRepository) CreateWardrobeItem(ctx context.Context, item wardrobeapp.WardrobeItem) (wardrobeapp.WardrobeItem, error) {
 	record := wardrobeRecord(item)
 	err := r.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := validateWardrobePhoto(tx, item.OwnerID, item.OriginalPhotoMediaID); err != nil {
+			return err
+		}
+		if err := validateWardrobePhoto(tx, item.OwnerID, item.PhotoMediaID); err != nil {
+			return err
+		}
 		if err := ensureSyncSeed(tx, item.OwnerID, item.CreatedAt); err != nil {
 			return err
 		}
@@ -73,7 +85,7 @@ func (r *WardrobeRepository) CreateWardrobeItem(ctx context.Context, item wardro
 		if err := tx.Where("owner_id = ? AND id = ?", item.OwnerID, item.ID).First(&existing).Error; err != nil {
 			return err
 		}
-		if existing.Name != item.Name || existing.Category != string(item.Category) || existing.Availability != string(item.Availability) || existing.Source != string(item.Source) || (existing.ArchivedAt != nil) != (item.ArchivedAt != nil) || !wardrobeRecordAttributesEqual(existing, item.Attributes) {
+		if existing.Name != item.Name || !stringsEqual(existing.PhotoMediaID, item.PhotoMediaID) || !stringsEqual(existing.OriginalPhotoMediaID, item.OriginalPhotoMediaID) || existing.SampleImage != item.SampleImage || existing.Category != string(item.Category) || existing.Availability != string(item.Availability) || existing.Source != string(item.Source) || (existing.ArchivedAt != nil) != (item.ArchivedAt != nil) || !wardrobeRecordAttributesEqual(existing, item.Attributes) {
 			return wardrobeapp.ErrWardrobeConflict
 		}
 		record = existing
@@ -131,7 +143,20 @@ func (r *WardrobeRepository) UpdateWardrobeItem(ctx context.Context, ownerID, it
 		if record.Revision != expectedRevision {
 			return wardrobeapp.ErrWardrobeConflict
 		}
+		if input.OriginalPhotoMediaID != nil {
+			if err := validateWardrobePhoto(tx, ownerID, input.OriginalPhotoMediaID); err != nil {
+				return err
+			}
+			record.OriginalPhotoMediaID = input.OriginalPhotoMediaID
+		}
+		if input.PhotoMediaID != nil {
+			if err := validateWardrobePhoto(tx, ownerID, input.PhotoMediaID); err != nil {
+				return err
+			}
+			record.PhotoMediaID = input.PhotoMediaID
+		}
 		record.Name, record.Category, record.Availability = input.Name, string(input.Category), string(input.Availability)
+		record.SampleImage = input.SampleImage
 		record.FormalityBand = stringPointer(input.Attributes.FormalityBand)
 		record.WarmthBand = stringPointer(input.Attributes.WarmthBand)
 		record.RainUse = stringPointer(input.Attributes.RainUse)
@@ -142,7 +167,7 @@ func (r *WardrobeRepository) UpdateWardrobeItem(ctx context.Context, ownerID, it
 		}
 		record.UpdatedAt = at
 		if err := tx.Model(&wardrobeItemRecord{}).Where("owner_id = ? AND id = ? AND revision = ?", ownerID, itemID, expectedRevision).Updates(map[string]any{
-			"name": record.Name, "category": record.Category, "availability": record.Availability,
+			"name": record.Name, "original_photo_media_id": record.OriginalPhotoMediaID, "photo_media_id": record.PhotoMediaID, "sample_image": record.SampleImage, "category": record.Category, "availability": record.Availability,
 			"formality_band": record.FormalityBand, "warmth_band": record.WarmthBand, "rain_use": record.RainUse, "walking_use": record.WalkingUse,
 			"revision": record.Revision, "updated_at": record.UpdatedAt,
 		}).Error; err != nil {
@@ -388,11 +413,11 @@ func sortedWearEventIDs(events []wearEventRecord) []string {
 }
 
 func wardrobeRecord(item wardrobeapp.WardrobeItem) wardrobeItemRecord {
-	return wardrobeItemRecord{OwnerID: item.OwnerID, ID: item.ID, Name: item.Name, Category: string(item.Category), Availability: string(item.Availability), Source: string(item.Source), FormalityBand: stringPointer(item.Attributes.FormalityBand), WarmthBand: stringPointer(item.Attributes.WarmthBand), RainUse: stringPointer(item.Attributes.RainUse), WalkingUse: stringPointer(item.Attributes.WalkingUse), ArchivedAt: item.ArchivedAt, Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return wardrobeItemRecord{OwnerID: item.OwnerID, ID: item.ID, Name: item.Name, OriginalPhotoMediaID: item.OriginalPhotoMediaID, PhotoMediaID: item.PhotoMediaID, SampleImage: item.SampleImage, Category: string(item.Category), Availability: string(item.Availability), Source: string(item.Source), FormalityBand: stringPointer(item.Attributes.FormalityBand), WarmthBand: stringPointer(item.Attributes.WarmthBand), RainUse: stringPointer(item.Attributes.RainUse), WalkingUse: stringPointer(item.Attributes.WalkingUse), ArchivedAt: item.ArchivedAt, Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func wardrobeFromRecord(record wardrobeItemRecord) wardrobeapp.WardrobeItem {
-	return wardrobeapp.WardrobeItem{OwnerID: record.OwnerID, ID: record.ID, Name: record.Name, Category: wardrobeapp.WardrobeCategory(record.Category), Availability: wardrobeapp.WardrobeAvailability(record.Availability), Source: wardrobeapp.WardrobeSource(record.Source), Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: typedPointer[wardrobeapp.WardrobeFormalityBand](record.FormalityBand), WarmthBand: typedPointer[wardrobeapp.WardrobeWarmthBand](record.WarmthBand), RainUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.RainUse), WalkingUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.WalkingUse)}, ArchivedAt: timePointerCopy(record.ArchivedAt), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+	return wardrobeapp.WardrobeItem{OwnerID: record.OwnerID, ID: record.ID, Name: record.Name, OriginalPhotoMediaID: record.OriginalPhotoMediaID, PhotoMediaID: record.PhotoMediaID, SampleImage: record.SampleImage, Category: wardrobeapp.WardrobeCategory(record.Category), Availability: wardrobeapp.WardrobeAvailability(record.Availability), Source: wardrobeapp.WardrobeSource(record.Source), Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: typedPointer[wardrobeapp.WardrobeFormalityBand](record.FormalityBand), WarmthBand: typedPointer[wardrobeapp.WardrobeWarmthBand](record.WarmthBand), RainUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.RainUse), WalkingUse: typedPointer[wardrobeapp.WardrobeUseSuitability](record.WalkingUse)}, ArchivedAt: timePointerCopy(record.ArchivedAt), Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
 }
 
 func wardrobeListQuery(query *gorm.DB, filter wardrobeapp.WardrobeListFilter) *gorm.DB {
@@ -469,4 +494,27 @@ func wardrobeWriteError(err error) error {
 	default:
 		return wardrobeapp.ErrWardrobeUnavailable
 	}
+}
+
+// Lock the media row so attachment cannot race revocation or processing.
+func validateWardrobePhoto(tx *gorm.DB, ownerID string, id *string) error {
+	if id == nil {
+		return nil
+	}
+	var asset mediaAssetRecord
+	err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id = ? AND owner_id = ? AND purpose = ? AND category = ? AND status = ?", *id, ownerID, mediaapp.MediaPurposeWardrobeImage, mediaapp.MediaCategoryOrdinaryImage, string(mediaapp.MediaReady)).First(&asset).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return wardrobeapp.ErrWardrobeConflict
+	}
+	if err != nil {
+		return err
+	}
+	var count int64
+	if err := tx.Model(&mediaDerivationRecord{}).Where("media_id = ?", *id).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return wardrobeapp.ErrWardrobeConflict
+	}
+	return nil
 }

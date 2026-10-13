@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 )
 
 type mediaTransportStub struct {
@@ -83,4 +83,38 @@ func TestMediaDeclaredSizeLimitReturns413(t *testing.T) {
 	if response.Code != http.StatusRequestEntityTooLarge || !strings.Contains(response.Body.String(), "PAYLOAD_TOO_LARGE") {
 		t.Fatalf("unexpected oversized response: %d %s", response.Code, response.Body.String())
 	}
+}
+
+func (s *mediaTransportStub) GetWardrobeImage(context.Context, string, string) (mediaapp.MediaDerivation, error) {
+	return mediaapp.MediaDerivation{}, s.err
+}
+
+func TestWardrobeImageRequiresSessionAndDisablesCaching(t *testing.T) {
+	handler := NewMediaHandler(&mediaTransportStub{}, false).WithImageObjects(communityObjectStub{data: "\xff\xd8\xffchecked-jpeg-fixture"})
+	router, err := NewRouter(context.Background(), false, probeFunc(func(context.Context) error { return nil }), nil, nil, nil, nil, nil, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)), handler)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/media/018f1f74-a2d0-7c6d-9c17-4a0ea2400a11/wardrobe-image"
+	for _, authenticated := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if authenticated {
+			req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "fixture"})
+		}
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, req)
+		if response.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal("private image may be cached")
+		}
+		if !authenticated && response.Code != http.StatusUnauthorized {
+			t.Fatal("image accepted missing session")
+		}
+		if authenticated && (response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/jpeg" || response.Body.String() != "\xff\xd8\xffchecked-jpeg-fixture") {
+			t.Fatal("image transport changed checked bytes or type")
+		}
+	}
+}
+
+func (s *mediaTransportStub) GetWardrobeOriginal(context.Context, string, string) (mediaapp.MediaAsset, error) {
+	return mediaapp.MediaAsset{}, nil
 }

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
 )
 
 type mediaAuthenticatorStub struct {
@@ -179,6 +179,27 @@ func TestOrdinaryImagesDoNotReusePersonPhotoConsentGate(t *testing.T) {
 		}
 		if repository.adultCalls != 0 || repository.mediaInput.ConsentID != "" {
 			t.Fatalf("%s reused person-photo gate: adult_calls=%d input=%+v", purpose, repository.adultCalls, repository.mediaInput)
+		}
+	}
+}
+
+func (s *mediaRepositoryStub) GetWardrobeImage(context.Context, string, string) (MediaDerivation, error) {
+	return MediaDerivation{}, nil
+}
+
+func (s *mediaRepositoryStub) GetWardrobeOriginal(context.Context, string, string) (MediaAsset, error) {
+	return MediaAsset{}, nil
+}
+
+func TestWardrobeUploadFormatsStayScoped(t *testing.T) {
+	for _, format := range []string{MediaContentTypeJPEG, MediaContentTypePNG, MediaContentTypeWebP} {
+		input := CreateMediaUploadInput{Purpose: MediaPurposeWardrobeImage, ContentType: format, ByteSize: 10, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+		if !validUploadInput(input) {
+			t.Fatalf("wardrobe rejected %s", format)
+		}
+		input.Purpose = MediaPurposeDiaryImage
+		if validUploadInput(input) != (format == MediaContentTypeJPEG) {
+			t.Fatalf("format scope changed for %s", format)
 		}
 	}
 }

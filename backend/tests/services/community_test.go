@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
-	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	store "github.com/StephenQiu30/wearlog-server/backend/internal/adapter/postgres"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	communityapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/community"
+	diaryapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/diary"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

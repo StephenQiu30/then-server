@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	wardrobeapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/wardrobe"
 )
 
 type WardrobeHTTPService interface {
@@ -69,7 +69,7 @@ func (h *WardrobeHandler) create(ctx context.Context, input *createWardrobeItemI
 	if err := h.available(ctx, input.Session); err != nil {
 		return nil, err
 	}
-	item, err := h.service.CreateWardrobeItem(ctx, input.Session, wardrobeapp.CreateWardrobeItemInput{ID: input.Body.ID, Name: input.Body.Name, Category: input.Body.Category, Availability: input.Body.Availability, Source: input.Body.Source, Attributes: wardrobeAttributes(input.Body.Attributes)})
+	item, err := h.service.CreateWardrobeItem(ctx, input.Session, wardrobeapp.CreateWardrobeItemInput{ID: input.Body.ID, Name: input.Body.Name, OriginalPhotoMediaID: input.Body.OriginalPhotoMediaID, PhotoMediaID: input.Body.PhotoMediaID, SampleImage: input.Body.SampleImage, Category: input.Body.Category, Availability: input.Body.Availability, Source: input.Body.Source, Attributes: wardrobeAttributes(input.Body.Attributes)})
 	if err != nil {
 		return nil, h.error(ctx, err)
 	}
@@ -114,7 +114,7 @@ func (h *WardrobeHandler) update(ctx context.Context, input *updateWardrobeItemI
 	if err := h.available(ctx, input.Session); err != nil {
 		return nil, err
 	}
-	item, err := h.service.UpdateWardrobeItem(ctx, input.Session, input.ID, input.Body.ExpectedRevision, wardrobeapp.UpdateWardrobeItemInput{Name: input.Body.Name, Category: input.Body.Category, Availability: input.Body.Availability, Attributes: wardrobeAttributes(input.Body.Attributes)})
+	item, err := h.service.UpdateWardrobeItem(ctx, input.Session, input.ID, input.Body.ExpectedRevision, wardrobeapp.UpdateWardrobeItemInput{Name: input.Body.Name, OriginalPhotoMediaID: input.Body.OriginalPhotoMediaID, PhotoMediaID: input.Body.PhotoMediaID, SampleImage: input.Body.SampleImage, Category: input.Body.Category, Availability: input.Body.Availability, Attributes: wardrobeAttributes(input.Body.Attributes)})
 	if err != nil {
 		return nil, h.error(ctx, err)
 	}
@@ -186,7 +186,7 @@ func wardrobeResponse(item wardrobeapp.WardrobeItem) WardrobeItemResponse {
 	if item.ArchivedAt != nil {
 		lifecycle = wardrobeapp.WardrobeArchived
 	}
-	return WardrobeItemResponse{ID: item.ID, Name: item.Name, Category: item.Category, Availability: item.Availability, Source: item.Source, Attributes: wardrobeAttributesResponse(item.Attributes), Lifecycle: lifecycle, ArchivedAt: item.ArchivedAt, Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return WardrobeItemResponse{ID: item.ID, Name: item.Name, OriginalPhotoMediaID: item.OriginalPhotoMediaID, PhotoMediaID: item.PhotoMediaID, SampleImage: item.SampleImage, Category: item.Category, Availability: item.Availability, Source: item.Source, Attributes: wardrobeAttributesResponse(item.Attributes), Lifecycle: lifecycle, ArchivedAt: item.ArchivedAt, Revision: item.Revision, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func wardrobeAttributes(value WardrobeAttributesRequest) wardrobeapp.WardrobeAttributes {

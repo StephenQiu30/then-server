@@ -1,0 +1,21 @@
+{
+  "fileKey": "fYWIHuNucsMQBNYzXBPuEq",
+  "date": "2026-10-13",
+  "revision": "Borderless compact",
+  "pages": 27,
+  "types": {
+    "INSTANCE": 323,
+    "FRAME": 224,
+    "VECTOR": 27,
+    "TEXT": 558,
+    "RECTANGLE": 63
+  },
+  "fonts": [
+    "Geist",
+    "Noto Sans SC"
+  ],
+  "visibleStrokes": 0,
+  "prototypeEdges": 117,
+  "overflowIssues": [],
+  "prototype": "Concept navigation only. No real try-on or 360 rendering."
+}

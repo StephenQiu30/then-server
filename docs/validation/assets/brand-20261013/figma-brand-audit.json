@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-13",
+  "unexpectedBrandPaintNodes": [],
+  "allowedBrandPaintCount": 140,
+  "screenCount": 57,
+  "brandInstanceCount": 56,
+  "checked": [
+    {
+      "id": "65:141",
+      "types": {
+        "FRAME": 24,
+        "INSTANCE": 14,
+        "VECTOR": 2,
+        "TEXT": 31,
+        "RECTANGLE": 5
+      },
+      "fonts": [
+        "Noto Sans SC",
+        "Geist"
+      ]
+    },
+    {
+      "id": "65:152",
+      "types": {
+        "FRAME": 12,
+        "INSTANCE": 8,
+        "VECTOR": 2,
+        "TEXT": 14,
+        "RECTANGLE": 2
+      },
+      "fonts": [
+        "Noto Sans SC",
+        "Geist"
+      ]
+    },
+    {
+      "id": "65:140",
+      "types": {
+        "INSTANCE": 9,
+        "FRAME": 14,
+        "VECTOR": 2,
+        "TEXT": 23,
+        "RECTANGLE": 7
+      },
+      "fonts": [
+        "Noto Sans SC",
+        "Geist"
+      ]
+    },
+    {
+      "id": "130:769",
+      "types": {
+        "FRAME": 27,
+        "TEXT": 15,
+        "INSTANCE": 8,
+        "VECTOR": 16,
+        "RECTANGLE": 4
+      },
+      "fonts": [
+        "Geist Mono",
+        "Noto Sans SC",
+        "Geist"
+      ]
+    }
+  ],
+  "primary": [
+    {
+      "type": "SOLID",
+      "visible": true,
+      "opacity": 1,
+      "blendMode": "NORMAL",
+      "color": {
+        "r": 0.09019608050584793,
+        "g": 0.09019608050584793,
+        "b": 0.09019608050584793
+      },
+      "boundVariables": {
+        "color": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:3:12"
+        }
+      }
+    }
+  ],
+  "selection": [
+    {
+      "type": "SOLID",
+      "visible": true,
+      "opacity": 1,
+      "blendMode": "NORMAL",
+      "color": {
+        "r": 0.9411764740943909,
+        "g": 0.9411764740943909,
+        "b": 0.9411764740943909
+      },
+      "boundVariables": {
+        "color": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:3:20"
+        }
+      }
+    }
+  ],
+  "assets": {
+    "symbol": "127:606",
+    "wordmark": "66:151",
+    "app": "133:793",
+    "board": "130:769"
+  }
+}

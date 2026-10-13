@@ -12,6 +12,8 @@ lerna-debug.log*
 /out/
 /build
 /coverage
+/test-results/
+/playwright-report/
 .env*
 .vercel
 *.tsbuildinfo
@@ -27,3 +29,6 @@ next-env.d.ts
 *.njsproj
 *.sln
 *.sw?
+
+# ONNX runtime assets copied from the pinned npm package before dev/build.
+/public/wardrobe-processing/ort-wasm-*

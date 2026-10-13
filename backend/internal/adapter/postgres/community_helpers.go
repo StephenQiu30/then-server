@@ -7,8 +7,8 @@ import (
 	"slices"
 	"time"
 
-	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	communityapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/community"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

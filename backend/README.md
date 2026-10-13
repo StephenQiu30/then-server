@@ -1,6 +1,6 @@
-# OOTD Backend
+# 衣序 / WEARLOG Backend
 
-这是“于是”当前的 Go/Gin 模块化单体。`main.go` 通过 `internal/bootstrap` 组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、Kafka 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着、私人穿搭日记与日历、社区帖子审核治理，以及私有图片上传/检查/删除 API 已经实现。
+这是“衣序”当前的 Go/Gin 模块化单体。`main.go` 通过 `internal/bootstrap` 组装 Gin、Huma、GORM/PostgreSQL、Redis、MinIO、Kafka 和进程生命周期；账号、会话、本人成年声明、结构化衣橱、账号穿搭计划、账号实际穿着、私人穿搭日记与日历、社区帖子审核治理，以及私有图片上传/检查/删除 API 已经实现。
 
 ## 本地运行
 
@@ -84,7 +84,7 @@ Huma operation、请求/响应结构和字段 tag 是唯一接口声明。API �
 
 - `POST /generation-jobs`、`GET /generation-jobs`、`GET /generation-jobs/{job_id}`、`POST /generation-jobs/{job_id}/cancel`、`DELETE /generation-jobs/{job_id}` 提供本人任务接纳、查询、取消与撤销。
 - `GET /admin/generation/submission-reconciliations` 仅管理员可分页读取待核对的 `unknown` 提交；响应不包含用户输入快照、参数或账号资料。
-- `POST /admin/generation-jobs/{job_id}/submission-reconciliation` 依据任务 revision、决定、证据类型和非敏感证据编号核对受理结果。确认受理可记录外部任务 ID 并接入既有清理；确认未受理会终结任务并释放额度。任务与审计记录在 then-server 现有 PostgreSQL 事务中提交。
+- `POST /admin/generation-jobs/{job_id}/submission-reconciliation` 依据任务 revision、决定、证据类型和非敏感证据编号核对受理结果。确认受理可记录外部任务 ID 并接入既有清理；确认未受理会终结任务并释放额度。任务与审计记录在 wearlog-server 现有 PostgreSQL 事务中提交。
 
 对账只更新本地任务业务状态，不访问 Provider、不自动重提，也不会产生图片/模型供应商费用。生成配置仍默认关闭；真实生成需要单独完成供应商、素材、预算及删除准入。
 
@@ -137,7 +137,7 @@ MinIO 使用 `raw-private` 与 `derived-private` 私有版本桶；Kafka worker 
 
 ## 本机中间件验证
 
-Redis 只保存认证限流的短期计数；PostgreSQL 是账户、同意、媒体状态、Outbox 和 Inbox 的事实源。Kafka 与 MinIO 已进入获批的合成照片开发闭环。默认测试连接本机 loopback；需要时用 `THEN_TEST_*` 环境变量覆盖本机端口和账号。
+Redis 只保存认证限流的短期计数；PostgreSQL 是账户、同意、媒体状态、Outbox 和 Inbox 的事实源。Kafka 与 MinIO 已进入获批的合成照片开发闭环。默认测试连接本机 loopback；需要时用 `WEARLOG_TEST_*` 环境变量覆盖本机端口和账号。
 
 ```sh
 brew services start minio
@@ -214,4 +214,4 @@ franz-go 使用幂等生产和 `acks=all`，Outbox 在确认后标记 published�
 
 消费者关闭自动提交，一次处理一条，业务成功后同步提交 offset；失败最多尝试三次，每次最长 30 秒，间隔 250/500ms，耗尽后退出并保留 offset。非法记录停止消费并保留位置供检查，不静默跳过。消费者处理/提交期间阻止 rebalance，随后释放；worker 取消后等待全部协程退出，再关闭资源。
 
-services 使用 `THEN_TEST_KAFKA_BROKERS` 和每次运行独立 prefix，清理只作用于该次 topic/消费组。端到端业务幂等由 PostgreSQL Inbox/状态约束承担；单机 acks=all 不证明生产高可用。生产高可用须独立验证。
+services 使用 `WEARLOG_TEST_KAFKA_BROKERS` 和每次运行独立 prefix，清理只作用于该次 topic/消费组。端到端业务幂等由 PostgreSQL Inbox/状态约束承担；单机 acks=all 不证明生产高可用。生产高可用须独立验证。

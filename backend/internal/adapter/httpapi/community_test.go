@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	communityapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/community"
 )
 
 type communityTransportStub struct {
@@ -132,4 +132,8 @@ func TestOptionalCommunitySessionRejectsAndClearsStaleCookie(t *testing.T) {
 	if len(cookies) != 1 || cookies[0].Name != sessionCookieName || cookies[0].Value != "" || cookies[0].MaxAge != -1 || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatal("optional authenticated public read did not clear stale session")
 	}
+}
+
+func (s communityObjectStub) OpenVersion(ctx context.Context, key, version string) (io.ReadCloser, error) {
+	return s.OpenDerivedVersion(ctx, key, version)
 }

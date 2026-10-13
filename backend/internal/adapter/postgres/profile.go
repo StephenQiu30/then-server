@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

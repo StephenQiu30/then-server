@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/adapter/messagequeue"
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/adapter/messagequeue"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"

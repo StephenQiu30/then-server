@@ -1,0 +1,58 @@
+{
+  "source": "Figma fYWIHuNucsMQBNYzXBPuEq nodes 5:4 / 7:38 / 8:133; reused original design assets",
+  "purpose": "Existing design sample assets, not generated from user uploads",
+  "assets": [
+    {
+      "file": "original.png",
+      "figmaAsset": "70f8b.png",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 1653167,
+      "sha256": "89b2afc597891031ecbd44442671172d3461699c0b07d3c7b7a62337569fd834"
+    },
+    {
+      "file": "result.png",
+      "figmaAsset": "5a528.png",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 1616308,
+      "sha256": "2d3c3a862d9fa9301489e984593c43a0e8d3189e469a7a3cd8bf8f4c53e6cd01"
+    },
+    {
+      "file": "../wardrobe-samples/navy-shirt.png",
+      "figmaAsset": "455e2.png",
+      "width": 627,
+      "height": 555,
+      "bytes": 353286,
+      "sha256": "31989f93b88262ae722516925ac0d2123babfe3469febe8e0c74aa7623d51079"
+    },
+    {
+      "file": "../wardrobe-samples/blue-jeans.png",
+      "figmaAsset": "12f79.png",
+      "width": 627,
+      "height": 699,
+      "bytes": 456021,
+      "sha256": "b6a18fbdc9b1f7bdd0bd698ece98292995093f516ac46fc40e7cbabc11a4fd94"
+    },
+    {
+      "file": "../wardrobe-samples/low-top-sneakers.png",
+      "figmaAsset": "09bd4.png",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1708588,
+      "sha256": "3a1b649e0abc21a243927759c6c5ee73114c0c40458c2ff16164234c6aa8d1f1"
+    }
+  ],
+  "verifiedExistingAssets": [
+    {
+      "file": "../wardrobe-samples/cream-knit.png",
+      "figmaNode": "2:43",
+      "sha256": "42639a707de11507776baebba5f73e3c197641acb48971c581d47d08c28535d0"
+    },
+    {
+      "file": "../wardrobe-samples/charcoal-trousers.png",
+      "figmaNode": "2:44",
+      "sha256": "7a02c09cace88e22eb1f3fb8a319d607e61d29adfe5ec4bfd0fdaf7f14df06ed"
+    }
+  ]
+}

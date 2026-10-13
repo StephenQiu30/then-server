@@ -18,7 +18,7 @@ var externalTestSuites = map[string]string{
 	"container":   "container",
 }
 
-const internalImportPrefix = "github.com/StephenQiu30/then-server/backend/internal/"
+const internalImportPrefix = "github.com/StephenQiu30/wearlog-server/backend/internal/"
 
 var allowedInternalImports = map[string]map[string]bool{
 	"application": {},

@@ -106,7 +106,35 @@ export async function completeMediaUpload(
   })
 }
 
-/** 创建一次 JPEG 私有直传意图 POST /media/uploads */
+/** 读取本人衣橱关联的净化照片 GET /media/${param0}/wardrobe-image */
+export async function getWardrobeImage(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.getWardrobeImageParams,
+  options?: RequestOptions,
+) {
+  const { media_id: param0, ...queryParams } = params
+  return request<string>(`/media/${param0}/wardrobe-image`, {
+    method: 'GET',
+    params: { ...queryParams },
+    ...(options || {}),
+  })
+}
+
+/** 读取本人衣橱保留的原始照片 GET /media/${param0}/wardrobe-original */
+export async function getWardrobeOriginal(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.getWardrobeOriginalParams,
+  options?: RequestOptions,
+) {
+  const { media_id: param0, ...queryParams } = params
+  return request<string>(`/media/${param0}/wardrobe-original`, {
+    method: 'GET',
+    params: { ...queryParams },
+    ...(options || {}),
+  })
+}
+
+/** 创建私有图片直传意图，PNG/WebP 仅用于衣橱 POST /media/uploads */
 export async function createMediaUpload(
   body: API.CreateMediaUploadRequest,
   options?: RequestOptions,

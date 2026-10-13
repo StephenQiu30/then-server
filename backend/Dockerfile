@@ -5,14 +5,14 @@ COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 COPY main.go ./
 COPY internal ./internal
-RUN go build -mod=readonly -trimpath -buildvcs=false -ldflags="-s -w" -o /out/then-backend . \
+RUN go build -mod=readonly -trimpath -buildvcs=false -ldflags="-s -w" -o /out/wearlog-backend . \
     && go list -m -json all > /out/modules.json
 
 FROM scratch
-COPY --from=build /out/then-backend /then-backend
-COPY --from=build /out/modules.json /usr/share/then/modules.json
+COPY --from=build /out/wearlog-backend /wearlog-backend
+COPY --from=build /out/modules.json /usr/share/wearlog/modules.json
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 USER 65532:65532
 EXPOSE 8080
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["/then-backend"]
+ENTRYPOINT ["/wearlog-backend"]

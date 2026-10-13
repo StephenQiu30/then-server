@@ -8,11 +8,12 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"io"
 	"testing"
 	"time"
 
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 )
 
 type workerObjectStoreStub struct{ data []byte }
@@ -165,5 +166,46 @@ func TestProfileAvatarNormalizationDropsSourceMetadata(t *testing.T) {
 	normalized, _, _, reason, err := runner.normalizedJPEG(context.Background(), media)
 	if err != nil || reason != "" || bytes.Contains(normalized, []byte("GPS test location")) || bytes.Contains(normalized, []byte("Exif")) {
 		t.Fatalf("profile avatar normalization retained metadata: reason=%s err=%v", reason, err)
+	}
+}
+
+func TestWardrobePNGPreservesAlphaAndRejectsWrongPurpose(t *testing.T) {
+	photo := image.NewNRGBA(image.Rect(0, 0, 4, 3))
+	photo.SetNRGBA(1, 1, color.NRGBA{R: 180, G: 120, B: 70, A: 180})
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, photo); err != nil {
+		t.Fatal(err)
+	}
+	data := buffer.Bytes()
+	runner := &Runner{objects: &workerObjectStoreStub{data: data}}
+	asset := mediaapp.MediaAsset{Purpose: mediaapp.MediaPurposeWardrobeImage, ContentType: mediaapp.MediaContentTypePNG, RawObjectKey: "source.png", ObjectVersionID: "version", ByteSize: int64(len(data)), SHA256: fmt.Sprintf("%x", sha256.Sum256(data))}
+	normalized, width, height, _, err := runner.normalizedJPEG(context.Background(), asset)
+	if err != nil || width != 4 || height != 3 {
+		t.Fatalf("PNG normalization failed: %v", err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(normalized))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, transparent := decoded.At(0, 0).RGBA()
+	_, _, _, alpha := decoded.At(1, 1).RGBA()
+	if transparent != 0 || alpha == 0 || alpha == 65535 {
+		t.Fatal("PNG lost transparency or soft edge")
+	}
+	asset.Purpose = mediaapp.MediaPurposeDiaryImage
+	if _, _, _, _, err := runner.normalizedJPEG(context.Background(), asset); err == nil {
+		t.Fatal("PNG admitted outside wardrobe purpose")
+	}
+}
+
+func TestWardrobeDisplaySizeIsBoundedWithoutChangingSource(t *testing.T) {
+	original := image.NewNRGBA(image.Rect(0, 0, 3000, 1500))
+	resized := wardrobeDisplayImage(original)
+	if resized.Bounds().Dx() != 2048 || resized.Bounds().Dy() != 1024 || original.Bounds().Dx() != 3000 {
+		t.Fatal("display size or original changed")
+	}
+	_, _, _, alpha := resized.At(0, 0).RGBA()
+	if alpha != 0 {
+		t.Fatal("resizing flattened alpha")
 	}
 }

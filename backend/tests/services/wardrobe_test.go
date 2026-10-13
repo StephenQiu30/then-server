@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
-	store "github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
+	store "github.com/StephenQiu30/wearlog-server/backend/internal/adapter/postgres"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
+	wardrobeapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/wardrobe"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -54,16 +56,24 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 	serviceOK(t, "construct wardrobe service", err)
 
 	sharedID := "018f1f74-a2d0-7c6d-9c17-4a0ea2400b11"
-	input := wardrobeapp.CreateWardrobeItemInput{ID: sharedID, Name: "Blue Shirt", Category: wardrobeapp.WardrobeTop, Availability: wardrobeapp.WardrobeWearable, Source: wardrobeapp.WardrobeSourceWardrobe, Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: wardrobeTestValue(wardrobeapp.WardrobeFormalitySmartCasual), WarmthBand: wardrobeTestValue(wardrobeapp.WardrobeWarmthLight), RainUse: wardrobeTestValue(wardrobeapp.WardrobeUseSuitable)}}
+	input := wardrobeapp.CreateWardrobeItemInput{ID: sharedID, Name: "Blue Shirt", SampleImage: "navy-shirt", Category: wardrobeapp.WardrobeTop, Availability: wardrobeapp.WardrobeWearable, Source: wardrobeapp.WardrobeSourceWardrobe, Attributes: wardrobeapp.WardrobeAttributes{FormalityBand: wardrobeTestValue(wardrobeapp.WardrobeFormalitySmartCasual), WarmthBand: wardrobeTestValue(wardrobeapp.WardrobeWarmthLight), RainUse: wardrobeTestValue(wardrobeapp.WardrobeUseSuitable)}}
 	created, err := wardrobe.CreateWardrobeItem(ctx, first.Token, input)
 	serviceOK(t, "create first wardrobe item", err)
-	if created.Attributes.FormalityBand == nil || *created.Attributes.FormalityBand != wardrobeapp.WardrobeFormalitySmartCasual || created.Attributes.WalkingUse != nil {
+	if created.SampleImage != "navy-shirt" || created.Attributes.FormalityBand == nil || *created.Attributes.FormalityBand != wardrobeapp.WardrobeFormalitySmartCasual || created.Attributes.WalkingUse != nil {
 		t.Fatal("created wardrobe attributes did not preserve known and unknown values")
 	}
 	repeated, err := wardrobe.CreateWardrobeItem(ctx, first.Token, input)
 	serviceOK(t, "repeat idempotent wardrobe create", err)
 	if repeated.Revision != created.Revision || !repeated.CreatedAt.Equal(created.CreatedAt) {
 		t.Fatal("idempotent create changed the stored wardrobe item")
+	}
+	imageConflict := input
+	imageConflict.SampleImage = "cream-knit"
+	if _, err := wardrobe.CreateWardrobeItem(ctx, first.Token, imageConflict); !errors.Is(err, wardrobeapp.ErrWardrobeConflict) {
+		t.Fatal("sample image change reused stable create ID")
+	}
+	if err := database.WithContext(ctx).Exec("UPDATE wardrobe_items SET sample_image = '../private' WHERE owner_id = ? AND id = ?", first.User.ID, sharedID).Error; err == nil {
+		t.Fatal("PostgreSQL accepted an unknown sample image")
 	}
 	conflict := input
 	conflict.Attributes.RainUse = wardrobeTestValue(wardrobeapp.WardrobeUseUnsuitable)
@@ -101,7 +111,7 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 		t.Fatal("cross-owner wardrobe cursor leaked a different result")
 	}
 
-	updated, err := wardrobe.UpdateWardrobeItem(ctx, first.Token, private.ID, private.Revision, wardrobeapp.UpdateWardrobeItemInput{Name: "Black Walking Shoes", Category: wardrobeapp.WardrobeShoes, Availability: wardrobeapp.WardrobeWearable, Attributes: wardrobeapp.WardrobeAttributes{WarmthBand: wardrobeTestValue(wardrobeapp.WardrobeWarmthMedium), WalkingUse: wardrobeTestValue(wardrobeapp.WardrobeUseSuitable)}})
+	updated, err := wardrobe.UpdateWardrobeItem(ctx, first.Token, private.ID, private.Revision, wardrobeapp.UpdateWardrobeItemInput{Name: "Black Walking Shoes", SampleImage: "white-sneakers", Category: wardrobeapp.WardrobeShoes, Availability: wardrobeapp.WardrobeWearable, Attributes: wardrobeapp.WardrobeAttributes{WarmthBand: wardrobeTestValue(wardrobeapp.WardrobeWarmthMedium), WalkingUse: wardrobeTestValue(wardrobeapp.WardrobeUseSuitable)}})
 	serviceOK(t, "update current wardrobe revision", err)
 	if updated.Revision != private.Revision+1 || updated.Source != wardrobeapp.WardrobeSourceQuickAdd || updated.Name != "Black Walking Shoes" || updated.Attributes.FormalityBand != nil || updated.Attributes.WarmthBand == nil || *updated.Attributes.WarmthBand != wardrobeapp.WardrobeWarmthMedium {
 		t.Fatal("wardrobe update changed immutable facts or missed revision increment")
@@ -110,7 +120,7 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 	serviceOK(t, "reconstruct wardrobe service", err)
 	reloaded, err := restarted.GetWardrobeItem(ctx, first.Token, private.ID)
 	serviceOK(t, "read attributes after repository reconstruction", err)
-	if reloaded.Attributes.WalkingUse == nil || *reloaded.Attributes.WalkingUse != wardrobeapp.WardrobeUseSuitable || reloaded.Attributes.RainUse != nil {
+	if reloaded.SampleImage != "white-sneakers" || reloaded.Attributes.WalkingUse == nil || *reloaded.Attributes.WalkingUse != wardrobeapp.WardrobeUseSuitable || reloaded.Attributes.RainUse != nil {
 		t.Fatal("wardrobe attributes did not survive a fresh repository read")
 	}
 	archived, err := wardrobe.ArchiveWardrobeItem(ctx, first.Token, private.ID, updated.Revision)
@@ -155,6 +165,8 @@ func TestWardrobePersistenceLifecycle(t *testing.T) {
 	if _, err := wardrobe.GetWardrobeItem(ctx, first.Token, private.ID); !errors.Is(err, wardrobeapp.ErrWardrobeNotFound) {
 		t.Fatal("deleted wardrobe item remained readable")
 	}
+
+	assertWardrobePhotoAttachment(t, ctx, database, wardrobe, accounts)
 
 	_, err = accounts.DeleteCurrentUser(ctx, first.Token)
 	serviceOK(t, "delete first wardrobe owner", err)
@@ -229,5 +241,73 @@ func TestWardrobeRecommendationReadsCurrentOwnedPostgresItems(t *testing.T) {
 	serviceOK(t, "recommend second owner wardrobe", err)
 	if len(result.Candidates) != 1 || len(result.Candidates[0].Items) != 2 || result.Candidates[0].Items[0].Name != "Second Dress" {
 		t.Fatalf("second recommendation crossed owner boundary: %+v", result)
+	}
+}
+
+func assertWardrobePhotoAttachment(t *testing.T, ctx context.Context, db *gorm.DB, wardrobe *wardrobeapp.WardrobeService, accounts *accountapp.AccountService) {
+	owner, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "photo-owner@example.test", DisplayName: "Photo", Password: "photo-fixture-password"})
+	serviceOK(t, "register photo owner", err)
+	other, err := accounts.Register(ctx, accountapp.RegisterAccountInput{Email: "photo-other@example.test", DisplayName: "Other", Password: "photo-fixture-password"})
+	serviceOK(t, "register photo other", err)
+	repo := store.NewMediaRepository(db)
+	makePhoto := func(purpose string) mediaapp.MediaAsset {
+		asset, err := repo.CreateMedia(ctx, owner.User.ID, mediaapp.CreateMediaUploadInput{Purpose: purpose, ContentType: mediaapp.MediaContentTypeJPEG, ByteSize: 10, SHA256: strings.Repeat("a", 64)}, time.Now().UTC())
+		serviceOK(t, "create photo attachment fixture", err)
+		return asset
+	}
+	photo := makePhoto(mediaapp.MediaPurposeWardrobeImage)
+	input := wardrobeapp.CreateWardrobeItemInput{ID: uuid.NewString(), Name: "Photo test", Category: wardrobeapp.WardrobeTop, Availability: wardrobeapp.WardrobeWearable, Source: wardrobeapp.WardrobeSourceWardrobe, PhotoMediaID: &photo.ID}
+	if _, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, input); !errors.Is(err, wardrobeapp.ErrWardrobeConflict) {
+		t.Fatal("attached a pending photograph")
+	}
+	serviceOK(t, "mark checked fixture", db.Table("media_assets").Where("id = ?", photo.ID).Update("status", "ready").Error)
+	serviceOK(t, "add checked derivative fixture", db.Exec("INSERT INTO media_derivations (id, media_id, object_key, object_version_id, created_at) VALUES (?, ?, ?, ?, now())", uuid.NewString(), photo.ID, "fixture/"+photo.ID, "fixture-version").Error)
+	if _, err := wardrobe.CreateWardrobeItem(ctx, other.Token, input); !errors.Is(err, wardrobeapp.ErrWardrobeConflict) {
+		t.Fatal("attached another owner's photograph")
+	}
+	created, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, input)
+	serviceOK(t, "attach checked owner photo", err)
+	// Ready wardrobe originals must not be selected by the generic source sweeper.
+	candidates, err := repo.SourceCleanupCandidates(ctx, time.Now().UTC().Add(48*time.Hour), 100)
+	serviceOK(t, "query source retention", err)
+	for _, candidate := range candidates {
+		if candidate.ID == photo.ID {
+			t.Fatal("ready wardrobe original selected for cleanup")
+		}
+	}
+	original, err := repo.GetWardrobeOriginal(ctx, owner.User.ID, photo.ID)
+	serviceOK(t, "read attached original reference", err)
+	if original.ID != photo.ID {
+		t.Fatal("original reference changed")
+	}
+	if _, err := repo.GetWardrobeOriginal(ctx, other.User.ID, photo.ID); !errors.Is(err, mediaapp.ErrMediaNotFound) {
+		t.Fatal("original crossed owners")
+	}
+
+	if _, err := repo.GetWardrobeImage(ctx, other.User.ID, photo.ID); !errors.Is(err, mediaapp.ErrMediaNotFound) {
+		t.Fatal("read another owner's photograph")
+	}
+	if _, err := repo.GetWardrobeImage(ctx, owner.User.ID, photo.ID); err != nil {
+		t.Fatal("owner could not read attached photograph")
+	}
+	updated, err := wardrobe.UpdateWardrobeItem(ctx, owner.Token, created.ID, created.Revision, wardrobeapp.UpdateWardrobeItemInput{Name: created.Name, Category: created.Category, Availability: created.Availability, OriginalPhotoMediaID: &photo.ID})
+	serviceOK(t, "preserve photo when omitted", err)
+	if updated.OriginalPhotoMediaID == nil || *updated.OriginalPhotoMediaID != photo.ID || updated.PhotoMediaID == nil || *updated.PhotoMediaID != photo.ID || updated.ID != created.ID {
+		t.Fatal("metadata edit lost photo or identity")
+	}
+	wrong := makePhoto(mediaapp.MediaPurposeDiaryImage)
+	serviceOK(t, "mark wrong-purpose fixture ready", db.Table("media_assets").Where("id = ?", wrong.ID).Update("status", "ready").Error)
+	input.ID, input.PhotoMediaID = uuid.NewString(), &wrong.ID
+	if _, err := wardrobe.CreateWardrobeItem(ctx, owner.Token, input); !errors.Is(err, wardrobeapp.ErrWardrobeConflict) {
+		t.Fatal("attached wrong-purpose photograph")
+	}
+	serviceOK(t, "revoke photograph", db.Table("media_assets").Where("id = ?", photo.ID).Update("status", "deleting").Error)
+	if _, err := repo.GetWardrobeImage(ctx, owner.User.ID, photo.ID); !errors.Is(err, mediaapp.ErrMediaNotFound) {
+		t.Fatal("read revoked photograph")
+	}
+	// Re-running AutoMigrate must preserve clothing and refreshed purpose checks.
+	serviceOK(t, "repeat schema migration", store.Migrate(ctx, db))
+	if _, err := wardrobe.GetWardrobeItem(ctx, owner.Token, created.ID); err != nil {
+		t.Fatal("migration lost wardrobe data")
 	}
 }

@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
 )
 
 func TestGeneratedOpenAPIContract(t *testing.T) {
@@ -197,7 +197,7 @@ func TestGeneratedOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
-	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.31.0" || operations != 130 || len(spec.Paths) != 98 {
+	if spec.OpenAPI != "3.1.2" || spec.Info.Version != "0.31.0" || operations != 132 || len(spec.Paths) != 100 {
 		t.Fatalf("unexpected generated contract: openapi=%s api=%s operations=%d paths=%d", spec.OpenAPI, spec.Info.Version, operations, len(spec.Paths))
 	}
 	mediaRequest := spec.Components.Schemas["CreateMediaUploadRequest"]

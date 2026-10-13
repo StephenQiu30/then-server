@@ -11,29 +11,29 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/StephenQiu30/then-server/backend/internal/adapter/generationfixture"
-	"github.com/StephenQiu30/then-server/backend/internal/adapter/httpapi"
-	"github.com/StephenQiu30/then-server/backend/internal/adapter/messagequeue"
-	"github.com/StephenQiu30/then-server/backend/internal/adapter/objectstore"
-	"github.com/StephenQiu30/then-server/backend/internal/adapter/postgres"
-	accountapp "github.com/StephenQiu30/then-server/backend/internal/application/account"
-	communityapp "github.com/StephenQiu30/then-server/backend/internal/application/community"
-	exportapp "github.com/StephenQiu30/then-server/backend/internal/application/dataexport"
-	diaryapp "github.com/StephenQiu30/then-server/backend/internal/application/diary"
-	eventworkerapp "github.com/StephenQiu30/then-server/backend/internal/application/eventworker"
-	generationapp "github.com/StephenQiu30/then-server/backend/internal/application/generation"
-	mediaapp "github.com/StephenQiu30/then-server/backend/internal/application/media"
-	feedbackapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitfeedback"
-	outfitplanapp "github.com/StephenQiu30/then-server/backend/internal/application/outfitplan"
-	privacyapp "github.com/StephenQiu30/then-server/backend/internal/application/privacy"
-	syncapp "github.com/StephenQiu30/then-server/backend/internal/application/syncchange"
-	wardrobeapp "github.com/StephenQiu30/then-server/backend/internal/application/wardrobe"
-	weareventapp "github.com/StephenQiu30/then-server/backend/internal/application/wearevent"
-	"github.com/StephenQiu30/then-server/backend/internal/platform/config"
-	"github.com/StephenQiu30/then-server/backend/internal/platform/database"
-	"github.com/StephenQiu30/then-server/backend/internal/platform/httpserver"
-	"github.com/StephenQiu30/then-server/backend/internal/platform/mail"
-	"github.com/StephenQiu30/then-server/backend/internal/platform/ratelimit"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/adapter/generationfixture"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/adapter/httpapi"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/adapter/messagequeue"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/adapter/objectstore"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/adapter/postgres"
+	accountapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/account"
+	communityapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/community"
+	exportapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/dataexport"
+	diaryapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/diary"
+	eventworkerapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/eventworker"
+	generationapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/generation"
+	mediaapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/media"
+	feedbackapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/outfitfeedback"
+	outfitplanapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/outfitplan"
+	privacyapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/privacy"
+	syncapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/syncchange"
+	wardrobeapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/wardrobe"
+	weareventapp "github.com/StephenQiu30/wearlog-server/backend/internal/application/wearevent"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/platform/config"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/platform/database"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/platform/httpserver"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/platform/mail"
+	"github.com/StephenQiu30/wearlog-server/backend/internal/platform/ratelimit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -248,7 +248,7 @@ func runAPI(ctx, startup context.Context, cfg config.Config, pool *database.Pool
 		if serviceErr != nil {
 			return serviceErr
 		}
-		mediaHandler = httpapi.NewMediaHandler(media, cfg.SessionSecure)
+		mediaHandler = httpapi.NewMediaHandler(media, cfg.SessionSecure).WithImageObjects(objects)
 		community, serviceErr := communityapp.NewService(accounts, postgres.NewCommunityRepository(pool.ORM()))
 		if serviceErr != nil {
 			return serviceErr
